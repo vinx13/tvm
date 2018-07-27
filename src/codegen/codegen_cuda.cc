@@ -85,6 +85,9 @@ void CodeGenCUDA::PrintType(Type t, std::ostream& os) {  // NOLINT(*)
       // directly 4 8 bit int in integer.
       os << "int"; return;
     }
+    if (t.bits() == 8 && t.lanes() == 16) {
+      os << "int4"; return;
+    }
     switch (t.bits()) {
       case 8: {
         if (!t.is_uint() && t.lanes() == 1) {
