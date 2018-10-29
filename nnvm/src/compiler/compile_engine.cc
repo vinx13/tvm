@@ -268,6 +268,7 @@ class CompileEngine {
     gf->target = target;
     gf->func_name = GetUniqeName(readable_name);
     gf->inputs = inputs;
+    std::cout << "[fusion] " << gf->func_name << " [Input] " << gf->inputs << " [Output] " << gf->outputs << std::endl;
     gf->outputs = outputs;
     static const PackedFunc& flower = GetPackedFunc("nnvm.compiler.lower");
     gf->funcs = flower(sch, all_args, gf->func_name, graph);
