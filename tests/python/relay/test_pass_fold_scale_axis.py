@@ -1,10 +1,11 @@
 from tvm import relay
+import numpy as np
 
 
 def test_fold_fwd_simple():
     """Simple testcase."""
     def before(x, conv_weight, in_bias, in_scale, channels):
-        args = [x, conv_weight, in_bias, in_scale]
+        args = [x, conv_weight, in_bias]
         in_scale = relay.expand_dims(in_scale, axis=1, num_newaxis=2)
         in_bias = relay.expand_dims(in_bias, axis=1, num_newaxis=2)
         x = relay.multiply(x, in_scale)
@@ -18,7 +19,7 @@ def test_fold_fwd_simple():
 
     def expected(x, conv_weight, in_bias, in_scale, channels):
         # use a fixed order of args so alpha equal check can pass
-        args = [x, conv_weight, in_bias, in_scale]
+        args = [x, conv_weight, in_bias]
         in_scale = relay.expand_dims(in_scale, axis=1, num_newaxis=2)
         in_bias = relay.expand_dims(in_bias, axis=1, num_newaxis=2)
         squeezed_scale = relay.squeeze(in_scale, axis=[1,2])
@@ -38,9 +39,11 @@ def test_fold_fwd_simple():
         in_channels = shape[1]
         weight = relay.var("weight")
         in_bias = relay.var("in_bias", shape=(in_channels,))
-        in_scale = relay.var("in_scale", shape=(in_channels,))
+        in_scale = relay.const(np.random.uniform(size=(in_channels,)).astype('float32'))
 
         y1 = before(x, weight, in_bias, in_scale, channels)
+        y1 = relay.ir_pass.infer_type(y1)
+        y1 = relay.ir_pass.fold_constant(y1)
         y1 = relay.ir_pass.infer_type(y1)
         type_dict = {x.name_hint:x.checked_type for x in y1.params}
         weight = relay.var("weight", type_dict["weight"])
