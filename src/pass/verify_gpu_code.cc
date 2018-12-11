@@ -53,9 +53,12 @@ class GPUCodeVerifier : public IRVisitor {
     if (nest_level_ == 0) {
       // exit a kernel, check the validity
       valid_ &= thread_per_block_ <= max_threads_per_block_;
+            CHECK(valid_);
 
       valid_ &= local_memory_per_block_ <= max_local_memory_per_block_;
+            CHECK(valid_);
       valid_ &= shared_memory_per_block_ <= max_shared_memory_per_block_;
+            CHECK(valid_);
     }
   }
 
@@ -93,22 +96,28 @@ class GPUCodeVerifier : public IRVisitor {
 
           if (name == "threadIdx.x") {
             valid_ &= length <= max_thread_x_;
+            CHECK(valid_);
             thread_x_extent_ = length;
           } else if (name == "threadIdx.y") {
             valid_ &= length <= max_thread_y_;
+            CHECK(valid_);
             thread_y_extent_ = length;
           } else if (name == "threadIdx.z") {
             valid_ &= length <= max_thread_z_;
+            CHECK(valid_);
             thread_z_extent_ = length;
           }
         } else {
           // the thread should be bound to axes with the same length
           if (name == "threadIdx.x") {
             valid_ &= length == thread_x_extent_;
+            CHECK(valid_);
           } else if (name == "threadIdx.y") {
             valid_ &= length == thread_y_extent_;
+            CHECK(valid_);
           } else if (name == "threadIdx.z") {
             valid_ &= length == thread_z_extent_;
+            CHECK(valid_);
           }
         }
       }

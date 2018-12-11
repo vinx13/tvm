@@ -60,7 +60,6 @@ nnvm::Graph CorrectLayout(nnvm::Graph src) {
       mirror_vec[nid] = new_node;
       continue;
     }
-
     const uint32_t num_inputs = inode.inputs.size();
     const uint32_t num_outputs = inode.source->num_outputs();
     // set up output and input layouts

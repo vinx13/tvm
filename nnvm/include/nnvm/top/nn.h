@@ -50,7 +50,7 @@ struct BatchNormParam : public dmlc::Parameter<BatchNormParam> {
   bool scale;
 
   DMLC_DECLARE_PARAMETER(BatchNormParam) {
-    DMLC_DECLARE_FIELD(axis).set_default(1)
+    DMLC_DECLARE_FIELD(axis).set_default(2)
       .describe("Specify which shape axis the channel is specified.");
     DMLC_DECLARE_FIELD(epsilon).set_default(1e-5)
         .describe("Small float added to variance to avoid dividing by zero.");
@@ -145,7 +145,7 @@ struct Conv2DParam : public dmlc::Parameter<Conv2DParam> {
                 "At groups=2, the operation becomes equivalent to having two convolution"
                 "layers side by side, each seeing half the input channels, and producing"
                 "half the output channels, and both subsequently concatenated.");
-    DMLC_DECLARE_FIELD(layout).set_default("NCHW")
+    DMLC_DECLARE_FIELD(layout).set_default("HWCN")
       .describe("Dimension ordering of input data. Can be 'NCHW', 'NHWC', etc."
                 "'N', 'C', 'H', 'W' stands for batch, channel, height, and width"
                 "dimensions respectively. Convolution is applied on the 'H' and"
@@ -154,7 +154,7 @@ struct Conv2DParam : public dmlc::Parameter<Conv2DParam> {
       .describe("Dimension ordering of output. Can be 'NCHW', 'NHWC', etc."
                 "'N', 'C', 'H', 'W' stands for batch, channel, height, and width"
                 "dimensions respectively. Default to be same as input layout.");
-    DMLC_DECLARE_FIELD(kernel_layout).set_default("OIHW")
+    DMLC_DECLARE_FIELD(kernel_layout).set_default("HWOI")
       .describe("Dimension ordering of weight. Can be 'OIHW', 'OIHW16o16i', etc."
                 "'O', 'I', 'H', 'W' stands for num_filter, input_channel, height, and width"
                 "dimensions respectively.");
@@ -319,7 +319,7 @@ struct MaxPool2DParam : public dmlc::Parameter<MaxPool2DParam> {
                 "one int : same padding used on all sides"
                 "two int : bottom, right will use same padding as top, left"
                 "four int : padding width in the order of (top, left, bottom, right)");
-    DMLC_DECLARE_FIELD(layout).set_default("NCHW")
+    DMLC_DECLARE_FIELD(layout).set_default("HWCN")
       .describe("Dimension ordering of data and weight. Can be 'NCHW', 'NHWC', etc."
                 "'N', 'C', 'H', 'W' stands for batch, channel, height, and width"
                 "dimensions respectively. Convolution is applied on the 'H' and"

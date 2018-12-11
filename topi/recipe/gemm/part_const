@@ -1,0 +1,146 @@
+ConfigSpace (len=264600, space_map=
+   0 tile_k: Split(policy=all, product=2048, num_outputs=3) len=6
+   1 tile_y: Split(policy=all, product=2048, num_outputs=4) len=105
+   2 tile_x: Split(policy=all, product=2048, num_outputs=4) len=105
+   3 storage_align: OtherOption([16, 48]) len=2
+   4 auto_unroll_max_step: OtherOption([512, 1500]) len=2
+)
+Using pretuned config:
+[('tile_k', [64, 8, 4]), ('tile_y', [32, 2, 16, 2]), ('tile_x', [32, 16, 4, 1]), ('storage_align', 48), ('auto_unroll_max_step', 512)],,None,75333
+#include <sm_61_intrinsics.h>
+extern "C" __global__ void gemm_int8_kernel0( signed char* __restrict__ A,  signed char* __restrict__ B,  int* __restrict__ C) {
+   int C_local[64];
+  __shared__ signed char A_shared[3072];
+  __shared__ signed char B_shared[3072];
+   int A_shared_local[8];
+   int B_shared_local[32];
+  for (int i_c_init = 0; i_c_init < 2; ++i_c_init) {
+    for (int vthread_s = 0; vthread_s < 16; ++vthread_s) {
+      C_local[(i_c_init + (vthread_s * 2))] = 0;
+      C_local[((32 + i_c_init) + (vthread_s * 2))] = 0;
+    }
+  }
+  for (int k_outer = 0; k_outer < 64; ++k_outer) {
+    __syncthreads();
+    for (int ax0_ax1_fused_inner_inner_outer = 0; ax0_ax1_fused_inner_inner_outer < 2; ++ax0_ax1_fused_inner_inner_outer) {
+      ((__shared__ int4*)(A_shared + (((((int)threadIdx.y) * 192) + (((int)threadIdx.x) * 48)) + (ax0_ax1_fused_inner_inner_outer * 16))))[0] = (( int4*)(A + (((((((int)blockIdx.y) * 131072) + (((int)threadIdx.y) * 8192)) + (((int)threadIdx.x) * 2048)) + (k_outer * 32)) + (ax0_ax1_fused_inner_inner_outer * 16))))[0];
+    }
+    for (int ax0_ax1_fused_inner_inner_outer1 = 0; ax0_ax1_fused_inner_inner_outer1 < 2; ++ax0_ax1_fused_inner_inner_outer1) {
+      ((__shared__ int4*)(B_shared + (((((int)threadIdx.y) * 192) + (((int)threadIdx.x) * 48)) + (ax0_ax1_fused_inner_inner_outer1 * 16))))[0] = (( int4*)(B + (((((((int)blockIdx.x) * 131072) + (((int)threadIdx.y) * 8192)) + (((int)threadIdx.x) * 2048)) + (k_outer * 32)) + (ax0_ax1_fused_inner_inner_outer1 * 16))))[0];
+    }
+    __syncthreads();
+    for (int ax0 = 0; ax0 < 2; ++ax0) {
+      (( int*)(( signed char*)A_shared_local + (ax0 * 4)))[0] = ((__shared__ int*)(A_shared + ((((int)threadIdx.y) * 96) + (ax0 * 48))))[0];
+      (( int*)(( signed char*)A_shared_local + (8 + (ax0 * 4))))[0] = ((__shared__ int*)(A_shared + ((1536 + (((int)threadIdx.y) * 96)) + (ax0 * 48))))[0];
+    }
+    for (int vthread_s1 = 0; vthread_s1 < 16; ++vthread_s1) {
+      (( int*)(( signed char*)B_shared_local + (vthread_s1 * 4)))[0] = ((__shared__ int*)(B_shared + ((((int)threadIdx.x) * 48) + (vthread_s1 * 192))))[0];
+    }
+    for (int ax01 = 0; ax01 < 2; ++ax01) {
+      (( int*)(( signed char*)A_shared_local + (16 + (ax01 * 4))))[0] = ((__shared__ int*)(A_shared + ((4 + (((int)threadIdx.y) * 96)) + (ax01 * 48))))[0];
+      (( int*)(( signed char*)A_shared_local + (24 + (ax01 * 4))))[0] = ((__shared__ int*)(A_shared + ((1540 + (((int)threadIdx.y) * 96)) + (ax01 * 48))))[0];
+    }
+    for (int vthread_s2 = 0; vthread_s2 < 16; ++vthread_s2) {
+      (( int*)(( signed char*)B_shared_local + (64 + (vthread_s2 * 4))))[0] = ((__shared__ int*)(B_shared + ((4 + (((int)threadIdx.x) * 48)) + (vthread_s2 * 192))))[0];
+    }
+    for (int i_c = 0; i_c < 2; ++i_c) {
+      for (int vthread_s3 = 0; vthread_s3 < 16; ++vthread_s3) {
+        C_local[(i_c + (vthread_s3 * 2))] = __dp4a((( int*)(( signed char*)A_shared_local + (i_c * 4)))[0], (( int*)(( signed char*)B_shared_local + (vthread_s3 * 4)))[0], C_local[(i_c + (vthread_s3 * 2))]);
+        C_local[((32 + i_c) + (vthread_s3 * 2))] = __dp4a((( int*)(( signed char*)A_shared_local + (8 + (i_c * 4))))[0], (( int*)(( signed char*)B_shared_local + (vthread_s3 * 4)))[0], C_local[((32 + i_c) + (vthread_s3 * 2))]);
+      }
+    }
+    for (int ax02 = 0; ax02 < 2; ++ax02) {
+      (( int*)(( signed char*)A_shared_local + (ax02 * 4)))[0] = ((__shared__ int*)(A_shared + ((8 + (((int)threadIdx.y) * 96)) + (ax02 * 48))))[0];
+      (( int*)(( signed char*)A_shared_local + (8 + (ax02 * 4))))[0] = ((__shared__ int*)(A_shared + ((1544 + (((int)threadIdx.y) * 96)) + (ax02 * 48))))[0];
+    }
+    for (int vthread_s4 = 0; vthread_s4 < 16; ++vthread_s4) {
+      (( int*)(( signed char*)B_shared_local + (vthread_s4 * 4)))[0] = ((__shared__ int*)(B_shared + ((8 + (((int)threadIdx.x) * 48)) + (vthread_s4 * 192))))[0];
+    }
+    for (int i_c1 = 0; i_c1 < 2; ++i_c1) {
+      for (int vthread_s5 = 0; vthread_s5 < 16; ++vthread_s5) {
+        C_local[(i_c1 + (vthread_s5 * 2))] = __dp4a((( int*)(( signed char*)A_shared_local + (16 + (i_c1 * 4))))[0], (( int*)(( signed char*)B_shared_local + (64 + (vthread_s5 * 4))))[0], C_local[(i_c1 + (vthread_s5 * 2))]);
+        C_local[((32 + i_c1) + (vthread_s5 * 2))] = __dp4a((( int*)(( signed char*)A_shared_local + (24 + (i_c1 * 4))))[0], (( int*)(( signed char*)B_shared_local + (64 + (vthread_s5 * 4))))[0], C_local[((32 + i_c1) + (vthread_s5 * 2))]);
+      }
+    }
+    for (int ax03 = 0; ax03 < 2; ++ax03) {
+      (( int*)(( signed char*)A_shared_local + (16 + (ax03 * 4))))[0] = ((__shared__ int*)(A_shared + ((12 + (((int)threadIdx.y) * 96)) + (ax03 * 48))))[0];
+      (( int*)(( signed char*)A_shared_local + (24 + (ax03 * 4))))[0] = ((__shared__ int*)(A_shared + ((1548 + (((int)threadIdx.y) * 96)) + (ax03 * 48))))[0];
+    }
+    for (int vthread_s6 = 0; vthread_s6 < 16; ++vthread_s6) {
+      (( int*)(( signed char*)B_shared_local + (64 + (vthread_s6 * 4))))[0] = ((__shared__ int*)(B_shared + ((12 + (((int)threadIdx.x) * 48)) + (vthread_s6 * 192))))[0];
+    }
+    for (int i_c2 = 0; i_c2 < 2; ++i_c2) {
+      for (int vthread_s7 = 0; vthread_s7 < 16; ++vthread_s7) {
+        C_local[(i_c2 + (vthread_s7 * 2))] = __dp4a((( int*)(( signed char*)A_shared_local + (i_c2 * 4)))[0], (( int*)(( signed char*)B_shared_local + (vthread_s7 * 4)))[0], C_local[(i_c2 + (vthread_s7 * 2))]);
+        C_local[((32 + i_c2) + (vthread_s7 * 2))] = __dp4a((( int*)(( signed char*)A_shared_local + (8 + (i_c2 * 4))))[0], (( int*)(( signed char*)B_shared_local + (vthread_s7 * 4)))[0], C_local[((32 + i_c2) + (vthread_s7 * 2))]);
+      }
+    }
+    for (int ax04 = 0; ax04 < 2; ++ax04) {
+      (( int*)(( signed char*)A_shared_local + (ax04 * 4)))[0] = ((__shared__ int*)(A_shared + ((16 + (((int)threadIdx.y) * 96)) + (ax04 * 48))))[0];
+      (( int*)(( signed char*)A_shared_local + (8 + (ax04 * 4))))[0] = ((__shared__ int*)(A_shared + ((1552 + (((int)threadIdx.y) * 96)) + (ax04 * 48))))[0];
+    }
+    for (int vthread_s8 = 0; vthread_s8 < 16; ++vthread_s8) {
+      (( int*)(( signed char*)B_shared_local + (vthread_s8 * 4)))[0] = ((__shared__ int*)(B_shared + ((16 + (((int)threadIdx.x) * 48)) + (vthread_s8 * 192))))[0];
+    }
+    for (int i_c3 = 0; i_c3 < 2; ++i_c3) {
+      for (int vthread_s9 = 0; vthread_s9 < 16; ++vthread_s9) {
+        C_local[(i_c3 + (vthread_s9 * 2))] = __dp4a((( int*)(( signed char*)A_shared_local + (16 + (i_c3 * 4))))[0], (( int*)(( signed char*)B_shared_local + (64 + (vthread_s9 * 4))))[0], C_local[(i_c3 + (vthread_s9 * 2))]);
+        C_local[((32 + i_c3) + (vthread_s9 * 2))] = __dp4a((( int*)(( signed char*)A_shared_local + (24 + (i_c3 * 4))))[0], (( int*)(( signed char*)B_shared_local + (64 + (vthread_s9 * 4))))[0], C_local[((32 + i_c3) + (vthread_s9 * 2))]);
+      }
+    }
+    for (int ax05 = 0; ax05 < 2; ++ax05) {
+      (( int*)(( signed char*)A_shared_local + (16 + (ax05 * 4))))[0] = ((__shared__ int*)(A_shared + ((20 + (((int)threadIdx.y) * 96)) + (ax05 * 48))))[0];
+      (( int*)(( signed char*)A_shared_local + (24 + (ax05 * 4))))[0] = ((__shared__ int*)(A_shared + ((1556 + (((int)threadIdx.y) * 96)) + (ax05 * 48))))[0];
+    }
+    for (int vthread_s10 = 0; vthread_s10 < 16; ++vthread_s10) {
+      (( int*)(( signed char*)B_shared_local + (64 + (vthread_s10 * 4))))[0] = ((__shared__ int*)(B_shared + ((20 + (((int)threadIdx.x) * 48)) + (vthread_s10 * 192))))[0];
+    }
+    for (int i_c4 = 0; i_c4 < 2; ++i_c4) {
+      for (int vthread_s11 = 0; vthread_s11 < 16; ++vthread_s11) {
+        C_local[(i_c4 + (vthread_s11 * 2))] = __dp4a((( int*)(( signed char*)A_shared_local + (i_c4 * 4)))[0], (( int*)(( signed char*)B_shared_local + (vthread_s11 * 4)))[0], C_local[(i_c4 + (vthread_s11 * 2))]);
+        C_local[((32 + i_c4) + (vthread_s11 * 2))] = __dp4a((( int*)(( signed char*)A_shared_local + (8 + (i_c4 * 4))))[0], (( int*)(( signed char*)B_shared_local + (vthread_s11 * 4)))[0], C_local[((32 + i_c4) + (vthread_s11 * 2))]);
+      }
+    }
+    for (int ax06 = 0; ax06 < 2; ++ax06) {
+      (( int*)(( signed char*)A_shared_local + (ax06 * 4)))[0] = ((__shared__ int*)(A_shared + ((24 + (((int)threadIdx.y) * 96)) + (ax06 * 48))))[0];
+      (( int*)(( signed char*)A_shared_local + (8 + (ax06 * 4))))[0] = ((__shared__ int*)(A_shared + ((1560 + (((int)threadIdx.y) * 96)) + (ax06 * 48))))[0];
+    }
+    for (int vthread_s12 = 0; vthread_s12 < 16; ++vthread_s12) {
+      (( int*)(( signed char*)B_shared_local + (vthread_s12 * 4)))[0] = ((__shared__ int*)(B_shared + ((24 + (((int)threadIdx.x) * 48)) + (vthread_s12 * 192))))[0];
+    }
+    for (int i_c5 = 0; i_c5 < 2; ++i_c5) {
+      for (int vthread_s13 = 0; vthread_s13 < 16; ++vthread_s13) {
+        C_local[(i_c5 + (vthread_s13 * 2))] = __dp4a((( int*)(( signed char*)A_shared_local + (16 + (i_c5 * 4))))[0], (( int*)(( signed char*)B_shared_local + (64 + (vthread_s13 * 4))))[0], C_local[(i_c5 + (vthread_s13 * 2))]);
+        C_local[((32 + i_c5) + (vthread_s13 * 2))] = __dp4a((( int*)(( signed char*)A_shared_local + (24 + (i_c5 * 4))))[0], (( int*)(( signed char*)B_shared_local + (64 + (vthread_s13 * 4))))[0], C_local[((32 + i_c5) + (vthread_s13 * 2))]);
+      }
+    }
+    for (int ax07 = 0; ax07 < 2; ++ax07) {
+      (( int*)(( signed char*)A_shared_local + (16 + (ax07 * 4))))[0] = ((__shared__ int*)(A_shared + ((28 + (((int)threadIdx.y) * 96)) + (ax07 * 48))))[0];
+      (( int*)(( signed char*)A_shared_local + (24 + (ax07 * 4))))[0] = ((__shared__ int*)(A_shared + ((1564 + (((int)threadIdx.y) * 96)) + (ax07 * 48))))[0];
+    }
+    for (int vthread_s14 = 0; vthread_s14 < 16; ++vthread_s14) {
+      (( int*)(( signed char*)B_shared_local + (64 + (vthread_s14 * 4))))[0] = ((__shared__ int*)(B_shared + ((28 + (((int)threadIdx.x) * 48)) + (vthread_s14 * 192))))[0];
+    }
+    for (int i_c6 = 0; i_c6 < 2; ++i_c6) {
+      for (int vthread_s15 = 0; vthread_s15 < 16; ++vthread_s15) {
+        C_local[(i_c6 + (vthread_s15 * 2))] = __dp4a((( int*)(( signed char*)A_shared_local + (i_c6 * 4)))[0], (( int*)(( signed char*)B_shared_local + (vthread_s15 * 4)))[0], C_local[(i_c6 + (vthread_s15 * 2))]);
+        C_local[((32 + i_c6) + (vthread_s15 * 2))] = __dp4a((( int*)(( signed char*)A_shared_local + (8 + (i_c6 * 4))))[0], (( int*)(( signed char*)B_shared_local + (vthread_s15 * 4)))[0], C_local[((32 + i_c6) + (vthread_s15 * 2))]);
+      }
+    }
+    for (int i_c7 = 0; i_c7 < 2; ++i_c7) {
+      for (int vthread_s16 = 0; vthread_s16 < 16; ++vthread_s16) {
+        C_local[(i_c7 + (vthread_s16 * 2))] = __dp4a((( int*)(( signed char*)A_shared_local + (16 + (i_c7 * 4))))[0], (( int*)(( signed char*)B_shared_local + (64 + (vthread_s16 * 4))))[0], C_local[(i_c7 + (vthread_s16 * 2))]);
+        C_local[((32 + i_c7) + (vthread_s16 * 2))] = __dp4a((( int*)(( signed char*)A_shared_local + (24 + (i_c7 * 4))))[0], (( int*)(( signed char*)B_shared_local + (64 + (vthread_s16 * 4))))[0], C_local[((32 + i_c7) + (vthread_s16 * 2))]);
+      }
+    }
+  }
+  for (int i_inner_inner_inner = 0; i_inner_inner_inner < 2; ++i_inner_inner_inner) {
+    for (int vthread_s17 = 0; vthread_s17 < 16; ++vthread_s17) {
+      C[((((((((int)blockIdx.y) * 131072) + (((int)blockIdx.x) * 64)) + (((int)threadIdx.y) * 4096)) + ((int)threadIdx.x)) + (i_inner_inner_inner * 2048)) + (vthread_s17 * 4))] = C_local[(i_inner_inner_inner + (vthread_s17 * 2))];
+      C[((((((65536 + (((int)blockIdx.y) * 131072)) + (((int)blockIdx.x) * 64)) + (((int)threadIdx.y) * 4096)) + ((int)threadIdx.x)) + (i_inner_inner_inner * 2048)) + (vthread_s17 * 4))] = C_local[((32 + i_inner_inner_inner) + (vthread_s17 * 2))];
+    }
+  }
+}
+
+
+average time cost of 1000 runs = 0.82788 ms, 20751.6 GOPS.

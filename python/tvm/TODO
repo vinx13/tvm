@@ -1,0 +1,6 @@
+TODOs:
+
+1. TRT ~
+2. Remove redundant NNVM symbols ~
+3. fp32 bn with packed layout
+4. fp32 per-layer result

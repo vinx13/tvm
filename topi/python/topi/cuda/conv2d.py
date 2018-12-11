@@ -7,12 +7,12 @@ from tvm.contrib import cudnn
 from .. import nn, generic
 from ..util import get_const_tuple, traverse_inline
 
-from .conv2d_direct import schedule_direct_cuda
+from .conv2d_direct import schedule_direct_cuda, schedule_direct_hwcn_cuda
 from .conv2d_winograd import winograd_cuda, schedule_winograd_cuda
-from .conv2d_int8 import conv2d_NCHWc_int8, schedule_conv2d_NCHWc_int8
+from .conv2d_int8 import conv2d_NCHWc_int8, schedule_conv2d_NCHWc_int8, conv2d_NHWC_int8, schedule_conv2d_NHWC_int8, conv2d_HWCN_int8, schedule_conv2d_HWCN_int8, conv2d_HWNC_int8, schedule_conv2d_HWNC_int8, conv2d_HWCN_int8, schedule_conv2d_HWCN_int8
 
 
-@autotvm.register_topi_compute(nn.conv2d, ['cuda', 'gpu'], ['direct', 'winograd', 'int8'])
+@autotvm.register_topi_compute(nn.conv2d, ['cuda', 'gpu'], ['direct', 'winograd', 'int8', 'NHWC_int8', 'HWNC_int8','HWCN_int8'])
 def conv2d_cuda(cfg, data, kernel, strides, padding, dilation, layout='NCHW', out_dtype='float32'):
     """Conv2D operator for cuda backend.
 
@@ -90,17 +90,24 @@ def conv2d_cuda(cfg, data, kernel, strides, padding, dilation, layout='NCHW', ou
                              pre_computed=False)
     if cfg.template_key == 'int8':
         return conv2d_NCHWc_int8(cfg, data, kernel, strides, padding, dilation, layout, out_dtype)
-
+    if cfg.template_key == 'NHWC_int8':
+        return conv2d_NHWC_int8(cfg, data, kernel, strides, padding, dilation, layout, out_dtype)
+    if cfg.template_key == 'HWNC_int8':
+        return conv2d_HWNC_int8(cfg, data, kernel, strides, padding, dilation, layout, out_dtype)
+    if cfg.template_key == 'HWCN_int8':
+        return conv2d_HWCN_int8(cfg, data, kernel, strides, padding, dilation, layout, out_dtype)
     if layout == 'NCHW':
         return nn.conv2d_nchw(data, kernel, strides, padding, dilation, out_dtype)
-    elif layout == 'HWCN':
+    elif layout in ['HWCN']:
         return nn.conv2d_hwcn(data, kernel, strides, padding, dilation, out_dtype)
+    elif layout == 'HWNC':
+        return nn.conv2d_hwnc(data, kernel, strides, padding, dilation, out_dtype)
     else:
         raise ValueError("not support this layout {} yet".format(layout))
 
 
 @autotvm.register_topi_schedule(generic.schedule_conv2d_nchw, ["cuda", "gpu"],
-                                ["direct", 'winograd', "int8"])
+                                ["direct", 'winograd', "int8", "NHWC_int8", "HWCN_int8", "HWNC_int8"])
 def schedule_conv2d_nchw_cuda(cfg, outs):
     """TOPI schedule callback of conv2d for cuda gpu
 
@@ -128,10 +135,18 @@ def schedule_conv2d_nchw_cuda(cfg, outs):
     def _callback(op):
         if op.tag == 'conv2d_nchw':
             schedule_direct_cuda(cfg, s, op.output(0))
+        if op.tag == 'conv2d_hwcn':
+            schedule_direct_hwcn_cuda(cfg, s, op.output(0))
         if op.tag == 'conv2d_nchw_winograd':
             schedule_winograd_cuda(cfg, s, op.output(0), pre_computed=False)
         if op.tag == "conv2d_NCHWc_int8":
             schedule_conv2d_NCHWc_int8(cfg, s, op.output(0))
+        if op.tag == "conv2d_NHWC_int8":
+            schedule_conv2d_NHWC_int8(cfg, s, op.output(0))
+        if op.tag == "conv2d_HWNC_int8":
+            schedule_conv2d_HWNC_int8(cfg, s, op.output(0))
+        if op.tag == "conv2d_HWCN_int8":
+            schedule_conv2d_HWCN_int8(cfg, s, op.output(0))
 
     traverse_inline(s, outs[0].op, _callback)
     return s

@@ -186,6 +186,7 @@ class CompileEngine {
       // input array
       for (const IndexedGraph::NodeEntry& e : inode.inputs) {
         const tvm::Tensor& t = tensor_vec[idx.entry_id(e)];
+        LOG(INFO) << t;
         CHECK(t.defined());
         op_inputs.push_back(t);
       }
@@ -212,6 +213,8 @@ class CompileEngine {
         CHECK_EQ(out[i].ndim(), out_info[i].ndim()) << inode.source->op()->name;
         tvm::Tensor inferred_tensor = out[i];
         tvm::Tensor computed_tensor = out_info[i];
+        LOG(INFO) << inferred_tensor;
+        LOG(INFO) << computed_tensor;
         for (uint32_t j = 0; j < inferred_tensor->shape.size(); ++j) {
           if ((as_const_int(inferred_tensor->shape[j])) &&
               (as_const_int(computed_tensor->shape[j])))

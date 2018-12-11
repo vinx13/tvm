@@ -195,7 +195,7 @@ def conv2d_hwcn(Input, Filter, stride, padding, dilation, out_dtype=None):
         dilation_h, dilation_w = dilation
 
     in_height, in_width, in_channel, batch = Input.shape
-    kernel_h, kernel_w, channel, num_filter = Filter.shape
+    kernel_h, kernel_w, num_filter, channel = Filter.shape
     # compute the output shape
     dilated_kernel_h = (kernel_h - 1) * dilation_h + 1
     dilated_kernel_w = (kernel_w - 1) * dilation_w + 1
@@ -215,9 +215,78 @@ def conv2d_hwcn(Input, Filter, stride, padding, dilation, out_dtype=None):
         lambda yy, xx, ff, nn: tvm.sum(
             PaddedInput[yy * stride_h + ry * dilation_h, xx * stride_w + rx * dilation_w,
                         rc, nn].astype(out_dtype) *
-            Filter[ry, rx, rc, ff].astype(out_dtype), axis=[ry, rx, rc]),
+            Filter[ry, rx, ff, rc].astype(out_dtype), axis=[ry, rx, rc]),
         name="Conv2dOutput", tag="conv2d_hwcn")
     return Output
+
+
+def conv2d_hwnc(Input, Filter, stride, padding, dilation, out_dtype=None):
+    """Convolution operator in HWCN layout.
+
+    Parameters
+    ----------
+    Input : tvm.Tensor
+        4-D with shape [in_height, in_width, in_channel, batch]
+
+    Filter : tvm.Tensor
+        4-D with shape [filter_height, filter_width, in_channel, num_filter]
+
+    stride : int or a list/tuple of two ints
+        Stride size, or [stride_height, stride_width]
+
+    padding : int or str
+        Padding size, or ['VALID', 'SAME']
+
+    dilation: int or a list/tuple of two ints
+        dilation size, or [dilation_height, dilation_width]
+
+    Returns
+    -------
+    output : tvm.Tensor
+        4-D with shape [out_height, out_width, out_channel, batch]
+    """
+    if out_dtype is None:
+        out_dtype = Input.dtype
+    assert isinstance(stride, int) or len(stride) == 2
+    assert isinstance(dilation, int) or len(dilation) == 2
+
+    if isinstance(stride, int):
+        stride_h = stride_w = stride
+    else:
+        stride_h, stride_w = stride
+
+    if isinstance(dilation, int):
+        dilation_h = dilation_w = dilation
+    else:
+        dilation_h, dilation_w = dilation
+
+    in_height, in_width, batch, in_channel = Input.shape
+    kernel_h, kernel_w, num_filter, channel = Filter.shape
+    # compute the output shape
+    dilated_kernel_h = (kernel_h - 1) * dilation_h + 1
+    dilated_kernel_w = (kernel_w - 1) * dilation_w + 1
+    pad_top, pad_left, pad_down, pad_right = get_pad_tuple(
+        padding, (dilated_kernel_h, dilated_kernel_w))
+    out_channel = num_filter
+    out_height = simplify(
+        (in_height - dilated_kernel_h + pad_top + pad_down) // stride_h + 1)
+    out_width = simplify((in_width - dilated_kernel_w +
+                          pad_left + pad_right) // stride_w + 1)
+    pad_before = [pad_top, pad_left, 0, 0]
+    pad_after = [pad_down, pad_right, 0, 0]
+    PaddedInput = pad(Input, pad_before, pad_after, name="PaddedInput")
+    rc = tvm.reduce_axis((0, in_channel), name='rc')
+    ry = tvm.reduce_axis((0, kernel_h), name='ry')
+    rx = tvm.reduce_axis((0, kernel_w), name='rx')
+    Output = tvm.compute(
+        (out_height, out_width, out_channel, batch),
+        lambda yy, xx, ff, nn: tvm.sum(
+            PaddedInput[yy * stride_h + ry * dilation_h, xx * stride_w + rx * dilation_w,
+                        nn, rc].astype(out_dtype) *
+            Filter[ry, rx, ff, rc].astype(out_dtype), axis=[ry, rx, rc]),
+        name="Conv2dOutput", tag="conv2d_hwcn")
+    return Output
+
 
 
 def conv2d_nhwc(Input, Filter, stride, padding, dilation, out_dtype='float32'):

@@ -90,12 +90,12 @@ def compute_conv2d(attrs, inputs, _):
     kernel_layout = attrs["kernel_layout"]
     out_dtype = attrs["out_dtype"]
     out_dtype = inputs[0].dtype if out_dtype == "same" else out_dtype
-    assert layout in ["NCHW", "NHWC", "NCHW4c"]
+    assert layout in ["NCHW", "NHWC", "NCHW4c", "HWCN", "HWCN4c"]
     (dilation_h, dilation_w) = dilation
     if dilation_h < 1 or dilation_w < 1:
         raise ValueError("dilation should be positive value")
 
-    if groups == 1 and layout == 'NCHW4c' and inputs[0].dtype == 'int8':
+    if groups == 1 and ((layout == 'NCHW4c' and inputs[0].dtype == 'int8') or (layout in ['HWCN', 'HWCN4c'] and inputs[0].dtype == 'int8')):
         # pylint: disable=assignment-from-no-return
         out = topi.nn.conv2d(inputs[0], inputs[1], strides, padding,
                              dilation, layout, out_dtype=out_dtype)
@@ -122,8 +122,8 @@ def compute_conv2d(attrs, inputs, _):
 
     if attrs.get_bool("use_bias"):
         bias = inputs[2]
-        expand_axis = 1 if layout in ["NCHW", "NCHW4c"] else 0
-        bias = topi.expand_dims(bias, axis=expand_axis, num_newaxis=2)
+        expand_axis = 1
+        bias = topi.expand_dims(bias, axis=expand_axis, num_newaxis=2 if layout in ['NCHW','NCHW4c'] else 1)
         out = topi.add(out, bias)
     return out
 
@@ -148,6 +148,8 @@ def schedule_conv2d(attrs, outs, target):
             return topi.generic.schedule_depthwise_conv2d_nhwc(outs)
         elif layout in ["NCHW", "NCHW4c"]:
             return topi.generic.schedule_group_conv2d_nchw(outs)
+        elif layout in ["HWCN", "HWCN4c"]:
+            return topi.generic.schedule_conv2d_nchw(outs)
         else:
             raise ValueError("No compatible schedule")
 

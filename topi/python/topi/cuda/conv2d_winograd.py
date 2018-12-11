@@ -349,8 +349,14 @@ def _alter_conv2d_layout(attrs, inputs, tinfos):
     out_dtype = tinfos[0].dtype if out_dtype == "same" else out_dtype
 
     data, kernel = tinfos[0:2]
-    N, CI, H, W = get_const_tuple(data.shape)
-    CO, _, KH, KW = get_const_tuple(kernel.shape)
+    if layout == 'NCHW':
+        N, CI, H, W = get_const_tuple(data.shape)
+        CO, _, KH, KW = get_const_tuple(kernel.shape)
+    elif layout == 'HWCN':
+        H, W, CI, N = get_const_tuple(data.shape)
+        KH, KW, CO, _ = get_const_tuple(kernel.shape)
+    else:
+        raise ValueError("Unsupported layout {}".format(layout))
 
     dispatch_ctx = autotvm.DispatchContext.current
     target = tvm.target.current_target()
@@ -385,6 +391,30 @@ def _alter_conv2d_layout(attrs, inputs, tinfos):
                 [new_data, new_kernel, strides, padding, dilation, new_layout, out_dtype],
                 conv2d
             )
+            dispatch_ctx.update(target, new_workload, cfg)
+            return sym.conv2d(*copy_inputs, **new_attrs)
+
+        if cfg.template_key == 'HWCN_int8':
+            assert 'cuda' in target.keys
+            new_layout = 'HWCN4c'
+            new_attrs['layout'] = new_layout
+            new_attrs['out_layout'] = new_layout
+            new_attrs['kernel_layout'] = 'HWOI4o4i'
+            ic_block_factor = oc_block_factor = 4
+
+            # Store the same config for the altered operator (workload)
+            new_data = tvm.placeholder((H, W, CI // ic_block_factor, N, ic_block_factor),
+                                       dtype=data.dtype)
+            new_kernel = tvm.placeholder((KH, KW, CO // oc_block_factor, CI // ic_block_factor,
+                                          oc_block_factor, ic_block_factor),
+                                         dtype=kernel.dtype)
+            new_workload = autotvm.task.args_to_workload(
+                [new_data, new_kernel, strides, padding,
+                    dilation, new_layout, out_dtype],
+                conv2d
+            )
+
+            print(new_workload)
             dispatch_ctx.update(target, new_workload, cfg)
             return sym.conv2d(*copy_inputs, **new_attrs)
 
@@ -441,6 +471,7 @@ def _alter_conv2d_layout(attrs, inputs, tinfos):
             )
             dispatch_ctx.update(target, new_workload, cfg)
             return sym.conv2d(*copy_inputs, **new_attrs)
+
 
     # do nothing for depthwise convolution
     return None
