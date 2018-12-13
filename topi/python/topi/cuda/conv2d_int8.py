@@ -523,18 +523,17 @@ def conv2d_HWCN_int8(cfg, data, kernel, stride, padding, dilation, layout, out_d
             "Number of output channels should be multiple of {}".format(
                 oc_block_factor)
         packed_kernel = tvm.compute(
-            (kernel_h, kernel_w, out_channels // oc_block_factor, in_channel // ic_block_factor,
-             oc_block_factor, ic_block_factor),
-            lambda kh, kw, oc_chunk, ic_chunk, oc_block, ic_block:
-            kernel[kh, kw, oc_chunk * oc_block_factor + oc_block,
-                   ic_chunk * ic_block_factor + ic_block],
+            (kernel_h, kernel_w, in_channel // ic_block_factor, out_channels,
+             ic_block_factor),
+            lambda kh, kw, ic_chunk, oc, ic_block:
+            kernel[kh, kw, oc, ic_chunk * ic_block_factor + ic_block],
             name="packed_kernel")
     else:
         packed_data = data
         packed_kernel = kernel
 
     in_height, in_width, ic_chunk, batch, ic_block = get_const_tuple(packed_data.shape)
-    kernel_h, kernel_w, oc_chunk, ic_chunk, oc_block, ic_block = get_const_tuple(
+    kernel_h, kernel_w, ic_chunk, out_channel, ic_block = get_const_tuple(
         packed_kernel.shape)
 
     if isinstance(stride, int):
@@ -560,7 +559,7 @@ def conv2d_HWCN_int8(cfg, data, kernel, stride, padding, dilation, layout, out_d
     out_width = (in_width - (kernel_w - 1) * dilation_w -
                  1 + pad_left + pad_right) // stride_w + 1
 
-    oshape = (out_height, out_width, oc_chunk, batch, oc_block_factor)
+    oshape = (out_height, out_width, out_channel // oc_block_factor, batch, oc_block_factor)
 
     icc = tvm.reduce_axis((0, ic_chunk), name='ic')
     icb = tvm.reduce_axis((0, ic_block), name='ic')
@@ -570,7 +569,7 @@ def conv2d_HWCN_int8(cfg, data, kernel, stride, padding, dilation, layout, out_d
     conv = tvm.compute(oshape, lambda oh, ow, occ, n, ocb:
                        tvm.sum(pad_data[oh*stride_h+kh*dilation_h, ow*stride_w+kw*dilation_w, icc, n, icb]
                                .astype('int32') *
-                               packed_kernel[kh, kw, occ, icc, ocb, icb]
+                               packed_kernel[kh, kw, icc, ocb*oc_block_factor+occ, icb]
                                .astype('int32'),
                                axis=[kh, kw, icc, icb]))
 
@@ -579,7 +578,7 @@ def conv2d_HWCN_int8(cfg, data, kernel, stride, padding, dilation, layout, out_d
                          tag="conv2d_HWCN_int8")
 
     # num flop
-    num_flop = batch * oc_chunk * oc_block * out_height * out_width * \
+    num_flop = batch * out_channel * out_height * out_width * \
         ic_chunk * ic_block * kernel_h * kernel_w * 2
     cfg.add_flop(num_flop)
 
