@@ -674,10 +674,15 @@ def schedule_conv2d_HWCN_int8(cfg, s, output):
 
     s[conv].reorder(ryo, rxo, rco, ryi, rxi, rci, y, x, f, n, c, rc_block)
 
+    cfg.define_reorder("reorder_0", [ryo, rxo, rco], policy='all')
+    cfg["reorder_0"].apply(s, conv, [ryo, rxo, rco])
+    cfg["reorder_0"].apply(s, conv, [ryi, rxi, rci])
+
     s[conv].tensorize(rc_block, _dp4a)
 
-    s[AA].compute_at(s[conv], rco)
-    s[WW].compute_at(s[conv], rco)
+    cache_loc = [ryo, rxo, rco][cfg["reorder_0"].perm[-1]]
+    s[AA].compute_at(s[conv], cache_loc)
+    s[WW].compute_at(s[conv], cache_loc)
 
     # cooperative fetching
     for load in [AA, WW]:
