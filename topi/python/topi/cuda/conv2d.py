@@ -12,7 +12,8 @@ from .conv2d_winograd import winograd_cuda, schedule_winograd_cuda
 from .conv2d_int8 import conv2d_NCHWc_int8, schedule_conv2d_NCHWc_int8, conv2d_NHWC_int8, schedule_conv2d_NHWC_int8, conv2d_HWCN_int8, schedule_conv2d_HWCN_int8, conv2d_HWNC_int8, schedule_conv2d_HWNC_int8, conv2d_HWCN_int8, schedule_conv2d_HWCN_int8
 
 
-@autotvm.register_topi_compute(nn.conv2d, ['cuda', 'gpu'], ['direct', 'winograd', 'int8', 'NHWC_int8', 'HWNC_int8','HWCN_int8'])
+@autotvm.register_topi_compute(nn.conv2d, ['cuda', 'gpu'], ['direct', 'winograd', 'int8', 'NHWC_int8', 'HWNC_int8',
+    'HWCN_HWIO4i_int8', 'HWCN_HWOI4o4i_int8'])
 def conv2d_cuda(cfg, data, kernel, strides, padding, dilation, layout='NCHW', out_dtype='float32'):
     """Conv2D operator for cuda backend.
 
@@ -94,8 +95,10 @@ def conv2d_cuda(cfg, data, kernel, strides, padding, dilation, layout='NCHW', ou
         return conv2d_NHWC_int8(cfg, data, kernel, strides, padding, dilation, layout, out_dtype)
     if cfg.template_key == 'HWNC_int8':
         return conv2d_HWNC_int8(cfg, data, kernel, strides, padding, dilation, layout, out_dtype)
-    if cfg.template_key == 'HWCN_int8':
-        return conv2d_HWCN_int8(cfg, data, kernel, strides, padding, dilation, layout, out_dtype)
+    if cfg.template_key == 'HWCN_HWIO4i_int8':
+        return conv2d_HWCN_int8(cfg, data, kernel, strides, padding, dilation, layout, out_dtype, 'HWIO4i')
+    if cfg.template_key == 'HWCN_HWOI4o4i_int8':
+        return conv2d_HWCN_int8(cfg, data, kernel, strides, padding, dilation, layout, out_dtype, 'HWOI4o4i')
     if layout == 'NCHW':
         return nn.conv2d_nchw(data, kernel, strides, padding, dilation, out_dtype)
     elif layout in ['HWCN']:
@@ -107,7 +110,7 @@ def conv2d_cuda(cfg, data, kernel, strides, padding, dilation, layout='NCHW', ou
 
 
 @autotvm.register_topi_schedule(generic.schedule_conv2d_nchw, ["cuda", "gpu"],
-                                ["direct", 'winograd', "int8", "NHWC_int8", "HWCN_int8", "HWNC_int8"])
+                                ["direct", 'winograd', "int8", "NHWC_int8", "HWCN_HWOI4o4i_int8", "HWCN_HWIO4i_int8", "HWNC_int8"])
 def schedule_conv2d_nchw_cuda(cfg, outs):
     """TOPI schedule callback of conv2d for cuda gpu
 

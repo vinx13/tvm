@@ -195,7 +195,7 @@ def conv2d_hwcn(Input, Filter, stride, padding, dilation, out_dtype=None):
         dilation_h, dilation_w = dilation
 
     in_height, in_width, in_channel, batch = Input.shape
-    kernel_h, kernel_w, num_filter, channel = Filter.shape
+    kernel_h, kernel_w, channel, num_filter = Filter.shape
     # compute the output shape
     dilated_kernel_h = (kernel_h - 1) * dilation_h + 1
     dilated_kernel_w = (kernel_w - 1) * dilation_w + 1

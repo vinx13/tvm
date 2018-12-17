@@ -467,7 +467,7 @@ def schedule_conv2d_NHWC_int8(cfg, s, output):
     return s
 
 
-def conv2d_HWCN_int8(cfg, data, kernel, stride, padding, dilation, layout, out_dtype):
+def conv2d_HWCN_int8(cfg, data, kernel, stride, padding, dilation, layout, out_dtype, kernel_layout):
     """Convolution operator in NCHW[x]c layout for int8.
 
     Parameters
@@ -508,6 +508,7 @@ def conv2d_HWCN_int8(cfg, data, kernel, stride, padding, dilation, layout, out_d
     oc_block_factor = 4
 
     pre_computed = len(data.shape) == 5
+
     if not pre_computed:
         height, width, channels, batch = get_const_tuple(data.shape)
         assert channels % ic_block_factor == 0, \
@@ -517,24 +518,35 @@ def conv2d_HWCN_int8(cfg, data, kernel, stride, padding, dilation, layout, out_d
                                    ic_block_factor),
                                   lambda h, w, c, n, vc: data[h,w, c*ic_block_factor + vc, n],
                                   name="packed_data")
-        kernel_h, kernel_w, out_channels, in_channel = get_const_tuple(
-            kernel.shape)
-        assert out_channels % 4 == 0, \
+        kernel_h, kernel_w, in_channel, out_channel = get_const_tuple(kernel.shape)
+        assert out_channel % 4 == 0, \
             "Number of output channels should be multiple of {}".format(
                 oc_block_factor)
-        packed_kernel = tvm.compute(
-            (kernel_h, kernel_w, in_channel // ic_block_factor, out_channels,
-             ic_block_factor),
-            lambda kh, kw, ic_chunk, oc, ic_block:
-            kernel[kh, kw, oc, ic_chunk * ic_block_factor + ic_block],
-            name="packed_kernel")
+        if kernel_layout == "HWIO4i":
+            packed_kernel = tvm.compute(
+                (kernel_h, kernel_w, in_channel // ic_block_factor, out_channel, ic_block_factor),
+                lambda kh, kw, icc, oc, icb:
+                    kernel[kh, kw, icc * ic_block_factor + icb, oc],
+                name="packed_kernel")
+        elif kernel_layout == "HWOI4o4i":
+            packed_kernel = tvm.compute(
+                (kernel_h, kernel_w, out_channel // oc_block_factor,
+                in_channel // ic_block_factor, oc_block_factor, ic_block_factor),
+                lambda kh, kw, occ, icc, ocb, icb:
+                    kernel[kh, kw, icc * ic_block_factor + icb, occ * oc_block_factor + ocb],
+                name="packed_kernel")
     else:
         packed_data = data
         packed_kernel = kernel
 
     in_height, in_width, ic_chunk, batch, ic_block = get_const_tuple(packed_data.shape)
-    kernel_h, kernel_w, ic_chunk, out_channel, ic_block = get_const_tuple(
-        packed_kernel.shape)
+
+    if kernel_layout == "HWIO4i":
+        kernel_h, kernel_w, ic_chunk, out_channel, ic_block = get_const_tuple(
+            packed_kernel.shape)
+    elif kernel_layout == "HWOI4o4i":
+        kernel_h, kernel_w, oc_chunk, ic_chunk, oc_block, ic_block = get_const_tuple(packed_kernel.shape)
+        out_channel = oc_block * oc_chunk
 
     if isinstance(stride, int):
         stride_h = stride_w = stride
@@ -566,10 +578,18 @@ def conv2d_HWCN_int8(cfg, data, kernel, stride, padding, dilation, layout, out_d
     kh = tvm.reduce_axis((0, kernel_h), name='kh')
     kw = tvm.reduce_axis((0, kernel_w), name='kw')
 
-    conv = tvm.compute(oshape, lambda oh, ow, occ, n, ocb:
+    if kernel_layout == "HWIO4i":
+        conv = tvm.compute(oshape, lambda oh, ow, occ, n, ocb:
                        tvm.sum(pad_data[oh*stride_h+kh*dilation_h, ow*stride_w+kw*dilation_w, icc, n, icb]
                                .astype('int32') *
-                               packed_kernel[kh, kw, icc, ocb*oc_block_factor+occ, icb]
+                               packed_kernel[kh, kw, icc, occ*oc_block_factor+ocb, icb]
+                               .astype('int32'),
+                               axis=[kh, kw, icc, icb]))
+    elif kernel_layout == "HWOI4o4i":
+        conv = tvm.compute(oshape, lambda oh, ow, occ, n, ocb:
+                       tvm.sum(pad_data[oh*stride_h+kh*dilation_h, ow*stride_w+kw*dilation_w, icc, n, icb]
+                               .astype('int32') *
+                               packed_kernel[kh, kw, occ, icc, ocb, icb]
                                .astype('int32'),
                                axis=[kh, kw, icc, icb]))
 
