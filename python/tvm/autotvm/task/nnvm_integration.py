@@ -164,6 +164,15 @@ class TaskExtractEnv:
             s = topi.generic.schedule_conv2d_transpose_nchw([C])
             return s, [A, W, C]
 
+        @register("topi_nn_deformable_conv2d_nchw")
+        def _topi_nn_deformable_conv2d_nchw(*args, **kwargs):
+            assert not kwargs, "Do not support kwargs in template function call"
+            args = deserialize_args(args)
+            A, Offset, W = args[:3]
+            C = topi.nn.deformable_conv2d_nchw(*args, **kwargs)
+            s = topi.generic.schedule_deformable_conv2d_nchw([C])
+            return s, [A, Offset, W, C]
+
         @register("topi_nn_dense")
         def _topi_nn_dense(*args, **kwargs):
             assert not kwargs, "Do not support kwargs in template function call"
