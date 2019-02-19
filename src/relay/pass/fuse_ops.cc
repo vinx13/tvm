@@ -251,7 +251,8 @@ class IndexedForwardGraph::Creator : private ExprVisitor {
   void VisitExpr_(const TupleGetItemNode* op) final {
     CHECK(graph_.node_map.count(op));
     Node* node = graph_.node_map.at(op);
-    this->Update(op->tuple, node, kOpaque);
+    node->pattern = kInjective;
+    this->Update(op->tuple, node, kInjective);
     ExprVisitor::VisitExpr_(op);
     this->AddNode(op);
   }

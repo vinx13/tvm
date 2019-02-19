@@ -220,9 +220,46 @@ def test_tuple_strided_slice():
     print(zz.astext())
 
 
+def test_tuple_get_item():
+    """
+    Test fusion case where TupleGetItem node should be fused with other nodes
+    """
+    def before(dshape):
+        x = relay.var("x", shape=dshape)
+        split = relay.split(x, 2, axis=1)
+        y1 = relay.add(split[0], relay.const(1.0, 'float32'))
+        y2 = relay.nn.relu(split[1])
+        out = relay.concatenate([y1, y2], axis=1)
+        return relay.Function([x], out)
+
+    def expected(dshape):
+        x = relay.var("p0", shape=dshape)
+        split = relay.split(x, 2, axis=1)
+        y1 = relay.add(split[0], relay.const(1.0, 'float32'))
+        y2 = relay.nn.relu(split[1])
+        out = relay.concatenate([y1, y2], axis=1)
+        f0 = relay.Function([x], out)
+
+        x = relay.var("x", shape=dshape)
+        y = relay.Call(f0, [x])
+        return relay.Function([x], y)
+
+    dshape = (1, 2, 16)
+    z = before(dshape)
+    z = relay.ir_pass.infer_type(z)
+    zz = relay.ir_pass.fuse_ops(z, opt_level=0)
+    assert not relay.ir_pass.free_vars(zz)
+    zz = relay.ir_pass.fuse_ops(z, opt_level=2)
+    zz = relay.ir_pass.infer_type(zz)
+    assert not relay.ir_pass.free_vars(zz)
+    after = relay.ir_pass.infer_type(expected(dshape))
+    assert relay.ir_pass.alpha_equal(zz, after)
+
+
 if __name__ == "__main__":
     test_fuse_simple()
     test_conv2d_fuse()
     test_concatenate()
     test_tuple_root()
     test_tuple_strided_slice()
+    test_tuple_get_item()
