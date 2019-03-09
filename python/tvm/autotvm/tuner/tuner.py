@@ -7,7 +7,7 @@ import numpy as np
 from ..measure import MeasureInput, create_measure_batch
 
 from ..env import GLOBAL_SCOPE
-
+import cProfile
 logger = logging.getLogger('autotvm')
 
 class Tuner(object):
@@ -35,6 +35,8 @@ class Tuner(object):
         self.ttl = None
         self.n_trial = None
         self.early_stopping = None
+
+        self.pr = cProfile.Profile()
 
     def has_next(self):
         """Whether has next untried config in the space
@@ -70,6 +72,14 @@ class Tuner(object):
             result for measurement
         """
 
+    def print_profile_stat(self):
+        import StringIO
+        import pstats
+        s = StringIO.StringIO()
+        sortby = 'cumulative'
+        ps = pstats.Stats(self.pr, stream=s).sort_stats(sortby)
+        ps.print_stats()
+        print(s.getvalue())
 
     def tune(self, n_trial, measure_option, early_stopping=None, callbacks=()):
         """Begin tuning
@@ -89,6 +99,7 @@ class Tuner(object):
             with no return value. These callback functions will be called on
             every measurement pair. See autotvm/tuner/callback.py for some examples.
         """
+        self.pr.enable()
         measure_batch = create_measure_batch(self.task, measure_option)
         n_parallel = getattr(measure_batch, 'n_parallel', 1)
         early_stopping = early_stopping or 1e9
@@ -148,6 +159,8 @@ class Tuner(object):
 
         GLOBAL_SCOPE.in_tuning = False
         del measure_batch
+
+        self.pr.disable()
 
     def reset(self):
         """reset the status of tuner"""
