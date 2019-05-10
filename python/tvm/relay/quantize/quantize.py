@@ -18,16 +18,23 @@
 """Automatic quantization toolkit."""
 from __future__ import absolute_import
 import numpy as np
+import os
+import pickle
 
 from . import _quantize
 from .. import expr as _expr
+from .. import build_module as _build
 from .. import module as _module
 from .. import ir_pass as _ir_pass
 from .. import transform as _transform
 from .. import op as _op
 from ... import make as _make
+from ...contrib import graph_runtime
+from ... import context
 from ..base import NodeBase, register_relay_node
 
+
+load_scale = False
 
 class QAnnotateKind(object):
     """Denote the kind of annotation field, corresponding
@@ -35,6 +42,7 @@ class QAnnotateKind(object):
     INPUT = 1
     WEIGHT = 2
     ACTIVATION = 3
+    BIAS = 4
 
 
 def kind2str(kind):
@@ -43,6 +51,7 @@ def kind2str(kind):
         QAnnotateKind.INPUT: "input",
         QAnnotateKind.WEIGHT: "weight",
         QAnnotateKind.ACTIVATION: "activation",
+        QAnnotateKind.BIAS: "bias",
     }
     assert kind in str_map
     return str_map[kind]
@@ -67,9 +76,11 @@ class QConfig(NodeBase):
         "nbit_input": 8,
         "nbit_weight": 8,
         "nbit_activation": 32,
+        "nbit_bias": 32,
         "dtype_input": "int8",
         "dtype_weight": "int8",
         "dtype_activation": "int32",
+        "dtype_bias": "int32",
         "global_scale": 8.0,
         "skip_k_conv": 1,
         "skip_conv_layers": None,
@@ -180,7 +191,180 @@ def _set_conv_counter(n):
     CONV_COUNTER = n
 
 
-def calibrate(graph, mod=None, ctx=None):
+def arr_hist(arrs):
+    arr = np.concatenate(arrs).reshape(-1)
+    min_val = np.min(arr)
+    max_val = np.max(arr)
+    th = max(abs(min_val), abs(max_val))
+    num_bins = 8001
+    hist, edges = np.histogram(arr, bins=num_bins, range=(-th, th))
+    return (hist, edges, min_val, max_val)
+
+
+def collect_stats(graph, dataset):
+    if os.path.exists('histogram.pkl'):
+        with open('histogram.pkl', 'rb') as f:
+            return pickle.load(f)
+
+    quantize_op = _op.get("relay.op.annotation.simulated_quantize")
+    quantized_exprs = []
+
+    def visit_func(expr):
+        """Internal visit function"""
+        if isinstance(expr, _expr.Call) and expr.op == quantize_op and expr.attrs.kind not in [QAnnotateKind.WEIGHT, QAnnotateKind.BIAS]:
+            quantized_exprs.append(expr.args[0])
+
+    _ir_pass.post_order_visit(graph, visit_func)
+    if len(quantized_exprs) == 0:
+        return []
+    graph = _expr.Function(graph.params, _expr.Tuple(quantized_exprs))
+
+    graph_json, lib, params = _build.build(graph, 'cuda')
+    module = graph_runtime.create(graph_json, lib, context('cuda', 0))
+    module.set_input(**params)
+
+    num_outputs = module.get_num_outputs()
+    outputs = [[] for i in range(num_outputs)]
+
+    for batch_id, batch in enumerate(dataset):
+        print('batch {}..'.format(batch_id))
+        module.set_input(**batch)
+        module.run()
+        for i in range(num_outputs):
+            output = module.get_output(i).asnumpy()
+            outputs[i].append(output)
+
+    result = list(map(arr_hist, outputs))
+    with open('histogram.pkl', 'wb') as f:
+        pickle.dump(result, f)
+    return result
+
+
+from scipy import stats
+def _smooth_distribution(p, eps=0.0001):
+    """Given a discrete distribution (may have not been normalized to 1),
+    smooth it by replacing zeros with eps multiplied by a scaling factor and taking the
+    corresponding amount off the non-zero values.
+    Ref: http://web.engr.illinois.edu/~hanj/cs412/bk3/KL-divergence.pdf
+    """
+    is_zeros = (p == 0).astype(np.float32)
+    is_nonzeros = (p != 0).astype(np.float32)
+    n_zeros = is_zeros.sum()
+    n_nonzeros = p.size - n_zeros
+    if not n_nonzeros:
+        raise ValueError('The discrete probability distribution is malformed. All entries are 0.')
+    eps1 = eps * float(n_zeros) / float(n_nonzeros)
+    assert eps1 < 1.0, 'n_zeros=%d, n_nonzeros=%d, eps1=%f' % (n_zeros, n_nonzeros, eps1)
+    hist = p.astype(np.float32)
+    hist += eps * is_zeros + (-eps1) * is_nonzeros
+    assert (hist <= 0).sum() == 0
+    return hist
+
+
+def _get_optimal_threshold(profile, num_bins=8001, num_quantized_bins=255):
+    """Given a dataset, find the optimal threshold for quantizing it.
+    The reference distribution is `q`, and the candidate distribution is `p`.
+    `q` is a truncated version of the original distribution.
+
+    Ref: http://on-demand.gputechconf.com/gtc/2017/presentation/s7310-8-bit-inference-with-tensorrt.pdf
+    """
+    #assert isinstance(arr, np.ndarray)
+    hist, hist_edges, min_val, max_val = profile
+    th = max(abs(min_val), abs(max_val))
+
+    zero_bin_idx = num_bins // 2
+    num_half_quantized_bins = num_quantized_bins // 2
+    assert np.allclose(hist_edges[zero_bin_idx] + hist_edges[zero_bin_idx + 1],
+                       0, rtol=1e-5, atol=1e-7)
+
+    thresholds = np.zeros(num_bins // 2 + 1 - num_quantized_bins // 2)
+    divergence = np.zeros_like(thresholds)
+    quantized_bins = np.zeros(num_quantized_bins, dtype=np.int32)
+    # i means the number of bins on half axis excluding the zero bin.
+    for i in range(num_quantized_bins // 2,
+                   num_bins // 2 + 1):
+        p_bin_idx_start = zero_bin_idx - i
+        p_bin_idx_stop = zero_bin_idx + i + 1
+        thresholds[i - num_half_quantized_bins] = hist_edges[p_bin_idx_stop]
+        sliced_nd_hist = hist[p_bin_idx_start:p_bin_idx_stop]
+
+        # generate reference distribution p
+        p = sliced_nd_hist.copy()
+        assert p.size % 2 == 1
+        assert p.size >= num_quantized_bins
+        # put left outlier count in p[0]
+        left_outlier_count = np.sum(hist[0:p_bin_idx_start])
+        p[0] += left_outlier_count
+        # put right outlier count in p[-1]
+        right_outlier_count = np.sum(hist[p_bin_idx_stop:])
+        p[-1] += right_outlier_count
+        # is_nonzeros[k] indicates whether hist[k] is nonzero
+        is_nonzeros = (p != 0).astype(np.int32)
+
+        # calculate how many bins should be merged to generate quantized distribution q
+        num_merged_bins = sliced_nd_hist.size // num_quantized_bins
+        # merge hist into num_quantized_bins bins
+        for j in range(num_quantized_bins):
+            start = j * num_merged_bins
+            stop = start + num_merged_bins
+            quantized_bins[j] = sliced_nd_hist[start:stop].sum()
+        quantized_bins[-1] += sliced_nd_hist[num_quantized_bins * num_merged_bins:].sum()
+        # expand quantized_bins into p.size bins
+        q = np.zeros(sliced_nd_hist.size, dtype=np.float32)
+        for j in range(num_quantized_bins):
+            start = j * num_merged_bins
+            if j == num_quantized_bins - 1:
+                stop = len(is_nonzeros)
+            else:
+                stop = start + num_merged_bins
+            norm = is_nonzeros[start:stop].sum()
+            if norm != 0:
+                q[start:stop] = float(quantized_bins[j]) / float(norm)
+        q[p == 0] = 0
+        p = _smooth_distribution(p)
+        # There is a chance that q is an invalid probability distribution.
+        try:
+            q = _smooth_distribution(q)
+        except ValueError:
+            divergence[i - num_half_quantized_bins] = float("inf")
+        divergence[i - num_half_quantized_bins] = stats.entropy(p, q)
+
+    min_divergence_idx = np.argmin(divergence)
+    min_divergence = divergence[min_divergence_idx]
+    opt_th = thresholds[min_divergence_idx]
+    return min_val, max_val, min_divergence, opt_th
+# pylint: enable=line-too-long
+
+def power2_scale(arr):
+    """calculate weight scale with nearest mode-2 scale"""
+    if not isinstance(arr, np.ndarray):
+        arr = arr.asnumpy()
+    val = np.amax(np.abs(arr))
+    return 2**np.math.ceil(np.math.log(val, 2)) if val > 0 else 1.0
+
+
+def act_power2_scale(profile):
+    _, _, min_val, max_val = profile
+    th = max(abs(min_val), abs(max_val))
+    return 2**np.math.ceil(np.math.log(th, 2)) if th > 0 else 1.0
+
+def max_scale(arr):
+    if not isinstance(arr, np.ndarray):
+        arr = arr.asnumpy()
+    val = np.amax(np.abs(arr))
+    return val
+
+def act_kld(profile):
+    _, _, _, val = _get_optimal_threshold(profile, num_bins=8001, num_quantized_bins=255)
+    return val if val > 0 else 1.0
+    # round kld result to power-of-2
+    # return 2**np.math.ceil(np.math.log(val, 2)) if val > 0 else 1.0
+
+def act_global(profile):
+    return 8.0
+
+
+def calibrate(graph, mod=None, ctx=None, dataset=None):
     """The calibrate procedure will try to calculate the content of
     dom_scale, nbit, clip_min, clip_max for every `simulated_quantize`
     operator.
@@ -201,14 +385,21 @@ def calibrate(graph, mod=None, ctx=None):
     ret: Function
         The graph after calibration
     """
-    def power2_scale(arr):
-        """calculate weight scale with nearest mode-2 scale"""
-        val = np.amax(np.abs(arr.asnumpy()))
-        return 2**np.math.ceil(np.math.log(val, 2)) if val > 0 else 1.0
+
+    #fcalib_act = act_power2_scale
+    #fcalib_act = act_global
+    fcalib_act = act_kld
+    #fcalib_weight = power2_scale
+    fcalib_weight = max_scale
 
     cfg = current_qconfig()
     const_params = {}
     quantize_op = _op.get("relay.op.annotation.simulated_quantize")
+
+    outputs = None
+    scales = None
+
+    counter = [0]
 
     def visit_func(expr):
         """Internal visit function"""
@@ -220,23 +411,66 @@ def calibrate(graph, mod=None, ctx=None):
 
             valid_bit = nbit - attrs.sign
 
-            if kind == QAnnotateKind.WEIGHT:
+            if kind in [QAnnotateKind.WEIGHT, QAnnotateKind.BIAS]:
+                if outputs is not None:
+                    # this is the second time to reach here, scales have been calculated
+                    return
                 var = expr.args[0]
                 assert isinstance(var, _expr.Constant)
-                scale = power2_scale(var.data)
+                scale = fcalib_weight(var.data)
+                print('weight scale: {}'.format(scale))
             else:
-                scale = cfg.global_scale
+                if outputs is not None:
+                    scale = scales[counter[0]]
+                    counter[0] += 1
+                    print('{} / {} ...'.format(counter[0], len(outputs)))
+                    print('act scale: {}'.format(scale))
+                else:
+                    scale = cfg.global_scale
 
             def _make_const(val):
                 return _expr.const(val, 'float32')
 
             valid_range = 2**valid_bit
             const_params[ndom_scale] = _make_const(scale / valid_range)
+            if kind in [QAnnotateKind.BIAS]:
+                const_params[ndom_scale] = _make_const(scale / (2**15))
             const_params[nclip_min] = _make_const(- (valid_range - 1))
             const_params[nclip_max] = _make_const((valid_range - 1))
 
     _ir_pass.post_order_visit(graph, visit_func)
-    return _expr.bind(graph, const_params)
+    original_graph = graph
+    graph = _expr.bind(original_graph, const_params)
+
+    if dataset is not None:
+        global load_scale
+
+        print('Calibrating on dataset')
+        outputs = collect_stats(graph, dataset)
+
+        if load_scale:
+            with open('scale.pkl', 'rb') as f:
+                scales = pickle.load(f)
+            print(scales)
+            # for i in range(len(scales)):
+            #     scales[i] = 2**np.math.ceil(np.math.log(scales[i], 2))
+            # print(scales)
+        else:
+            scales = []
+            for profile in outputs:
+                print(len(scales)+1)
+                scales.append(fcalib_act(profile))
+
+            print('scales')
+            print(scales)
+            with open('scale.pkl', 'wb') as f:
+                pickle.dump(scales, f)
+
+        _ir_pass.post_order_visit(original_graph, visit_func)
+        assert counter[0] == len(outputs)
+        graph = _expr.bind(original_graph, const_params)
+
+    return graph
 
 
 def annotate():
@@ -322,7 +556,9 @@ def quantize(graph, params=None, dataset=None):
                                       _transform.CanonicalizeOps(),
                                       _transform.FoldConstant()])
 
-    calibrate_pass = _transform.function_pass(calibrate, opt_level=1,
+    def _calibrate(*args, **kwargs):
+        return calibrate(*args, dataset=dataset, **kwargs)
+    calibrate_pass = _transform.function_pass(_calibrate, opt_level=1,
                                               name="QuantizeCalibrate")
     _set_conv_counter(0)  # reset counter
     quantize_seq = _transform.Sequential([annotate(),

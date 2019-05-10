@@ -35,7 +35,8 @@ def simulated_quantize_compute(attrs, inputs, out_type, target):
     """Compiler for simulated_quantize."""
     assert len(inputs) == 4
     assert attrs.sign
-    assert attrs.rounding == "round"
+    if attrs.rounding == "origin":
+        return [topi.identity(inputs[0])]
 
     data, scale, clip_min, clip_max = inputs
 
@@ -117,7 +118,7 @@ def register_annotate_function(op_name, frewrite=None, level=10):
 
 
 @register_func("relay.quantize.attach_simulated_quantize")
-def attach_simulated_quantize(data, kind, sign=True, rounding="round"):
+def attach_simulated_quantize(data, kind, sign=True, rounding="origin"):
     """Attach a simulated quantize operation after input data expr.
 
     Parameters
@@ -225,7 +226,7 @@ def multiply_rewrite(ref_call, new_args, ctx):
         if lhs_kind == QAnnotateKind.ACTIVATION:
             lhs_expr = attach_simulated_quantize(lhs_expr, QAnnotateKind.INPUT)
         # quantize rhs to WEIGHT field
-        rhs_expr = attach_simulated_quantize(rhs_expr, QAnnotateKind.WEIGHT)
+        rhs_expr = attach_simulated_quantize(rhs_expr, QAnnotateKind.BIAS)
         expr = _forward_op(ref_call, [lhs_expr, rhs_expr])
         return QAnnotateExpr(expr, QAnnotateKind.ACTIVATION)
     raise ValueError

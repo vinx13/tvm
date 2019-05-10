@@ -178,9 +178,9 @@ inline Expr MulAndDiv(Expr data, float s1, float s2) {
   } else if (static_cast<int>(factor) == factor) {
     return Multiply(data, MakeConstantScalar(cfg->dtype_activation, factor));
   } else {
-    LOG(FATAL) << "fall back to float computation";
+    // LOG(FATAL) << "fall back to float computation";
     data = Cast(data, Float(32));
-    return Multiply(data, MakeConstantScalar(Float(32), factor));
+	return Cast(Round(Multiply(data, MakeConstantScalar(Float(32), factor))), Int(32));
   }
 }
 
@@ -190,7 +190,7 @@ Expr QuantizeRealize(const Call& ref_call,
   const QConfig& cfg = QConfig::Current();
   // do not handle data type cast
   const auto param = ref_call->attrs.as<SimulatedQuantizeAttrs>();
-  CHECK_EQ(param->rounding, "round");
+  // CHECK_EQ(param->rounding, "round");
 
   Expr dom_scale = new_args[1];
   Expr clip_min = new_args[2];
@@ -327,11 +327,7 @@ Expr MulRealize(const Call& ref_call,
     Expr rdata = rhs->data;
 
     DataType dtype = cfg->dtype_activation;
-    if (lhs->dtype == Float(32)) {
-      ldata = Cast(ldata, dtype);
-    } else {
-      CHECK_EQ(lhs->dtype, dtype);
-    }
+    ldata = Cast(ldata, dtype);
     if (rhs->dtype == Float(32)) {
       rdata = Cast(rdata, dtype);
     } else {
@@ -342,7 +338,7 @@ Expr MulRealize(const Call& ref_call,
     Expr dom_scale = FoldConstant(Multiply(lhs->dom_scale, rhs->dom_scale));
     return QRealizeIntExprNode::make(ret, dom_scale, dtype);
   }
-  CHECK(!new_args[0]->derived_from<TempExprNode>() && !new_args[1]->derived_from<TempExprNode>());
+  // CHECK(!new_args[0]->derived_from<TempExprNode>() && !new_args[1]->derived_from<TempExprNode>());
   return Expr(nullptr);
 }
 
@@ -424,7 +420,7 @@ Expr AddRealize(const Call& ref_call,
     Expr ret = ForwardOp(ref_call, ret_args);
     return QRealizeIntExprNode::make(ret, dom_scale, dtype);
   }
-  CHECK(!new_args[0]->derived_from<TempExprNode>() && !new_args[1]->derived_from<TempExprNode>());
+  // CHECK(!new_args[0]->derived_from<TempExprNode>() && !new_args[1]->derived_from<TempExprNode>());
   return Expr(nullptr);
 }
 
@@ -571,6 +567,7 @@ TVM_STATIC_IR_FUNCTOR(IRPrinter, vtable)
   p->stream << "nbit_input=" << op->nbit_input << ", ";
   p->stream << "nbit_weight=" << op->nbit_weight << ", ";
   p->stream << "nbit_activation=" << op->nbit_activation << ", ";
+  p->stream << "nbit_bias=" << op->nbit_bias << ", ";
   p->stream << "global_scale=" << op->global_scale << ", ";
   p->stream << "skip_k_conv==" << op->skip_k_conv << ", ";
   p->stream << "skip_conv_layers==" << op->skip_conv_layers << ", ";
