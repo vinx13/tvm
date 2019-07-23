@@ -901,5 +901,130 @@ TVM_REGISTER_API("relay.op.nn._make.deformable_conv2d")
 .set_body_typed(MakeDeformableConv2D);
 
 
+// relay.nn.conv2d_backward_data
+
+TVM_REGISTER_NODE_TYPE(Conv2DBackwardDataAttrs);
+
+bool Conv2DBackwardDataRel(const Array<Type>& types,
+                       int num_inputs,
+                       const Attrs& attrs,
+                       const TypeReporter& reporter) {
+  CHECK_EQ(types.size(), 3);  // weight, dy, dx
+  const auto* dy = types[1].as<TensorTypeNode>();
+  CHECK(dy != nullptr);
+  const auto* weight = types[0].as<TensorTypeNode>();
+  CHECK(weight != nullptr);
+  const auto* param = attrs.as<Conv2DBackwardDataAttrs>();
+  CHECK(param != nullptr);
+  reporter->Assign(types[2], TensorTypeNode::make(param->data_shape, dy->dtype));
+  return true;
+}
+
+RELAY_REGISTER_OP("nn.conv2d_backward_data")
+.describe(R"code(Compute the gradient of conv2d with respect to the input of the convolution.
+)code" TVM_ADD_FILELINE)
+.set_attrs_type_key("relay.attrs.Conv2DBackwardDataAttrs")
+.set_num_inputs(2)
+.add_argument("data", "4D Tensor", "Input data.")
+.add_argument("weight", "4D Tensor", "Filter.")
+.add_type_rel("Conv2DBackwardDataRel", Conv2DBackwardDataRel);
+
+// Positional relay function to create conv2d_backward_data operator
+// used by frontend FFI.
+Expr MakeConv2DBackwardData(
+                Expr weight,
+                Expr out_grad,
+                Array<IndexExpr> data_shape,
+                Array<IndexExpr> strides,
+                Array<IndexExpr> padding,
+                Array<IndexExpr> dilation,
+                int groups,
+                IndexExpr channels,
+                Array<IndexExpr> kernel_size,
+                std::string data_layout,
+                std::string kernel_layout,
+                std::string out_layout,
+                DataType out_dtype) {
+  auto attrs = make_node<Conv2DBackwardDataAttrs>();
+  attrs->data_shape = std::move(data_shape);
+  attrs->strides = std::move(strides);
+  attrs->padding = std::move(padding);
+  attrs->dilation = std::move(dilation);
+  attrs->groups = groups;
+  attrs->channels = std::move(channels);
+  attrs->kernel_size = std::move(kernel_size);
+  attrs->data_layout = std::move(data_layout);
+  attrs->kernel_layout = std::move(kernel_layout);
+  attrs->out_layout = std::move(out_layout);
+  attrs->out_dtype = std::move(out_dtype);
+  static const Op& op = Op::Get("nn.conv2d_backward_data");
+  return CallNode::make(op, {weight, out_grad}, Attrs(attrs), {});
+}
+
+TVM_REGISTER_API("relay.op.nn._make.conv2d_backward_data")
+.set_body_typed(MakeConv2DBackwardData);
+
+
+// relay.nn.conv2d_backward_weight
+
+TVM_REGISTER_NODE_TYPE(Conv2DBackwardWeightAttrs);
+
+bool Conv2DBackwardWeightRel(const Array<Type>& types,
+                         int num_inputs,
+                         const Attrs& attrs,
+                         const TypeReporter& reporter) {
+  CHECK_EQ(types.size(), 3);  // x, dy, dw
+  const auto* data = types[0].as<TensorTypeNode>();
+  CHECK(data != nullptr);
+  const auto* dy = types[1].as<TensorTypeNode>();
+  CHECK(dy != nullptr);
+  const auto* param = attrs.as<Conv2DBackwardWeightAttrs>();
+  CHECK(param != nullptr);
+  reporter->Assign(types[2], TensorTypeNode::make(param->weight_shape, dy->dtype));
+  return true;
+}
+
+RELAY_REGISTER_OP("nn.conv2d_backward_weight")
+.describe(R"code(Compute the gradient of conv2d with respect to the weight of the convolution.
+)code" TVM_ADD_FILELINE)
+.set_attrs_type_key("relay.attrs.Conv2DBackwardWeightAttrs")
+.set_num_inputs(2)
+.add_argument("data", "4D Tensor", "Input data.")
+.add_argument("weight", "4D Tensor", "Filter.")
+.add_type_rel("Conv2DBackwardWeightRel", Conv2DBackwardWeightRel);
+
+Expr MakeConv2DBackwardWeight(Expr data,
+                              Expr out_grad,
+                              Array<IndexExpr> weight_shape,
+                              Array<IndexExpr> strides,
+                              Array<IndexExpr> padding,
+                              Array<IndexExpr> dilation,
+                              int groups,
+                              IndexExpr channels,
+                              Array<IndexExpr> kernel_size,
+                              std::string data_layout,
+                              std::string kernel_layout,
+                              std::string out_layout,
+                              DataType out_dtype) {
+  auto attrs = make_node<Conv2DBackwardWeightAttrs>();
+  attrs->weight_shape = std::move(weight_shape);
+  attrs->strides = std::move(strides);
+  attrs->padding = std::move(padding);
+  attrs->dilation = std::move(dilation);
+  attrs->groups = groups;
+  attrs->channels = std::move(channels);
+  attrs->kernel_size = std::move(kernel_size);
+  attrs->data_layout = std::move(data_layout);
+  attrs->kernel_layout = std::move(kernel_layout);
+  attrs->out_layout = std::move(out_layout);
+  attrs->out_dtype = std::move(out_dtype);
+  static const Op& op = Op::Get("nn.conv2d_backward_weight");
+  return CallNode::make(op, {data, out_grad}, Attrs(attrs), {});
+}
+
+TVM_REGISTER_API("relay.op.nn._make.conv2d_backward_weight")
+.set_body_typed(MakeConv2DBackwardWeight);
+
+
 }  // namespace relay
 }  // namespace tvm

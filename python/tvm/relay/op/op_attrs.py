@@ -261,3 +261,12 @@ class MaxPool2DAttrs(Attrs):
 @register_relay_attr_node
 class AvgPool2DAttrs(Attrs):
     """Attributes used in avg_pool2d operators"""
+
+
+class Conv2DBackwardDataAttrs(Attrs):
+    """Attributes used in conv2d_backward_data"""
+
+
+@register_relay_attr_node
+class Conv2DBackwardWeightAttrs(Attrs):
+    """Attributes used in conv2d_backward_weight"""

@@ -152,3 +152,69 @@ def schedule_conv2d_nchw_cuda(cfg, outs):
 
     traverse_inline(s, outs[0].op, _callback)
     return s
+
+
+#@nn.conv2d_backward_data.register(['cuda', 'gpu'])
+def conv2d_backward_data(kernel, out_grad, data_shape, strides, padding, dilation, layout='NCHW', out_dtype='float32'):
+    if True: # check cudnn
+        if layout == 'NCHW':
+            tensor_format = 0 # CUDNN_TENSOR_NCHW
+            N, _, H, W = get_const_tuple(data_shape)
+        elif layout == 'NHWC':
+            tensor_format = 1 # CUDNN_TENSOR_NHWC
+            N, H, W, _ = get_const_tuple(data_shape)
+        else:
+            raise ValueError("Unsupported layout %s in cudnn" % layout)
+        CO, CI, KH, KW = get_const_tuple(kernel.shape)
+
+        # handle dilation
+        stride_h, stride_w = (strides, strides) if isinstance(strides, int) else strides
+        pad_h, pad_w = (padding, padding) if isinstance(padding, int) else padding
+        dilation_h, dilation_w = (dilation, dilation) if isinstance(dilation, int) else dilation
+
+        return cudnn.conv2d_backward_data(kernel,
+                                          out_grad,
+                                          data_shape,
+                                          stride_h,
+                                          stride_w,
+                                          pad_h,
+                                          pad_w,
+                                          dilation_h,
+                                          dilation_w,
+                                          conv_mode=1,
+                                          tensor_format=tensor_format,
+                                          algo=-1)  # let CUDNN choose the best algo
+
+
+#@nn.conv2d_backward_filter.register(['cuda', 'gpu'])
+def conv2d_backward_filter(data, out_grad, strides, padding, dilation, layout='NCHW', out_dtype='float32'):
+    if True: # check cudnn
+        if layout == 'NCHW':
+            tensor_format = 0 # CUDNN_TENSOR_NCHW
+            N, CI, H, W = get_const_tuple(data.shape)
+        elif layout == 'NHWC':
+            tensor_format = 1 # CUDNN_TENSOR_NHWC
+            N, H, W, CO = get_const_tuple(data.shape)
+        else:
+            raise ValueError("Unsupported layout %s in cudnn" % layout)
+        #CO, CI, KH, KW = get_const_tuple(kernel.shape)
+        CO, _, _, _ = get_const_tuple(out_grad.shape)
+        KH = KW = 3 # FIXME
+
+        # handle dilation
+        stride_h, stride_w = (strides, strides) if isinstance(strides, int) else strides
+        pad_h, pad_w = (padding, padding) if isinstance(padding, int) else padding
+        dilation_h, dilation_w = (dilation, dilation) if isinstance(dilation, int) else dilation
+
+        return cudnn.conv2d_backward_filter(data,
+                                            out_grad,
+                                            stride_h,
+                                            stride_w,
+                                            pad_h,
+                                            pad_w,
+                                            dilation_h,
+                                            dilation_w,
+                                            conv_mode=1,
+                                            tensor_format=tensor_format,
+                                            algo=-1)  # let CUDNN choose the best algo
+

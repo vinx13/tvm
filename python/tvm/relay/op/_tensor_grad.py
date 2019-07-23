@@ -17,12 +17,18 @@
 #pylint: disable=invalid-name, unused-argument
 """Backend compiler related feature registration"""
 from __future__ import absolute_import
-from ..expr import const, Tuple, TupleGetItem
+from ..expr import const, Tuple, TupleGetItem, TupleWrapper
 from .op import register_gradient
-from .transform import collapse_sum_like, broadcast_to_like, where
-from .tensor import exp, negative, power, less, cos, sin
+from .reduce import sum
+from .transform import collapse_sum_like, broadcast_to_like, reshape_like, transpose, where, take, reshape, tile
+from . import nn as _nn
+from .nn import dense, avg_pool2d_grad
+from .tensor import exp, negative, power, less, log, shape_of
 from .tensor import zeros_like, ones_like
 from . import nn as _nn
+import topi
+from topi.util import get_const_tuple
+from topi.nn.util import get_pad_tuple
 
 
 @register_gradient("log")
@@ -160,6 +166,7 @@ def clip_grad(orig, grad):
     ones = ones_like(x)
     return [where(less(x, a_mins), zeros, where(less(a_maxs, x), zeros, ones * grad))]
 
+
 @register_gradient("nn.max_pool2d")
 def max_pool2d_grad(orig, grad):
     attrs = orig.attrs
@@ -167,6 +174,7 @@ def max_pool2d_grad(orig, grad):
                                     strides=attrs.strides, padding=attrs.padding,
                                     layout=attrs.layout, ceil_mode=attrs.ceil_mode)
     return [pool_grad]
+
 
 @register_gradient("nn.avg_pool2d")
 def avg_pool2d_grad(orig, grad):
@@ -187,3 +195,89 @@ def concatenate_grad(orig, grad):
     # Assume only two element in tuple rn.
     # In the real implementation, concatenate_grad probably need to be implemented by an operator.
     return [Tuple([zeros_like(x), zeros_like(y)])]
+
+# WIP by @vinx13
+# confident
+@register_gradient("nn.dropout")
+def dropout_grad(orig, grad):
+    mask = TupleWrapper(orig, 2)[1]
+    return [grad * mask]
+
+@register_gradient("nn.batch_flatten")
+def batch_flatten_grad(orig, grad):
+    data = orig.args[0]
+    return [reshape_like(grad, data)]
+
+@register_gradient("expand_dims")
+def expand_dims_grad(orig, grad):
+    data = orig.args[0]
+    return [reshape_like(grad, data)]
+
+@register_gradient("squeeze")
+def squeeze_grad(orig, grad):
+    data = orig.args[0]
+    return [reshape_like(grad, data)]
+
+# untested
+@register_gradient("nn.dense")
+def dense_grad(orig, grad):
+    data, weight = orig.args
+    return [collapse_sum_like(dense(grad, transpose(weight)), data),
+            collapse_sum_like(transpose(dense(transpose(data), transpose(grad))), weight)]
+
+
+@register_gradient("nn.conv2d")
+def conv2d_grad(orig, grad):
+    data_orig = orig.args[0]
+    out_grad = grad
+
+    attrs = orig.attrs
+    data, weight = orig.args
+    data_shape = get_const_tuple(data.checked_type.shape)
+    weight_shape = get_const_tuple(weight.checked_type.shape)
+    _, _, grad_h, grad_w = get_const_tuple(orig.checked_type.shape)
+    batch, in_channel, in_h, in_w = data_shape
+    out_channel, _, filter_h, filter_w = weight_shape
+
+    # infer output_padding
+    fpad_top, fpad_left, fpad_bottom, fpad_right = get_pad_tuple(get_const_tuple(attrs.padding), (filter_h, filter_w))
+    stride_h, stride_w = get_const_tuple(attrs.strides)
+    dilation_h, dilation_w = get_const_tuple(attrs.dilation)
+    out_h = (grad_h - 1) * stride_h - fpad_top - fpad_bottom + filter_h
+    out_w = (grad_w - 1) * stride_w - fpad_left - fpad_right + filter_w
+    output_padding = (in_h - out_h, in_w - out_w)
+
+    backward_data = _nn.conv2d_transpose(grad, weight, 
+                                         strides=attrs.strides, 
+                                         padding=attrs.padding, 
+                                         dilation=attrs.dilation, 
+                                         groups=attrs.groups, 
+                                         data_layout=attrs.data_layout, 
+                                         kernel_layout=attrs.kernel_layout, 
+                                         output_padding=output_padding,
+                                         out_dtype=attrs.out_dtype)
+
+    grad = tile(grad, [1, in_channel // attrs.groups, 1, 1])
+    grad = reshape(grad, [-1, 1, 0, 0])
+    data = reshape(data, [1, -1, 0, 0])
+    backward_weight = _nn.conv2d(data, grad,
+                                 strides=attrs.dilation,
+                                 padding=attrs.padding,
+                                 dilation=attrs.strides,
+                                 groups=in_channel * batch)
+    backward_weight = reshape(backward_weight, [batch, in_channel, out_channel, filter_h, filter_w]) # FIXME: using filter_h/w is not correct here if strides are not divisible
+    backward_weight = sum(backward_weight, axis=0)
+    backward_weight = transpose(backward_weight, [1, 0, 2, 3])
+
+    # TOPI-based version
+    # backward_data = _nn.conv2d_backward_data(weight, out_grad, data_shape, strides=attrs.strides, padding=attrs.padding, dilation=attrs.dilation)
+    # backward_weight = _nn.conv2d_backward_weight(data_orig, out_grad, weight_shape, strides=attrs.strides, padding=attrs.padding, dilation=attrs.dilation)
+    return [backward_data, backward_weight]
+
+@register_gradient("nn.cross_entropy")
+def cross_entropy_grad(orig, grad):
+    x, y = orig.args
+    sm = _nn.softmax(x)
+    batch_size = x.checked_type.shape[0].value
+    grad = grad / const(batch_size, dtype='float32')
+    return [(sm - y), log(sm)]

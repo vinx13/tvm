@@ -566,3 +566,71 @@ def schedule_deformable_conv2d(attrs, outs, target):
 
 
 reg.register_pattern("nn.deformable_conv2d", OpPattern.OUT_ELEMWISE_FUSABLE)
+
+
+@reg.register_compute("nn.conv2d_backward_data")
+def compute_conv2d_backward_data(attrs, inputs, out_dtype, target):
+    """Compute definition of conv2d_backward_data"""
+    data_shape = get_const_tuple(attrs.data_shape)
+    padding = get_const_tuple(attrs.padding)
+    strides = get_const_tuple(attrs.strides)
+    dilation = get_const_tuple(attrs.dilation)
+    groups = attrs.groups
+    layout = attrs.data_layout
+    kernel_layout = attrs.kernel_layout
+    out_dtype = attrs.out_dtype
+    out_dtype = (inputs[1].dtype if out_dtype in ("same", "")
+                 else out_dtype)
+
+    out = topi.nn.conv2d_backward_data(
+            inputs[0], inputs[1], data_shape, strides, padding,
+            dilation, layout, out_dtype)
+
+    return [out]
+
+
+@reg.register_compute("nn.conv2d_backward_weight")
+def compute_conv2d_backward_weight(attrs, inputs, out_dtype, target):
+    """Compute definition of conv2d_backward_weight"""
+    weight_shape = get_const_tuple(attrs.weight_shape)
+    padding = get_const_tuple(attrs.padding)
+    strides = get_const_tuple(attrs.strides)
+    dilation = get_const_tuple(attrs.dilation)
+    groups = attrs.groups
+    layout = attrs.data_layout
+    kernel_layout = attrs.kernel_layout
+    out_dtype = attrs.out_dtype
+    out_dtype = (inputs[1].dtype if out_dtype in ("same", "")
+                 else out_dtype)
+
+    out = topi.nn.conv2d_backward_weight(
+            inputs[0], inputs[1], weight_shape, strides, padding,
+            dilation, layout, out_dtype)
+
+    return [out]
+
+@reg.register_schedule("nn.conv2d_backward_data")
+def schedule_conv2d_backward_data(attrs, outs, target):
+    """Schedule definition of conv2d_backward_data"""
+    with target:
+        return topi.generic.schedule_extern(outs)
+
+
+@reg.register_schedule("nn.conv2d_backward_weight")
+def schedule_conv2d_backward_data(attrs, outs, target):
+    """Schedule definition of conv2d_backward_weight"""
+    with target:
+        return topi.generic.schedule_extern(outs)
+
+
+reg.register_pattern("nn.conv2d_backward_data", OpPattern.OPAQUE)
+reg.register_pattern("nn.conv2d_backward_weight", OpPattern.OPAQUE)
+
+
+reg.register_schedule("nn.cross_entropy", schedule_injective)
+reg.register_pattern("nn.cross_entropy", OpPattern.OPAQUE)
+
+@reg.register_compute("nn.cross_entropy")
+def compute_cross_entropy(attrs, inputs, out_dtype, target):
+    x, y = inputs
+    return [-topi.sum(topi.nn.log_softmax(x) * y / x.shape[0])]

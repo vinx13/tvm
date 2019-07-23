@@ -20,7 +20,7 @@ import topi
 import topi.testing
 from tvm import relay
 from tvm.relay.transform import gradient
-from tvm.relay.testing import ctx_list
+from tvm.relay.testing import ctx_list, check_grad
 from tvm.relay.testing import run_infer_type
 
 
@@ -59,6 +59,7 @@ def verify_avg_pool2d_grad(x_shape, pool_size, strides, padding, ceil_mode, coun
                                 ceil_mode=ceil_mode, count_include_pad=count_include_pad)
 
     fwd_func = relay.Function([x], y)
+    check_grad(fwd_func)
     fwd_func = run_infer_type(fwd_func)
     bwd_func = run_infer_type(gradient(fwd_func))
 
@@ -83,6 +84,18 @@ def test_avg_pool2d_grad():
                            ceil_mode=False, count_include_pad=False)
 
 
+
+def test_conv2d_grad():
+    dshape = (1, 4, 16, 16)
+    wshape = (16, 4, 3, 3)
+    x = relay.var("data", shape=dshape, dtype='float32')
+    w = relay.var("weight", shape=wshape, dtype='float32')
+    func = relay.Function([x, w], relay.nn.conv2d(x, w,
+                                padding=(1, 1)))
+    check_grad(func)
+
+
 if __name__ == "__main__":
-    test_max_pool2d_grad()
-    test_avg_pool2d_grad()
+    #test_max_pool2d_grad()
+    #test_avg_pool2d_grad()
+    test_conv2d_grad()

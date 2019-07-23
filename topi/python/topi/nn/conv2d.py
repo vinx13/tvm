@@ -21,10 +21,12 @@ from __future__ import absolute_import as _abs
 from collections import namedtuple
 import tvm
 
+from .conv2d_transpose import conv2d_transpose_nchw
 from .pad import pad
 from .util import get_pad_tuple
-from ..util import simplify, get_const_tuple
+from ..util import simplify, const_matrix, get_const_tuple
 from .winograd_util import winograd_transform_matrices
+from .. import transform, sum
 
 # workload description of conv2d
 Workload = namedtuple('Workload',
@@ -595,3 +597,49 @@ def group_conv2d_nchw(Input, Filter, stride, padding, dilation, groups, out_dtyp
                  xx * stride_w + rx * dilation_w].astype(out_dtype) *
             Filter[ff, rc, ry, rx].astype(out_dtype),
             axis=[rc, ry, rx]), tag='group_conv2d_nchw')
+
+
+@tvm.target.generic_func
+def conv2d_backward_data(weight, out_grad, data_shape, strides, padding, dilation, layout='NCHW', out_dtype=None):
+    if layout == 'NCHW':
+        if isinstance(dilation, int):
+            dilation_h = dilation_w = dilation
+        else:
+            dilation_h, dilation_w = dilation
+        if dilation_h != 1 or dilation_w != 1:
+            raise ValueError("conv2d_backward_data does not support dilation != 1")
+        return conv2d_transpose_nchw(out_grad, weight, strides=strides, padding=padding,
+                                     out_dtype=out_dtype)
+    raise ValueError("not support this layout {} yet".format(layout))
+
+
+@tvm.target.generic_func
+def conv2d_backward_weight(data, out_grad, weight_shape, strides, padding, dilation, layout='NCHW', out_dtype=None):
+    if layout == 'NCHW':
+        batch, in_channel, in_height, in_width = get_const_tuple(data.shape)
+        num_filter, _, kernel_h, kernel_w = get_const_tuple(weight_shape)
+        _, _, out_height, out_width = get_const_tuple(out_grad.shape)
+
+        out_grad = transform.tile(out_grad, [1, in_channel, 1, 1])
+        out_grad = transform.reshape(out_grad, [batch * num_filter * in_channel, 1,
+                                                out_height, out_width])
+        data = transform.reshape(data, [1, batch * in_channel, in_height, in_width])
+        weight_grad = group_conv2d_nchw(data, out_grad, stride=dilation, padding=padding,
+                                        dilation=strides, groups=in_channel * batch,
+                                        out_dtype=out_dtype)
+        weight_grad = transform.reshape(weight_grad, [batch, in_channel, num_filter, kernel_h,
+                                                      kernel_w])
+        weight_grad = sum(weight_grad, axis=0)
+        weight_grad = transform.reshape(weight_grad, [in_channel, num_filter, kernel_h, kernel_w])
+        weight_grad = transform.transpose(weight_grad, [1, 0, 2, 3])
+        return weight_grad
+
+    
+        
+        
+    raise ValueError("not support this layout {} yet".format(layout))
+
+from .. import generic
+#@generic.schedule_conv2d_backward_weight
+def schedule_conv2d_backward_weight_cuda(outs):
+    raise NotImplementedError()

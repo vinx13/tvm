@@ -1425,3 +1425,46 @@ def deformable_conv2d(data,
     return _make.deformable_conv2d(data, offset, weight, strides, padding, dilation,
                                    deformable_groups, groups, channels, kernel_size, data_layout,
                                    kernel_layout, out_layout, out_dtype)
+
+
+def conv2d_backward_data(weight,
+                         out_grad,
+                         input_shape,
+                         strides=(1, 1),
+                         padding=(0, 0),
+                         dilation=(1, 1),
+                         groups=1,
+                         channels=None,
+                         kernel_size=None,
+                         data_layout="NCHW",
+                         kernel_layout="OIHW",
+                         out_layout="",
+                         out_dtype=""):
+    r"""2D convolution backward data."""
+    return _make.conv2d_backward_data(weight, out_grad, input_shape, strides, padding, dilation,
+                                      groups, channels, kernel_size, data_layout,
+                                      kernel_layout, out_layout, out_dtype)
+
+
+def conv2d_backward_weight(data,
+                           out_grad,
+                           weight_shape,
+                           strides=(1, 1),
+                           padding=(0, 0),
+                           dilation=(1, 1),
+                           groups=1,
+                           channels=None,
+                           kernel_size=None,
+                           data_layout="NCHW",
+                           kernel_layout="OIHW",
+                           out_layout="",
+                           out_dtype=""):
+    r"""2D convolution backward weight."""
+    return _make.conv2d_backward_weight(data, out_grad, weight_shape, strides, padding, dilation,
+                        groups, channels, kernel_size, data_layout,
+                        kernel_layout, out_layout, out_dtype)
+
+
+
+def cross_entropy(predictions, targets):
+    return _make.cross_entropy(predictions, targets)
