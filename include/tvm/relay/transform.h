@@ -512,6 +512,8 @@ TVM_DLL Pass FoldScaleAxis();
  */
 TVM_DLL Pass CanonicalizeOps();
 
+TVM_DLL Pass RewriteShapeLikeOp();
+
 /*!
  * \brief Alternate the layouts of operators or replace primitive operators
  * with other expressions.

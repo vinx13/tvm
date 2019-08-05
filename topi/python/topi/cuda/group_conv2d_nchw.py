@@ -459,7 +459,6 @@ def schedule_conv2d_nchw_cuda(cfg, outs):
     outs = [outs] if isinstance(outs, tvm.tensor.Tensor) else outs
     s = tvm.create_schedule([x.op for x in outs])
 
-    raise NotImplementedError()
     def _callback(op):
         if op.tag == "group_conv2d_NCHWc_int8":
             schedule_group_conv2d_NCHWc_int8(cfg, s, op.output(0))

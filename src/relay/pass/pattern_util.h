@@ -422,6 +422,8 @@ Expr StopFusion(Expr data);
 
 Expr ForceCast(Expr data);
 
+Expr MakeZeros(Array<IndexExpr> shape, DataType dtype);
+
 }  // namespace relay
 }  // namespace tvm
 #endif  // TVM_RELAY_PASS_PATTERN_UTIL_H_

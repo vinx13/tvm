@@ -57,8 +57,29 @@ class BiasAddSimplifier : public ExprMutator {
   }
 };
 
+class ShapeLikeOpRewriter : public ExprMutator {
+ public:
+  Expr VisitExpr_(const CallNode* n) {
+    auto new_n = ExprMutator::VisitExpr_(n);
+    auto new_call = new_n.as<CallNode>();
+    CHECK(new_call);
+    static const auto& zeros_like = Op::Get("zeros_like");
+    if (new_call->op.same_as(zeros_like)) {
+      auto type = n->type_as<TensorTypeNode>();
+      CHECK(type);
+      return MakeZeros(type->shape, type->dtype);
+    }
+    return new_n;
+  }
+};
+
 Expr CanonicalizeOps(const Expr& e) {
   return BiasAddSimplifier().Mutate(e);
+}
+
+Expr RewriteShapeLikeOp(const Expr& e) {
+  LOG(INFO) << "RewriteShapeLIkeOp";
+  return ShapeLikeOpRewriter().Mutate(e);
 }
 
 namespace transform {
@@ -75,6 +96,17 @@ Pass CanonicalizeOps() {
 TVM_REGISTER_API("relay._transform.CanonicalizeOps")
 .set_body_typed(CanonicalizeOps);
 
+Pass RewriteShapeLikeOp() {
+  runtime::TypedPackedFunc<Function(Function, Module, PassContext)> pass_func =
+    [=](Function f, Module m, PassContext pc) {
+    return Downcast<Function>(RewriteShapeLikeOp(f));
+  };
+  return CreateFunctionPass(pass_func, 3, "RewriteShapeLikeOp",
+                            {ir::StringImm::make("InferType")});
+}
+
+TVM_REGISTER_API("relay._transform.RewriteShapeLikeOp")
+.set_body_typed(RewriteShapeLikeOp);
 }  // namespace transform
 
 }  // namespace relay
