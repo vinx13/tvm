@@ -124,6 +124,7 @@ class GraphModule(object):
     def __init__(self, module):
         self.module = module
         self._set_input = module["set_input"]
+        self._set_input_zero_copy = module["set_input_zero_copy"]
         self._run = module["run"]
         self._get_output = module["get_output"]
         self._get_input = module["get_input"]
@@ -154,6 +155,9 @@ class GraphModule(object):
             keys.sort(key=lambda x: -np.prod(params[x].shape))
             for k in keys:
                 self._get_input(k).copyfrom(params[k])
+
+    def set_input_zero_copy(self, key, value):
+        self._set_input_zero_copy(key, value)
 
     def run(self, **input_dict):
         """Run forward execution of the graph
