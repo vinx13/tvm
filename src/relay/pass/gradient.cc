@@ -358,7 +358,7 @@ struct ReverseAD : ExprMutator {
         orig->checked_type_ = op->checked_type();
         Var orig_var = ll->Push(orig);
         orig_var->checked_type_ = orig->checked_type();
-        auto ref = ll->Push(RefCreateNode::make(ZerosLike(orig_var)));
+        auto ret = ll->Push(GetRev(op->checked_type(), orig_var, ll));
         auto bpv = ll->Push(RefReadNode::make(bp));
         Expr nbp = FunctionNode::make(
           {},

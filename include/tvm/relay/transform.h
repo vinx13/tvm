@@ -514,6 +514,8 @@ TVM_DLL Pass CanonicalizeOps();
 
 TVM_DLL Pass RewriteShapeLikeOp();
 
+TVM_DLL Pass RemoveAddZeros();
+
 /*!
  * \brief Alternate the layouts of operators or replace primitive operators
  * with other expressions.

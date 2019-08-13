@@ -218,6 +218,11 @@ def squeeze_grad(orig, grad):
     data = orig.args[0]
     return [reshape_like(grad, data)]
 
+@register_gradient("nn.global_avg_pool2d")
+def global_avg_pool2d_gradient(orig, grad):
+    return [ones_like(orig.args[0]) * grad]
+
+
 # untested
 @register_gradient("nn.dense")
 def dense_grad(orig, grad):
@@ -270,8 +275,8 @@ def conv2d_grad(orig, grad):
     backward_weight = transpose(backward_weight, [1, 0, 2, 3])
 
     # TOPI-based version
-    # backward_data = _nn.conv2d_backward_data(weight, out_grad, data_shape, strides=attrs.strides, padding=attrs.padding, dilation=attrs.dilation)
-    # backward_weight = _nn.conv2d_backward_weight(data_orig, out_grad, weight_shape, strides=attrs.strides, padding=attrs.padding, dilation=attrs.dilation)
+    #backward_data = _nn.conv2d_backward_data(weight, out_grad, data_shape, strides=attrs.strides, padding=attrs.padding, dilation=attrs.dilation)
+    #backward_weight = _nn.conv2d_backward_weight(data_orig, out_grad, weight_shape, strides=attrs.strides, padding=attrs.padding, dilation=attrs.dilation)
     return [backward_data, backward_weight]
 
 @register_gradient("nn.cross_entropy")

@@ -304,6 +304,7 @@ class RelayBuildModule : public runtime::ModuleNode {
     pass_seqs.push_back(transform::CanonicalizeCast());
     pass_seqs.push_back(transform::CanonicalizeOps());
     pass_seqs.push_back(transform::RewriteShapeLikeOp());
+    pass_seqs.push_back(transform::RemoveAddZeros());
 
     // Legalize pass is restricted to homogeneous execution for now.
     if (targets.size() == 1) {
@@ -314,7 +315,7 @@ class RelayBuildModule : public runtime::ModuleNode {
     if (targets.size() == 1) {
       pass_seqs.push_back(transform::AlterOpLayout());
     }
-    // pass_seqs.push_back(transform::FoldConstant());
+    pass_seqs.push_back(transform::FoldConstant());
 
     // Create a sequential pass and perform optimizations.
     transform::Pass seq = transform::Sequential(pass_seqs);
@@ -326,7 +327,6 @@ class RelayBuildModule : public runtime::ModuleNode {
     } else {
       relay_module = seq(relay_module);
     }
-    LOG(INFO) << AsText(relay_module, false);
     relay_module = FoldConstant()(relay_module);
 
     // Handle heterogeneous compilation.

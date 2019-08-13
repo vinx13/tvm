@@ -424,6 +424,12 @@ Expr ForceCast(Expr data);
 
 Expr MakeZeros(Array<IndexExpr> shape, DataType dtype);
 
+Expr MakeOnes(Array<IndexExpr> shape, DataType dtype);
+
+Expr MakeCollapseSum(Expr data, Array<IndexExpr> out_shape);
+
+Expr MakeReshape(Expr data, Array<Integer> newshape);
+
 }  // namespace relay
 }  // namespace tvm
 #endif  // TVM_RELAY_PASS_PATTERN_UTIL_H_

@@ -1644,6 +1644,49 @@ RELAY_REGISTER_OP("collapse_sum_like")
 .set_attr<FTVMCompute>("FTVMCompute", CollapseSumLikeCompute)
 .set_attr<TOpPattern>("TOpPattern", kCommReduce);
 
+bool CollapseSumRel(const Array<Type>& types,
+                    int num_inputs,
+                    const Attrs& attrs,
+                    const TypeReporter& reporter) {
+  CHECK_EQ(types.size(), 2);
+  const auto* data = types[0].as<TensorTypeNode>();
+  CHECK(data);
+  const auto* params = attrs.as<CollapseSumAttrs>();
+  reporter->Assign(types[1], TensorTypeNode::make(params->out_shape, data->dtype));
+  return true;
+}
+
+Expr MakeCollapseSum(Expr data,
+                     Array<IndexExpr> out_shape) {
+  static const Op& op = Op::Get("collapse_sum");
+  auto attrs = make_node<CollapseSumAttrs>();
+  attrs->out_shape = out_shape;
+  return CallNode::make(op, {data}, Attrs(attrs), {});
+}
+
+Array<Tensor> CollapseSumCompute(const Attrs& attrs,
+                                 const Array<Tensor>& inputs,
+                                 const Type& out_type,
+                                 const Target& target) {
+  const auto* out_ttype = out_type.as<TensorTypeNode>();
+  CHECK(out_ttype != nullptr);
+  return { topi::collapse_sum(inputs[0], out_ttype->shape) };
+}
+
+TVM_REGISTER_API("relay.op._make.collapse_sum")
+.set_body_typed(MakeCollapseSum);
+
+RELAY_REGISTER_OP("collapse_sum")
+.describe(R"code(Collapse the first input to match the shape of the second input.
+)code" TVM_ADD_FILELINE)
+.set_num_inputs(1)
+.add_argument("data", "Tensor", "The input tensor.")
+.set_support_level(10)
+.set_attrs_type_key("CollapseSumAttrs")
+.add_type_rel("CollapseSum", CollapseSumRel)
+.set_attr<FTVMCompute>("FTVMCompute", CollapseSumCompute)
+.set_attr<TOpPattern>("TOpPattern", kCommReduce);
+
 // BroadCastTo: <A, B> -> B where BroadCast(A, B) = B
 bool BroadCastToRel(const Array<Type>& types,
                     int num_inputs,

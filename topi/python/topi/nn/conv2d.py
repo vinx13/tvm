@@ -633,9 +633,6 @@ def conv2d_backward_weight(data, out_grad, weight_shape, strides, padding, dilat
         weight_grad = transform.reshape(weight_grad, [in_channel, num_filter, kernel_h, kernel_w])
         weight_grad = transform.transpose(weight_grad, [1, 0, 2, 3])
         return weight_grad
-
-    
-        
         
     raise ValueError("not support this layout {} yet".format(layout))
 

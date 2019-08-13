@@ -194,7 +194,7 @@ class GraphModuleDebug(graph_runtime.GraphModule):
             num_outputs = self.debug_datum.get_graph_node_output_num(node)
             for j in range(num_outputs):
                 out_tensor = self._get_output_by_layer(i, j)
-                out_tensor = array(out_tensor)
+                # out_tensor = array(out_tensor)
                 self.debug_datum._output_tensor_list.append(out_tensor)
 
     def debug_get_output(self, node, out):
@@ -243,7 +243,7 @@ class GraphModuleDebug(graph_runtime.GraphModule):
         # Step 1. Execute the graph
         self._run_debug()
         # Step 2. Dump the output tensors to the dump folder
-        self.debug_datum.dump_output_tensor()
+        #self.debug_datum.dump_output_tensor()
         # Step 3. Dump the Chrome trace to the dump folder
         self.debug_datum.dump_chrome_trace()
         # Step 4. Display the collected information

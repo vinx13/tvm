@@ -298,6 +298,16 @@ struct NdarraySizeAttrs : public tvm::AttrsNode<NdarraySizeAttrs> {
   }
 };
 
+/*! \brief Attributes for collapse_sum operator */
+struct CollapseSumAttrs : public tvm::AttrsNode<CollapseSumAttrs> {
+  Array<IndexExpr> out_shape;
+
+  TVM_DECLARE_ATTRS(CollapseSumAttrs, "relay.attrs.CollapseSumAttrs") {
+    TVM_ATTR_FIELD(out_shape)
+        .describe("Collapsed shape");
+  }
+};  // struct CastAttrs.
+
 }  // namespace relay
 }  // namespace tvm
 #endif  // TVM_RELAY_ATTRS_TRANSFORM_H_

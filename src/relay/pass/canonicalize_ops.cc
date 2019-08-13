@@ -64,11 +64,27 @@ class ShapeLikeOpRewriter : public ExprMutator {
     auto new_call = new_n.as<CallNode>();
     CHECK(new_call);
     static const auto& zeros_like = Op::Get("zeros_like");
+    static const auto& ones_like = Op::Get("ones_like");
+    static const auto& collapse_sum_like = Op::Get("collapse_sum_like");
+    static const auto& reshape_like = Op::Get("reshape_like");
     if (new_call->op.same_as(zeros_like)) {
       auto type = n->type_as<TensorTypeNode>();
-      CHECK(type);
       return MakeZeros(type->shape, type->dtype);
     }
+    if (new_call->op.same_as(ones_like)) {
+      auto type = n->type_as<TensorTypeNode>();
+      return MakeOnes(type->shape, type->dtype);
+    }
+    if (new_call->op.same_as(collapse_sum_like)) {
+      auto type = n->args[1]->type_as<TensorTypeNode>();
+      return MakeCollapseSum(new_call->args[0], type->shape);
+    }
+    if (new_call->op.same_as(reshape_like)) {
+      auto type = n->type_as<TensorTypeNode>();
+      Array<Integer> shape{type->shape.begin(), type->shape.end()};
+      return MakeReshape(new_call->args[0], shape);
+    }
+    CHECK(!n->op.same_as(zeros_like));
     return new_n;
   }
 };
@@ -78,7 +94,6 @@ Expr CanonicalizeOps(const Expr& e) {
 }
 
 Expr RewriteShapeLikeOp(const Expr& e) {
-  LOG(INFO) << "RewriteShapeLIkeOp";
   return ShapeLikeOpRewriter().Mutate(e);
 }
 

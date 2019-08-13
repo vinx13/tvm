@@ -396,7 +396,7 @@ class Environment {
 
   void Insert(const Var& v, const PStatic& ps) {
     CHECK(ps.defined());
-    CHECK_EQ(env_.back().locals.count(v), 0);
+    CHECK_EQ(env_.back().locals.count(v), 0) << v;
     env_.back().locals[v] = ps;
   }
 
