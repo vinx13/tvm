@@ -47,3 +47,4 @@ from . import ir_builder
 from . import ir_pass
 from . import transform
 from . import analysis
+from .auto_tensorize import auto_tensorize

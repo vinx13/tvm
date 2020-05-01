@@ -92,6 +92,13 @@ TVM_REGISTER_GLOBAL("ir_pass.RewriteForTensorCore")
       return RewriteForTensorCore(stmt, schedule, extern_buffer);
   });
 
+TVM_REGISTER_GLOBAL("ir_pass.AutoTensorize")
+    .set_body_typed([](const Stmt& stmt,
+                       const te::Schedule& schedule,
+                       const Array<te::TensorIntrin> &tensor_intrins) {
+      return AutoTensorize(stmt, schedule, tensor_intrins);
+    });
+
 TVM_REGISTER_GLOBAL("ir_pass.ExprUseVar")
 .set_body([](TVMArgs args, TVMRetValue *ret) {
     *ret = ExprUseVar(args[0].operator PrimExpr(), args[1].operator Var());

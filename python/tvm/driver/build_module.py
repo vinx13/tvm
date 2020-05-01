@@ -156,6 +156,13 @@ def lower(sch,
     binds, arg_list = get_binds(args, compact, binds)
 
     # Phase 1
+    if not simple_mode:
+        stmt = ir_pass.LoopPartition(stmt, cfg.partition_const_loop)
+    stmt = ir_pass.Simplify(stmt)
+    stmt = ir_pass.RemoveNoOp(stmt)
+    for f in lower_phase3:
+        stmt = f(stmt, sch)
+
     stmt = ir_pass.RewriteForTensorCore(stmt, sch, binds)
     stmt = ir_pass.StorageFlatten(stmt, binds, 64, cfg.instrument_bound_checkers)
     stmt = ir_pass.NarrowDataType(stmt, 32)
@@ -164,8 +171,8 @@ def lower(sch,
         stmt = f(stmt)
 
     # Phase 2
-    if not simple_mode:
-        stmt = ir_pass.LoopPartition(stmt, cfg.partition_const_loop)
+    #if not simple_mode:
+    #    stmt = ir_pass.LoopPartition(stmt, cfg.partition_const_loop)
     if cfg.disable_vectorize:
         stmt = ir_pass.SkipVectorize(stmt)
     else:
@@ -187,8 +194,8 @@ def lower(sch,
     stmt = ir_pass.RemoveNoOp(stmt)
     if not cfg.disable_select_rewriting:
         stmt = ir_pass.RewriteUnsafeSelect(stmt)
-    for f in lower_phase3:
-        stmt = f(stmt)
+    #for f in lower_phase3:
+    #    stmt = f(stmt)
     # Instrument BoundCheckers
     if cfg.instrument_bound_checkers:
         stmt = ir_pass.InstrumentBoundCheckers(stmt)

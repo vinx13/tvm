@@ -193,6 +193,10 @@ Stmt RewriteForTensorCore(Stmt stmt,
                           te::Schedule schedule,
                           Map<te::Tensor, Buffer> extern_buffer);
 
+Stmt AutoTensorize(Stmt stmt,
+                   te::Schedule schedule,
+                   Array<te::TensorIntrin> tensor_intrins);
+
 /*!
  * \brief Verify if there is any argument bound to compact buffer.
  *
