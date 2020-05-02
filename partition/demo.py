@@ -41,7 +41,7 @@ from tvm.contrib import clang, cblas
 import numpy
 import timeit
 
-ll_code = clang.create_llvm('gemmMxN__avx2.c')
+ll_code = clang.create_llvm('gemmMxN__avx2.c', options=['-march=skylake'])
 
 # The size of the matrix
 # (M, K) x (K, N)
