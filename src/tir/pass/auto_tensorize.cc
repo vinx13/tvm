@@ -61,35 +61,41 @@ class TensorIntrinMatcher : public StmtExprVisitor {
   bool match_;
 };
 
-class TensorIntrinRewritter : public StmtExprMutator {
+class TensorIntrinRewritter : public StmtExprVisitor {
  public:
   explicit TensorIntrinRewritter(const te::TensorIntrin &intrin, const std::unordered_map<TensorKey, Region>& bounds) : intrin_(intrin), bounds_(bounds) {
 
   }
 
- protected:
-  Stmt VisitStmt(const Stmt &stmt) final {
-    auto result = StmtExprMutator::VisitStmt(stmt);
-    if (result.same_as(stmt)) {
-      return result;
-    }
-    return result;
+  Stmt Run(const Stmt& stmt) {
+    LOG(INFO) << "Run AutoTensorize\n" << stmt;
+    VisitStmt(stmt);
+    // LOG(INFO) << "LoopVars ";
+    // for (auto v : loop_vars_) LOG(INFO) << v;
+    return std::move(result);
   }
 
-  Stmt VisitStmt_(const ProvideNode *op) final {
+ protected:
+  void VisitStmt_(const ForNode *op) final {
+     LOG(INFO) << op->loop_var;
+     loop_vars_.insert(op->loop_var);
+     StmtExprVisitor::VisitStmt_(op);
+  }
+
+  void VisitStmt_(const ProvideNode *op) final {
       // find C = C + A*B
       auto add = op->value.as<AddNode>();
       if (!add) {
-        return StmtExprMutator::VisitStmt_(op);
+        return StmtExprVisitor::VisitStmt_(op);
       }
       auto mul = add->b.as<MulNode>();
       if (!mul) {
-        return StmtExprMutator::VisitStmt_(op);
+        return StmtExprVisitor::VisitStmt_(op);
       }
       auto lhs = mul->a.as<CallNode>();
       auto rhs = mul->b.as<CallNode>();
       if (!lhs || !rhs) {
-        return StmtExprMutator::VisitStmt_(op);
+        return StmtExprVisitor::VisitStmt_(op);
       }
 
       // auto shape_a = GetShape(lhs);
@@ -98,16 +104,28 @@ class TensorIntrinRewritter : public StmtExprMutator {
       // LOG(INFO) << shape_b;
 
       Stmt nop = EvaluateNode::make(0);
-      auto gen_bind = [&](const CallNode *src, const Buffer &dst_buf) {
+      auto gen_bind = [&](const CallNode *src, const Buffer &dst_buf, bool is_input) {
         auto src_tensor = Downcast<te::Operation>(src->func).output(0);
         Array<ObjectRef> bind_spec{dst_buf, src_tensor};
         auto shape = GetShape(src);
         LOG(INFO) << "Shape " << shape;
         Array<PrimExpr> tuple;
 
-        for (size_t i = 0; i < src->args.size(); i++) {
-          tuple.push_back(src->args[i]);
-          tuple.push_back(shape[i]);
+        if (is_input) {
+          for (size_t i = 0; i < src->args.size(); i++) {
+            tuple.push_back(RemoveTensorizedLoop(src->args[i]));
+            if (i + 2 < src->args.size()) {
+              tuple.push_back(te::make_const(DataType::Int(32), 1));
+            } else {
+              tuple.push_back(shape[i]);
+            }
+          }
+        } else {
+          // FIXME
+          tuple.push_back(RemoveTensorizedLoop(src->args[0]));
+          tuple.push_back(te::make_const(DataType::Int(32), 4));
+          tuple.push_back(RemoveTensorizedLoop(src->args[1]));
+          tuple.push_back(te::make_const(DataType::Int(32), 24));
         }
 
         LOG(INFO) << "Tuple " << tuple;
@@ -119,11 +137,11 @@ class TensorIntrinRewritter : public StmtExprMutator {
       };
 
       std::vector<Stmt> input_bind_nest, output_bind_nest;
-      input_bind_nest.push_back(gen_bind(lhs, intrin_->buffers[0]));
-      input_bind_nest.push_back(gen_bind(rhs, intrin_->buffers[1]));
-
-      return MergeNest(input_bind_nest, intrin_->body);
-
+      input_bind_nest.push_back(gen_bind(lhs, intrin_->buffers[0], true));
+      input_bind_nest.push_back(gen_bind(rhs, intrin_->buffers[1], true));
+      output_bind_nest.push_back(gen_bind(add->a.as<CallNode>(), intrin_->buffers[2], false));
+      result = MergeNest(output_bind_nest, intrin_->body);
+      result = MergeNest(input_bind_nest, result);
       // ObjectPtr<te::TensorNode> tensor_node = make_object<te::TensorNode>();
       // tensor_node->value_index = lhs->value_index;
       // tensor_node->op = Downcast<te::Operation>(lhs->func);
@@ -142,7 +160,7 @@ class TensorIntrinRewritter : public StmtExprMutator {
 
  private:
 
- Array<PrimExpr> GetShape(const CallNode *op) {
+  Array<PrimExpr> GetShape(const CallNode *op) {
     Region bound = bounds_.at(TensorKey{op->func, op->value_index});
     Array<PrimExpr> shape;
     for (const auto &r : bound) {
@@ -151,8 +169,34 @@ class TensorIntrinRewritter : public StmtExprMutator {
     return shape;
   }
 
-   te::TensorIntrin intrin_;
-   std::unordered_map<TensorKey, Region> bounds_;
+  PrimExpr RemoveTensorizedLoop(const PrimExpr &e) {
+    LOG(INFO) << "Candidate Remove " << e;
+    auto var = e.as<VarNode>();
+    if (var) {
+      LOG(INFO) << "IsVar";
+      if (loop_vars_.count(e)) {
+        return te::make_const(DataType::Int(32), 0);
+      }
+
+    }
+    auto add = e.as<AddNode>();
+    if (!add) return e;
+    LOG(INFO) << "IsAdd";
+    if (loop_vars_.count(add->a)) {
+      LOG(INFO) << "LHS Match";
+      return add->b;
+    } else if (loop_vars_.count(add->b)) {
+      LOG(INFO) << "RHS Match";
+      return add->a;
+    } else {
+      return e;
+    }
+  }
+
+  te::TensorIntrin intrin_;
+  std::unordered_map<TensorKey, Region> bounds_;
+  std::unordered_set<PrimExpr, ObjectHash, ObjectEqual> loop_vars_;
+  Stmt result;
 };
 
 class AutoTensorizeMutator : public StmtExprMutator {
@@ -169,7 +213,7 @@ class AutoTensorizeMutator : public StmtExprMutator {
       for (const auto &intrin : tensor_intrins_) {
         if (MatchTensorIntrin(body, intrin)) {
           // return Tensorize(body, intrin);
-          return TensorIntrinRewritter(intrin, bounds_)(body);
+          return TensorIntrinRewritter(intrin, bounds_).Run(body);
           // tensorize_scope_ = true;
           // auto result = StmtExprMutator::VisitStmt_(op);
           // auto result_attr_stmt = result.as<AttrStmtNode>();
@@ -252,7 +296,9 @@ Stmt AutoTensorize(Stmt stmt, te::Schedule schedule,
   LOG(INFO) << op->body;
   LOG(INFO) << stmt;
 
-  return AutoTensorizeMutator(tensor_intrins)(stmt);
+  auto result = AutoTensorizeMutator(tensor_intrins)(stmt);
+  LOG(INFO) << "Result\n" << result;
+  return result;
 }
 
 }  // namespace tir

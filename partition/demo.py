@@ -175,7 +175,7 @@ s[APanel].unroll(z)
 xo, yo, xi, yi = s[C].tile(C.op.axis[0], C.op.axis[1], bn, NTile)
 s[C].reorder(xo, yo, xi, yi)
 xii, xiii = s[C].split(xi, factor=MTile)
-#s[C].pragma(xo, "import_llvm", ll_code)
+s[C].pragma(xo, "import_llvm", ll_code)
 gemm_intrinsic_function = intrin_gemm(M=MTile, N=NTile, K=K)
 print('tensorize')
 #s[C].pragma(xiii, 'tensorize', gemm_intrinsic_function)
@@ -185,10 +185,10 @@ s[C].pragma(xiii, 'tensorize_hint', True)
 print(tvm.lower(s, [A, B, C], simple_mode=False))
 
 auto_tensorize_pass = tir.auto_tensorize([gemm_intrinsic_function])
-with tvm.target.build_config(add_lower_pass=[(3, auto_tensorize_pass)]) as config:
+with tvm.target.build_config(add_lower_pass=[(3, auto_tensorize_pass)], dump_pass_ir=True) as config:
     print(config)
     func = tvm.build(s, [A, B, C], target=target)
-#print(func.get_source())
+print(func.get_source())
 assert func
 func.save("tensor_gemm.asm")
 func.save("tensor_gemm.o")
