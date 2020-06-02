@@ -884,11 +884,37 @@ bool DeformableConv2DRel(const Array<Type>& types, int num_inputs, const Attrs& 
   CHECK_EQ(types.size(), 4);
   const auto* data = types[0].as<TensorTypeNode>();
   const auto* weight = types[2].as<TensorTypeNode>();
+  static const Layout kNCHW("NCHW");
+  static const Layout kOIHW("OIHW");
 
   CHECK(data);
   auto* param = attrs.as<AttrType>();
-  CHECK_EQ(param->data_layout, "NCHW") << "data layout not supported.";
-  CHECK_EQ(param->kernel_layout, "OIHW") << "kernel_layout not supported.";
+  const Layout data_layout(param->data_layout);
+  const Layout offset_layout(param->offset_layout);
+  const Layout kernel_layout(param->kernel_layout);
+
+  const auto trans_data_layout = tir::BijectiveLayout(data_layout, kNCHW);
+  CHECK(trans_data_layout.defined())
+      << "DeformableConv2D only support data layouts that are convertible from NCHW."
+      << " But got " << data_layout;
+
+  const auto trans_offset_layout = tir::BijectiveLayout(offset_layout, kNCHW);
+  CHECK(trans_offset_layout.defined())
+      << "DeformableConv2D only support offset layouts that are convertible from NCHW."
+      << " But got " << offset_layout;
+
+  const auto trans_kernel_layout = tir::BijectiveLayout(kernel_layout, kOIHW);
+  CHECK(trans_kernel_layout.defined())
+      << "DeformableConv2D only support kernel layouts that are convertible from OIHW."
+      << " But got " << kernel_layout;
+
+  Layout out_layout(param->out_layout == "" ? param->data_layout : param->out_layout);
+  const auto trans_out_layout = tir::BijectiveLayout(out_layout, kNCHW);
+  CHECK(trans_out_layout.defined())
+      << "DeformableConv2D only support output layouts that are convertible from NCHW."
+      << " But got " << out_layout;
+
+  Array<IndexExpr> dshape_nchw = trans_data_layout.ForwardShape(data->shape);
 
   IndexExpr channels, dilated_ksize_y, dilated_ksize_x, ksize_y, ksize_x;
 
@@ -896,19 +922,20 @@ bool DeformableConv2DRel(const Array<Type>& types, int num_inputs, const Attrs& 
   if (param->kernel_size.defined() && param->channels.defined()) {
     CHECK_EQ(param->kernel_size.size(), 2);
     CHECK_EQ(param->dilation.size(), 2);
-    Array<IndexExpr> wshape({param->channels, indexdiv(data->shape[1], param->groups),
+    Array<IndexExpr> wshape({param->channels, indexdiv(dshape_nchw[1], param->groups),
                              param->kernel_size[0], param->kernel_size[1]});
     channels = param->channels;
     ksize_y = param->kernel_size[0];
     ksize_x = param->kernel_size[1];
     dilated_ksize_y = 1 + (param->kernel_size[0] - 1) * param->dilation[0];
     dilated_ksize_x = 1 + (param->kernel_size[1] - 1) * param->dilation[1];
+    wshape = trans_kernel_layout.BackwardShape(wshape);
     // assign result to reporter
     reporter->Assign(types[2], TensorType(wshape, data->dtype));
   } else {
     // use weight to infer the conv shape.
     if (weight == nullptr) return false;
-    auto wshape = weight->shape;
+    auto wshape = trans_kernel_layout.ForwardShape(weight->shape);
     if (param->kernel_size.defined()) {
       CHECK_EQ(param->kernel_size.size(), 2);
       // check the size
@@ -922,7 +949,7 @@ bool DeformableConv2DRel(const Array<Type>& types, int num_inputs, const Attrs& 
           << "DeformableConv2D: shape of weight is inconsistent with channels, "
           << " channels=" << param->channels << " wshape=" << wshape;
     }
-    CHECK(reporter->AssertEQ(indexdiv(data->shape[1], param->groups), wshape[1]));
+    CHECK(reporter->AssertEQ(indexdiv(dshape_nchw[1], param->groups), wshape[1]));
     channels = wshape[0];
     ksize_y = wshape[2];
     ksize_x = wshape[3];
@@ -930,22 +957,24 @@ bool DeformableConv2DRel(const Array<Type>& types, int num_inputs, const Attrs& 
     dilated_ksize_x = 1 + (wshape[3] - 1) * param->dilation[1];
   }
   // dilation
-  Array<IndexExpr> oshape({data->shape[0], channels, 0, 0});
+  Array<IndexExpr> oshape({dshape_nchw[0], channels, 0, 0});
 
   IndexExpr pad_h, pad_w;
   GetPaddingHeightWidth(param->padding, &pad_h, &pad_w);
-  oshape.Set(2, indexdiv(data->shape[2] + pad_h - dilated_ksize_y, param->strides[0]) + 1);
-  oshape.Set(3, indexdiv(data->shape[3] + pad_w - dilated_ksize_x, param->strides[1]) + 1);
+  oshape.Set(2, indexdiv(dshape_nchw[2] + pad_h - dilated_ksize_y, param->strides[0]) + 1);
+  oshape.Set(3, indexdiv(dshape_nchw[3] + pad_w - dilated_ksize_x, param->strides[1]) + 1);
   DataType out_dtype = param->out_dtype;
 
   // infer offset shape
-  Array<IndexExpr> offset_shape(
-      {data->shape[0], 2 * ksize_y * ksize_x * param->deformable_groups, oshape[2], oshape[3]});
+  Array<IndexExpr> offset_shape
+      {dshape_nchw[0], 2 * ksize_y * ksize_x * param->deformable_groups, oshape[2], oshape[3]};
+  offset_shape = trans_offset_layout.BackwardShape(offset_shape);
   reporter->Assign(types[1], TensorType(offset_shape, data->dtype));
   if (out_dtype.bits() == 0) {
     out_dtype = data->dtype;
   }
 
+  oshape = trans_out_layout.BackwardShape(oshape);
   reporter->Assign(types[3], TensorType(oshape, out_dtype));
   return true;
 }

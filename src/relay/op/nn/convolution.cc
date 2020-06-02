@@ -110,20 +110,21 @@ template <typename T>
 Expr MakeDeformableConv(Expr data, Expr offset, Expr weight, Array<IndexExpr> strides,
                         Array<IndexExpr> padding, Array<IndexExpr> dilation, int deformable_groups,
                         int groups, int channels, Array<IndexExpr> kernel_size,
-                        std::string data_layout, std::string kernel_layout, std::string out_layout,
-                        DataType out_dtype, std::string op_name) {
+                        String data_layout, String offset_layout, String kernel_layout,
+                        String out_layout, DataType out_dtype, std::string op_name) {
   auto attrs = make_object<T>();
-  attrs->strides = strides;
-  attrs->padding = padding;
-  attrs->dilation = dilation;
+  attrs->strides = std::move(strides);
+  attrs->padding = std::move(padding);
+  attrs->dilation = std::move(dilation);
   attrs->deformable_groups = deformable_groups;
   attrs->groups = groups;
   attrs->channels = channels;
-  attrs->kernel_size = kernel_size;
-  attrs->data_layout = data_layout;
-  attrs->kernel_layout = kernel_layout;
-  attrs->out_layout = out_layout;
-  attrs->out_dtype = out_dtype;
+  attrs->kernel_size = std::move(kernel_size);
+  attrs->data_layout = std::move(data_layout);
+  attrs->offset_layout = std::move(offset_layout);
+  attrs->kernel_layout = std::move(kernel_layout);
+  attrs->out_layout = std::move(out_layout);
+  attrs->out_dtype = std::move(out_dtype);
   const Op& op = Op::Get(op_name);
   return Call(op, {data, offset, weight}, Attrs{attrs}, {});
 }
@@ -564,7 +565,8 @@ RELAY_REGISTER_OP("nn.deformable_conv2d")
     .describe(R"code(Compute 2-D deformable convolution on 4-D input.
 The deformable convolution operation is described in https://arxiv.org/abs/1703.06211
 
-For 2-D deformable convolution, the shapes are
+For 2-D deformable convolution, assuming 'NCHW' for the data and offset layout, and 'OIHW' for
+the kernel layout, the shapes are
 - **data**: (batch_size, channel, height, width)
 - **offset**: (batch_size, deformable_groups * kernel[0] * kernel[1] * 2, out_height, out_width)
 - **weight**: (num_filter, channel, kernel[0], kernel[1])
@@ -594,10 +596,13 @@ TVM_REGISTER_GLOBAL("relay.op.nn._make.deformable_conv2d")
     .set_body_typed([](Expr data, Expr offset, Expr weight, Array<IndexExpr> strides,
                        Array<IndexExpr> padding, Array<IndexExpr> dilation, int deformable_groups,
                        int groups, int channels, Array<IndexExpr> kernel_size, String data_layout,
-                       String kernel_layout, String out_layout, DataType out_dtype) {
+                       String offset_layout, String kernel_layout, String out_layout,
+                       DataType out_dtype) {
+      LOG(INFO) << data_layout << offset_layout << kernel_layout << out_layout;
       return MakeDeformableConv<DeformableConv2DAttrs>(
           data, offset, weight, strides, padding, dilation, deformable_groups, groups, channels,
-          kernel_size, data_layout, kernel_layout, out_layout, out_dtype, "nn.deformable_conv2d");
+          kernel_size, data_layout, offset_layout, kernel_layout, out_layout, out_dtype,
+          "nn.deformable_conv2d");
     });
 
 }  // namespace relay

@@ -1192,9 +1192,10 @@ struct DeformableConv2DAttrs : public tvm::AttrsNode<DeformableConv2DAttrs> {
   int groups;
   IndexExpr channels;
   Array<IndexExpr> kernel_size;
-  std::string data_layout;
-  std::string kernel_layout;
-  std::string out_layout;
+  String data_layout;
+  String offset_layout;
+  String kernel_layout;
+  String out_layout;
   DataType out_dtype;
 
   TVM_DECLARE_ATTRS(DeformableConv2DAttrs, "relay.attrs.DeformableConv2DAttrs") {
@@ -1233,6 +1234,13 @@ struct DeformableConv2DAttrs : public tvm::AttrsNode<DeformableConv2DAttrs> {
         .describe("Specifies the dimensions of the convolution window.")
         .set_default(NullValue<Array<IndexExpr> >());
     TVM_ATTR_FIELD(data_layout)
+        .set_default("NCHW")
+        .describe(
+            "Dimension ordering of input data. Can be 'NCHW', 'NHWC', etc."
+            "'N', 'C', 'H', 'W' stands for batch, channel, height, and width"
+            "dimensions respectively. Convolution is applied on the 'H' and"
+            "'W' dimensions.");
+    TVM_ATTR_FIELD(offset_layout)
         .set_default("NCHW")
         .describe(
             "Dimension ordering of input data. Can be 'NCHW', 'NHWC', etc."

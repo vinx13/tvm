@@ -2263,6 +2263,7 @@ def deformable_conv2d(data,
                       channels=None,
                       kernel_size=None,
                       data_layout='NCHW',
+                      offset_layout='NCHW',
                       kernel_layout='OIHW',
                       out_layout='',
                       out_dtype=''):
@@ -2303,7 +2304,10 @@ def deformable_conv2d(data,
         The spatial of the convolution kernel.
 
     data_layout : str, optional
-        Layout of the input.
+        Layout of the data.
+
+    data_layout : str, optional
+        Layout of the offset.
 
     kernel_layout : str, optional
         Layout of the weight.
@@ -2320,11 +2324,18 @@ def deformable_conv2d(data,
         The computed result.
 
     """
+    if isinstance(kernel_size, int):
+        kernel_size = (kernel_size, kernel_size)
+    if isinstance(strides, int):
+        strides = (strides, strides)
+    if isinstance(dilation, int):
+        dilation = (dilation, dilation)
     # convert 2-way padding to 4-way padding
     padding = get_pad_tuple2d(padding)
+    print(data, offset, weight, strides, padding, dilation,deformable_groups, groups, channels, kernel_size, data_layout, offset_layout, kernel_layout, out_layout, out_dtype)
     return _make.deformable_conv2d(data, offset, weight, strides, padding, dilation,
                                    deformable_groups, groups, channels, kernel_size, data_layout,
-                                   kernel_layout, out_layout, out_dtype)
+                                   offset_layout, kernel_layout, out_layout, out_dtype)
 
 
 def bitpack(data,
@@ -2910,7 +2921,12 @@ def correlation(data1, data2, kernel_size, max_displacement, stride1, stride2, p
     Output : tvm.te.Tensor
         4-D with shape [batch, out_channel, out_height, out_width]
     """
-    if isinstance(padding, int):
-        padding = (padding, padding)
+    if isinstance(kernel_size, int):
+        kernel_size = (kernel_size, kernel_size)
+    if isinstance(strides, int):
+        strides = (strides, strides)
+    if isinstance(dilation, int):
+        dilation = (dilation, dilation)
+    padding = get_pad_tuple2d(padding)
     return _make.correlation(data1, data2, kernel_size, max_displacement, stride1, stride2,
                              padding, is_multiply, layout)
