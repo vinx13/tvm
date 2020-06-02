@@ -153,13 +153,14 @@ def schedule_deformable_conv2d_nchw(cfg, outs):
     def _callback(op):
         if op.tag == 'deformable_conv2d_nchw':
             #_schedule_direct_cuda(cfg, s, op.output(0))
-            _schedule_manual_cuda(s, op.output(0))
+            _schedule_nhwc_cuda(cfg, s, op.output(0))
+            #_schedule_manual_cuda(s, op.output(0))
 
     traverse_inline(s, outs[0].op, _callback)
     return s
 
 
-def _schedule_direct_cuda(cfg, s, conv):
+def _schedule_nhwc_cuda(cfg, s, conv):
     """Schedule template of deformable conv2d"""
     n, f, y, x = s[conv].op.axis
     rc, ry, rx = s[conv].op.reduce_axis
@@ -234,12 +235,17 @@ def _schedule_direct_cuda(cfg, s, conv):
     # cooperative fetching
     for load in [AA, WW]:
         fused = s[load].fuse(*s[load].op.axis)
+        if load == AA:
+            fused, fused_v = s[load].split(fused, factor=4)
+            s[load].vectorize(fused_v)
+
         tz, fused = s[load].split(fused, nparts=cfg["tile_f"].size[2])
         ty, fused = s[load].split(fused, nparts=cfg["tile_y"].size[2])
         tx, fused = s[load].split(fused, nparts=cfg["tile_x"].size[2])
         s[load].bind(tz, te.thread_axis("threadIdx.z"))
         s[load].bind(ty, te.thread_axis("threadIdx.y"))
         s[load].bind(tx, te.thread_axis("threadIdx.x"))
+
 
     # unroll
     s[output].pragma(kernel_scope, 'auto_unroll_max_step', cfg['auto_unroll_max_step'].val)

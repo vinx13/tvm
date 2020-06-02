@@ -288,13 +288,23 @@ def conv2d_winograd_without_weight_transfrom_strategy_cuda(attrs, inputs, out_ty
 @deformable_conv2d_strategy.register(["cuda", "gpu"])
 def deformable_conv2d_strategy_cuda(attrs, inputs, out_type, target):
     """deformable_conv2d cuda strategy"""
-    layout = attrs.data_layout
-    assert layout == "NCHW"
+    data_layout = attrs.data_layout
+    offset_layout = attrs.offset_layout
+    kernel_layout = attrs.kernel_layout
+    out_layout = attrs.out_layout 
+    assert out_layout == "NCHW"
+    assert kernel_layout == 'OIHW'
     strategy = _op.OpStrategy()
-    strategy.add_implementation(
-        wrap_compute_deformable_conv2d(topi.cuda.deformable_conv2d_nchw),
-        wrap_topi_schedule(topi.cuda.schedule_deformable_conv2d_nchw),
-        name="deformable_conv2d_nchw.cuda")
+    if data_layout == 'NCHW' and offset_layout == 'NCHW':
+        strategy.add_implementation(
+            wrap_compute_deformable_conv2d(topi.cuda.deformable_conv2d_nchw),
+            wrap_topi_schedule(topi.cuda.schedule_deformable_conv2d_nchw),
+            name="deformable_conv2d_nchw.cuda")
+    elif data_layout == 'NHWC' and offset_layout == 'NCHW':
+        strategy.add_implementation(
+            wrap_compute_deformable_conv2d(topi.cuda.deformable_conv2d_nchw),
+            wrap_topi_schedule(topi.cuda.schedule_deformable_conv2d_nchw),
+            name="deformable_conv2d_nchw.cuda")
     return strategy
 
 @conv2d_transpose_strategy.register(["cuda", "gpu"])

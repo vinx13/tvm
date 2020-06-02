@@ -284,7 +284,6 @@ def schedule_conv2d_winograd_nnpack_weight_transform(attrs, outs, target):
 def wrap_compute_deformable_conv2d(topi_compute):
     """wrap deformable_conv2d topi compute"""
     def _compute_deformable_conv2d(attrs, inputs, out_dtype):
-        assert attrs.data_layout == "NCHW"
         padding = get_const_tuple(attrs.padding)
         strides = get_const_tuple(attrs.strides)
         dilation = get_const_tuple(attrs.dilation)
