@@ -2135,6 +2135,7 @@ _convert_map = {
     "_contrib_quantized_pooling": _qnn_pooling,
     "_contrib_quantized_batch_norm" : _qnn_batch_norm,
     "_sg_mkldnn_fully_connected": _qnn_fully_connected,
+    "_contrib_SyncBatchNorm" : _mx_batch_norm,
 }
 
 # set identity list
