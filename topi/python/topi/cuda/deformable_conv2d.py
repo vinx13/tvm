@@ -77,10 +77,7 @@ def deformable_conv2d_nchw_cuda(data, offset, kernel, strides, padding, dilation
     else:
         dilation_h, dilation_w = dilation
 
-    if NHWC:
-        batch, in_height, in_width, in_channel = get_const_tuple(data.shape)
-    else:
-        batch, in_channel, in_height, in_width = get_const_tuple(data.shape)
+    batch, in_channel, in_height, in_width = get_const_tuple(data.shape)
     out_channel, channel, kernel_h, kernel_w = get_const_tuple(kernel.shape)
     _, _, out_height, out_width = get_const_tuple(offset.shape)
     assert in_channel % deformable_groups == 0, "Input cahnnels must divide deformable group size"
@@ -100,10 +97,7 @@ def deformable_conv2d_nchw_cuda(data, offset, kernel, strides, padding, dilation
 
     def _bilinear(n, c, h, w):
         outside = tvm.tir.any(h < 0, w < 0, h >= in_height, w >= in_width)
-        if NHWC:
-            val = bilinear_sample_nhwc(data, (n, h, w, c), in_height - 1, in_width - 1)
-        else:
-            val = bilinear_sample_nchw(data, (n, c, h, w), in_height - 1, in_width - 1)
+        val = bilinear_sample_nchw(data, (n, c, h, w), in_height - 1, in_width - 1)
         return tvm.tir.if_then_else(outside, zero, val)
 
     data_deform = \
@@ -123,11 +117,136 @@ def deformable_conv2d_nchw_cuda(data, offset, kernel, strides, padding, dilation
             kernel[f, rc, ry, rx].astype(out_dtype),
             axis=[rc, ry, rx]), tag="deformable_conv2d_nchw")
 
+def deformable_conv2d_nhwc_nchw_nchw_cuda(data, offset, kernel, strides, padding, dilation, deformable_groups,
+                                          groups, out_dtype):
+    """Deformable conv2D operator in NHWC data, NCHW offset, NCHW output layout.
+
+    The deformable convolution operation is described in https://arxiv.org/abs/1703.06211
+
+    Parameters
+    ----------
+    data : tvm.te.Tensor
+        4-D with shape [batch, in_height, in_width, in_channel]
+
+    offset : tvm.te.Tensor
+        4-D with shape [batch, deformable_groups * filter_height * filter_width * 2,
+        out_height, out_width].
+
+    kernel : tvm.te.Tensor
+        4-D with shape [num_filter, in_channel, filter_height, filter_width]
+
+    strides : int or a list/tuple of two ints
+        stride size, or [stride_height, stride_width]
+
+    padding : int or a list/tuple of two ints
+        padding size, or [pad_height, pad_width]
+
+    dilation : int or a list/tuple of two ints
+        dilation size, or [dilation_height, dilation_width]
+
+    deformable_groups : int
+        number of deformable groups
+
+    groups : int
+        number of groups
+
+    Returns
+    -------
+    output : tvm.te.Tensor
+        4-D with shape [batch, out_channel, out_height, out_width]
+    """
+    if out_dtype is None:
+        out_dtype = data.dtype
+
+    if isinstance(strides, int):
+        stride_h = stride_w = strides
+    else:
+        stride_h, stride_w = strides
+
+    if isinstance(dilation, int):
+        dilation_h = dilation_w = dilation
+    else:
+        dilation_h, dilation_w = dilation
+
+    batch, in_height, in_width, in_channel = get_const_tuple(data.shape)
+    out_channel, channel, kernel_h, kernel_w = get_const_tuple(kernel.shape)
+    _, _, out_height, out_width = get_const_tuple(offset.shape)
+    assert in_channel % deformable_groups == 0, "Input cahnnels must divide deformable group size"
+    assert groups == 1, "deformable_conv2d_nchw does not support groups > 1"
+
+    ic_per_dgroup = channel // deformable_groups
+
+    dilated_kernel_h = (kernel_h - 1) * dilation_h + 1
+    dilated_kernel_w = (kernel_w - 1) * dilation_w + 1
+    pad_top, pad_left, _, _ = get_pad_tuple(
+        padding, (dilated_kernel_h, dilated_kernel_w))
+    rc = te.reduce_axis((0, in_channel), name='rc')
+    ry = te.reduce_axis((0, kernel_h), name='ry')
+    rx = te.reduce_axis((0, kernel_w), name='rx')
+
+    zero = tvm.tir.const(0.0, data.dtype)
+
+    def _bilinear(n, c, h, w):
+        outside = tvm.tir.any(h < 0, w < 0, h >= in_height, w >= in_width)
+        val = bilinear_sample_nhwc(data, (n, h, w, c), in_height - 1, in_width - 1)
+        return tvm.tir.if_then_else(outside, zero, val)
+
+    data_deform = \
+        te.compute((batch, kernel_h, kernel_w, out_height, out_width, in_channel),
+                   lambda n, kh, kw, y, x, c:
+                   _bilinear(n, c,
+                             y * stride_h - pad_top + kh * dilation_h +
+                             offset[n, c // ic_per_dgroup * (kernel_w*kernel_h*2) +
+                                    (kh * kernel_w + kw) * 2, y, x],
+                             x * stride_w - pad_left + kw * dilation_w +
+                             offset[n, c // ic_per_dgroup * (kernel_w*kernel_h*2) +
+                                    (kh * kernel_w + kw) * 2 + 1, y, x]), tag="data_deform", name='data_deform')
+    return te.compute(
+        (batch, out_channel, out_height, out_width),
+        lambda n, f, y, x: te.sum(
+            data_deform[n, rc, ry, rx, y, x].astype(out_dtype) *
+            kernel[f, rc, ry, rx].astype(out_dtype),
+            axis=[rc, ry, rx]), tag="deformable_conv2d_nhwc_nchw_nchw")
+
 @autotvm.register_topi_compute("deformable_conv2d_nchw.cuda")
 def deformable_conv2d_nchw(cfg, data, offset, kernel, strides, padding, dilation,
                            deformable_groups, groups, out_dtype):
     return deformable_conv2d_nchw_cuda(data, offset, kernel, strides, padding, dilation,
                                      deformable_groups, groups, out_dtype)
+
+@autotvm.register_topi_compute("deformable_conv2d_nhwc_nchw_nchw.cuda")
+def deformable_conv2d_nhwc_nchw_nchw(cfg, data, offset, kernel, strides, padding, dilation,
+                                     deformable_groups, groups, out_dtype):
+    return deformable_conv2d_nhwc_nchw_nchw_cuda(data, offset, kernel, strides, padding, dilation,
+                                                 deformable_groups, groups, out_dtype)
+
+@autotvm.register_topi_schedule("deformable_conv2d_nhwc_nchw_nchw.cuda")
+def schedule_deformable_conv2d_nhwc_nchw_nchw(cfg, outs):
+    """TOPI schedule callback of deformable conv2d for cuda gpu
+
+    Parameters
+    ----------
+    cfg: ConfigEntity
+        The config for this template
+
+    outs: Array of Tensor
+        The computation graph description of conv2d
+        in the format of an array of tensors.
+
+    Returns
+    -------
+    s: Schedule
+        The computation schedule for conv2d.
+    """
+    outs = [outs] if isinstance(outs, te.tensor.Tensor) else outs
+    s = te.create_schedule([x.op for x in outs])
+
+    def _callback(op):
+        if op.tag == 'deformable_conv2d_nhwc_nchw_nchw':
+            _schedule_nhwc_cuda(cfg, s, op.output(0))
+
+    traverse_inline(s, outs[0].op, _callback)
+    return s
 
 @autotvm.register_topi_schedule("deformable_conv2d_nchw.cuda")
 def schedule_deformable_conv2d_nchw(cfg, outs):
@@ -153,8 +272,7 @@ def schedule_deformable_conv2d_nchw(cfg, outs):
     def _callback(op):
         if op.tag == 'deformable_conv2d_nchw':
             #_schedule_direct_cuda(cfg, s, op.output(0))
-            _schedule_nhwc_cuda(cfg, s, op.output(0))
-            #_schedule_manual_cuda(s, op.output(0))
+            _schedule_manual_cuda(s, op.output(0))
 
     traverse_inline(s, outs[0].op, _callback)
     return s
@@ -319,8 +437,8 @@ def _schedule_manual_cuda(s, conv):
     s[kernel_shared].bind(ax0_ax1_fused_ax2_fused_ax3_fused_i, te.thread_axis("threadIdx.x"))
     data_deform_shared = s.cache_read(data_deform, "shared", [conv_local])
     ax0, ax1, ax2, ax3, ax4, ax5 = tuple(data_deform_shared.op.axis)
-    ax5, ax5_v = s[data_deform_shared].split(ax5, factor=4)
-    s[data_deform_shared].vectorize(ax5_v)
+    #ax5, ax5_v = s[data_deform_shared].split(ax5, factor=4)
+    #s[data_deform_shared].vectorize(ax5_v)
     s[data_deform_shared].compute_at(s[conv_local], rx_o_o)
     #ax0_ax1_fused_ax2_fused_ax3_fused_ax4_fused_ax5_fused = s[data_deform_shared].fuse(ax2, ax3, ax4, ax5) # FIXME: my fuse to avoid channel
     ax0_ax1_fused_ax2_fused_ax3_fused_ax4_fused_ax5_fused = s[data_deform_shared].fuse(ax0, ax1, ax2, ax3, ax4, ax5)

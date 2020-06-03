@@ -1018,8 +1018,15 @@ def _mx_deformable_convolution(inputs, attrs):
     new_attrs["deformable_groups"] = attrs.get_int("num_deformable_group", 1)
     new_attrs["groups"] = attrs.get_int("num_group", 1)
     assert attrs.get_str("layout", "NCHW") == "NCHW", "Deformable conv2d only supports NCHW layout"
+    # FIXME: hardcoded layout
+    transposed_data = _op.transpose(inputs[0], [0, 2, 3, 1])
+    new_attrs["data_layout"] = "NHWC"
+    new_attrs["offset_layout"] = "NCHW"
+    new_attrs["kernel_layout"] = "OIHW"
+    new_attrs["out_layout"] = "NCHW"
+
     use_bias = not attrs.get_bool("no_bias", False)
-    res = _op.nn.deformable_conv2d(inputs[0], inputs[1], inputs[2], **new_attrs)
+    res = _op.nn.deformable_conv2d(transposed_data, inputs[1], inputs[2], **new_attrs)
     if use_bias:
         assert len(inputs) == 4
         res = _op.nn.bias_add(res, inputs[3])
