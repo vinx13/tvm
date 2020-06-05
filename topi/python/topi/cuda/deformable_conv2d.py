@@ -24,7 +24,7 @@ from ..nn.util import get_pad_tuple
 from ..util import traverse_inline, get_const_tuple
 from ..cpp.util import bilinear_sample_nchw, bilinear_sample_nhwc
 
-NHWC = True
+#NHWC = True
 
 def deformable_conv2d_nchw_cuda(data, offset, kernel, strides, padding, dilation, deformable_groups,
                                 groups, out_dtype):
@@ -272,6 +272,7 @@ def schedule_deformable_conv2d_nchw(cfg, outs):
     def _callback(op):
         if op.tag == 'deformable_conv2d_nchw':
             #_schedule_direct_cuda(cfg, s, op.output(0))
+            print('MANUAL')
             _schedule_manual_cuda(s, op.output(0))
 
     traverse_inline(s, outs[0].op, _callback)
@@ -381,7 +382,82 @@ def _schedule_manual_cuda(s, conv):
         # output is relu but named conv
         conv = s.outputs[0].output(0)
 
-    data_transposed = data_deform.op.input_tensors[1]
+    n, c, kh, kw, _, _ = tuple(data_deform.op.axis)
+    n, f, y, x = tuple(conv.op.axis)
+    n_c, f_c, y_c, x_c, rc, ry, rx = tuple(conv_local.op.axis) + tuple(conv_local.op.reduce_axis)
+    n_c_o_i, n_c_i = s[conv_local].split(n_c, factor=1)
+    n_c_o_o_i, n_c_o_i = s[conv_local].split(n_c_o_i, factor=1)
+    n_c_o_o_o_i, n_c_o_o_i = s[conv_local].split(n_c_o_o_i, factor=1)
+    n_c_o_o_o_o, n_c_o_o_o_i = s[conv_local].split(n_c_o_o_o_i, factor=1)
+    f_c_o_i, f_c_i = s[conv_local].split(f_c, factor=4)
+    f_c_o_o_i, f_c_o_i = s[conv_local].split(f_c_o_i, factor=1)
+    f_c_o_o_o_i, f_c_o_o_i = s[conv_local].split(f_c_o_o_i, factor=32)
+    f_c_o_o_o_o, f_c_o_o_o_i = s[conv_local].split(f_c_o_o_o_i, factor=1)
+    y_c_o_i, y_c_i = s[conv_local].split(y_c, factor=2)
+    y_c_o_o_i, y_c_o_i = s[conv_local].split(y_c_o_i, factor=1)
+    y_c_o_o_o_i, y_c_o_o_i = s[conv_local].split(y_c_o_o_i, factor=1)
+    y_c_o_o_o_o, y_c_o_o_o_i = s[conv_local].split(y_c_o_o_o_i, factor=1)
+    x_c_o_i, x_c_i = s[conv_local].split(x_c, factor=4)
+    x_c_o_o_i, x_c_o_i = s[conv_local].split(x_c_o_i, factor=1)
+    x_c_o_o_o_i, x_c_o_o_i = s[conv_local].split(x_c_o_o_i, factor=8)
+    x_c_o_o_o_o, x_c_o_o_o_i = s[conv_local].split(x_c_o_o_o_i, factor=1)
+    rc_o_i, rc_i = s[conv_local].split(rc, factor=2)
+    rc_o_o, rc_o_i = s[conv_local].split(rc_o_i, factor=2)
+    ry_o_i, ry_i = s[conv_local].split(ry, factor=3)
+    ry_o_o, ry_o_i = s[conv_local].split(ry_o_i, factor=1)
+    rx_o_i, rx_i = s[conv_local].split(rx, factor=3)
+    rx_o_o, rx_o_i = s[conv_local].split(rx_o_i, factor=1)
+    s[conv_local].reorder(n_c_o_o_o_o, f_c_o_o_o_o, y_c_o_o_o_o, x_c_o_o_o_o, n_c_o_o_o_i, f_c_o_o_o_i, y_c_o_o_o_i, x_c_o_o_o_i, n_c_o_o_i, f_c_o_o_i, y_c_o_o_i, x_c_o_o_i, rc_o_o, ry_o_o, rx_o_o, rc_o_i, ry_o_i, rx_o_i, n_c_o_i, f_c_o_i, y_c_o_i, x_c_o_i, rc_i, ry_i, rx_i, n_c_i, f_c_i, y_c_i, x_c_i)
+    n_o_i, n_i = s[conv].split(n, factor=1)
+    n_o_o_i, n_o_i = s[conv].split(n_o_i, factor=1)
+    n_o_o_o, n_o_o_i = s[conv].split(n_o_o_i, factor=1)
+    f_o_i, f_i = s[conv].split(f, factor=4)
+    f_o_o_i, f_o_i = s[conv].split(f_o_i, factor=32)
+    f_o_o_o, f_o_o_i = s[conv].split(f_o_o_i, factor=1)
+    y_o_i, y_i = s[conv].split(y, factor=2)
+    y_o_o_i, y_o_i = s[conv].split(y_o_i, factor=1)
+    y_o_o_o, y_o_o_i = s[conv].split(y_o_o_i, factor=1)
+    x_o_i, x_i = s[conv].split(x, factor=4)
+    x_o_o_i, x_o_i = s[conv].split(x_o_i, factor=8)
+    x_o_o_o, x_o_o_i = s[conv].split(x_o_o_i, factor=1)
+    s[conv].reorder(n_o_o_o, f_o_o_o, y_o_o_o, x_o_o_o, n_o_o_i, f_o_o_i, y_o_o_i, x_o_o_i, n_o_i, f_o_i, y_o_i, x_o_i, n_i, f_i, y_i, x_i)
+    n_c_o_o_o_o_f_c_o_o_o_o_fused_y_c_o_o_o_o_fused_x_c_o_o_o_o_fused = s[conv_local].fuse(n_c_o_o_o_o, f_c_o_o_o_o, y_c_o_o_o_o, x_c_o_o_o_o)
+    n_o_o_o_f_o_o_o_fused_y_o_o_o_fused_x_o_o_o_fused = s[conv].fuse(n_o_o_o, f_o_o_o, y_o_o_o, x_o_o_o)
+    n_c_o_o_o_i_f_c_o_o_o_i_fused_y_c_o_o_o_i_fused_x_c_o_o_o_i_fused = s[conv_local].fuse(n_c_o_o_o_i, f_c_o_o_o_i, y_c_o_o_o_i, x_c_o_o_o_i)
+    n_o_o_i_f_o_o_i_fused_y_o_o_i_fused_x_o_o_i_fused = s[conv].fuse(n_o_o_i, f_o_o_i, y_o_o_i, x_o_o_i)
+    n_c_o_o_i_f_c_o_o_i_fused_y_c_o_o_i_fused_x_c_o_o_i_fused = s[conv_local].fuse(n_c_o_o_i, f_c_o_o_i, y_c_o_o_i, x_c_o_o_i)
+    n_o_i_f_o_i_fused_y_o_i_fused_x_o_i_fused = s[conv].fuse(n_o_i, f_o_i, y_o_i, x_o_i)
+    s[conv_local].compute_at(s[conv], n_o_i_f_o_i_fused_y_o_i_fused_x_o_i_fused)
+    kernel_shared = s.cache_read(kernel, "shared", [conv_local])
+    ax0, ax1, ax2, ax3 = tuple(kernel_shared.op.axis)
+    s[kernel_shared].compute_at(s[conv_local], rx_o_o)
+    ax0_ax1_fused_ax2_fused_ax3_fused = s[kernel_shared].fuse(ax0, ax1, ax2, ax3)
+    ax0_ax1_fused_ax2_fused_ax3_fused_o, ax0_ax1_fused_ax2_fused_ax3_fused_i = s[kernel_shared].split(ax0_ax1_fused_ax2_fused_ax3_fused, factor=256)
+    s[kernel_shared].bind(ax0_ax1_fused_ax2_fused_ax3_fused_i, te.thread_axis("threadIdx.x"))
+    data_deform_shared = s.cache_read(data_deform, "shared", [conv_local])
+    ax0, ax1, ax2, ax3, ax4, ax5 = tuple(data_deform_shared.op.axis)
+    s[data_deform_shared].compute_at(s[conv_local], rx_o_o)
+    ax0_ax1_fused_ax2_fused_ax3_fused_ax4_fused_ax5_fused = s[data_deform_shared].fuse(ax0, ax1, ax2, ax3, ax4, ax5)
+    ax0_ax1_fused_ax2_fused_ax3_fused_ax4_fused_ax5_fused_o, ax0_ax1_fused_ax2_fused_ax3_fused_ax4_fused_ax5_fused_i = s[data_deform_shared].split(ax0_ax1_fused_ax2_fused_ax3_fused_ax4_fused_ax5_fused, factor=256)
+    s[data_deform_shared].bind(ax0_ax1_fused_ax2_fused_ax3_fused_ax4_fused_ax5_fused_i, te.thread_axis("threadIdx.x"))
+    s[conv].bind(n_o_o_o_f_o_o_o_fused_y_o_o_o_fused_x_o_o_o_fused, te.thread_axis("blockIdx.x"))
+    s[conv].bind(n_o_o_i_f_o_o_i_fused_y_o_o_i_fused_x_o_o_i_fused, te.thread_axis("vthread"))
+    s[conv].bind(n_o_i_f_o_i_fused_y_o_i_fused_x_o_i_fused, te.thread_axis("threadIdx.x"))
+    s[conv_local].pragma(n_c_o_o_o_o_f_c_o_o_o_o_fused_y_c_o_o_o_o_fused_x_c_o_o_o_o_fused, "auto_unroll_max_step", 512)
+    s[conv_local].pragma(n_c_o_o_o_o_f_c_o_o_o_o_fused_y_c_o_o_o_o_fused_x_c_o_o_o_o_fused, "unroll_explicit", True)
+    s[data_deform].compute_inline()
+    # return s
+    
+def _schedule_manual_nhwc_cuda(s, conv):
+    data_deform, kernel = s[conv].op.input_tensors
+    if conv.op in s.outputs:
+        # output is conv
+        conv_local = s.cache_write(conv, 'local')
+    else:
+        s[conv].set_scope('local')
+        conv_local = conv
+        # output is relu but named conv
+        conv = s.outputs[0].output(0)
 
     n, c, kh, kw, _, _ = tuple(data_deform.op.axis)
     n, f, y, x = tuple(conv.op.axis)
@@ -437,8 +513,8 @@ def _schedule_manual_cuda(s, conv):
     s[kernel_shared].bind(ax0_ax1_fused_ax2_fused_ax3_fused_i, te.thread_axis("threadIdx.x"))
     data_deform_shared = s.cache_read(data_deform, "shared", [conv_local])
     ax0, ax1, ax2, ax3, ax4, ax5 = tuple(data_deform_shared.op.axis)
-    #ax5, ax5_v = s[data_deform_shared].split(ax5, factor=4)
-    #s[data_deform_shared].vectorize(ax5_v)
+    ax5, ax5_v = s[data_deform_shared].split(ax5, factor=4)
+    s[data_deform_shared].vectorize(ax5_v)
     s[data_deform_shared].compute_at(s[conv_local], rx_o_o)
     #ax0_ax1_fused_ax2_fused_ax3_fused_ax4_fused_ax5_fused = s[data_deform_shared].fuse(ax2, ax3, ax4, ax5) # FIXME: my fuse to avoid channel
     ax0_ax1_fused_ax2_fused_ax3_fused_ax4_fused_ax5_fused = s[data_deform_shared].fuse(ax0, ax1, ax2, ax3, ax4, ax5)
