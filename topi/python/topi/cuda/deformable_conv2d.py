@@ -24,7 +24,390 @@ from ..nn.util import get_pad_tuple
 from ..util import traverse_inline, get_const_tuple
 from ..cpp.util import bilinear_sample_nchw, bilinear_sample_nhwc
 
+from tvm.contrib import nvcc
+import os
+
+TASK="gemm"
+USE_MANUAL_CODE = True
+
+#@tvm.register_func("tvm_callback_cuda_compile", override=True)
+def tvm_callback_cuda_compile(code):
+    ptx =  nvcc.compile_cuda(code, target="ptx")
+    return ptx
+
+def write_code(code, fname):
+    with open(fname, "w") as f:
+        f.write(code)
+
+def intrin_wmma_load_matrix(scope):
+    n = 16
+    A = te.placeholder((n, n), name='A', dtype='float16')
+    BA = tvm.tir.decl_buffer(A.shape, A.dtype, scope='shared', data_alignment=32, offset_factor=256)
+    C = te.compute((n, n), lambda i, j: A[i, j], name='C')
+    BC = tvm.tir.decl_buffer(C.shape, C.dtype, scope=scope, data_alignment=32, offset_factor=256)
+
+    def intrin_func(ins, outs):
+        ib = tvm.tir.ir_builder.create()
+
+        BA = ins[0]
+        BC = outs[0]
+        ib.emit(tvm.tir.call_intrin('handle', 'tvm_load_matrix_sync',
+                                BC.data, n, n, n, BC.elem_offset // 256,
+                                BA.access_ptr('r'), n, 'row_major'))
+        return ib.get()
+
+    return te.decl_tensor_intrin(C.op, intrin_func, binds={A: BA, C: BC})
+
+
+def intrin_wmma_gemm():
+    n = 16
+    A = te.placeholder((n, n), name='A', dtype='float16')
+    B = te.placeholder((n, n), name='B', dtype='float16')
+    k = te.reduce_axis((0, n), name="k")
+    C = te.compute((n, n),
+                    lambda ii, jj:
+                    te.sum(A[ii, k].astype('float') * B[k, jj].astype('float'), axis=k),
+                    name='C')
+    BA = tvm.tir.decl_buffer(A.shape, A.dtype, name='BA', scope='wmma.matrix_a', data_alignment=32, offset_factor=256)
+    BB = tvm.tir.decl_buffer(B.shape, B.dtype, name='BB', scope='wmma.matrix_b', data_alignment=32, offset_factor=256)
+    BC = tvm.tir.decl_buffer(C.shape, C.dtype, name='BC', scope='wmma.accumulator', data_alignment=32, offset_factor=256)
+
+    def intrin_func(ins, outs):
+        BA, BB = ins
+        BC, = outs
+
+        def init():
+            ib = tvm.tir.ir_builder.create()
+            ib.emit(tvm.tir.call_intrin('handle', 'tvm_fill_fragment', BC.data, n, n, n, BC.elem_offset // 256, 0.0))
+            return ib.get()
+
+        def update():
+            ib = tvm.tir.ir_builder.create()
+            ib.emit(tvm.tir.call_intrin('handle', 'tvm_mma_sync',
+                                    BC.data, BC.elem_offset // 256,
+                                    BA.data, BA.elem_offset // 256,
+                                    BB.data, BB.elem_offset // 256,
+                                    BC.data, BC.elem_offset // 256))
+            return ib.get()
+
+        return update(), init(), update()
+
+    return te.decl_tensor_intrin(C.op, intrin_func, binds={A: BA, B: BB, C: BC})
+
+
+def intrin_wmma_store_matrix():
+    n = 16
+    A = te.placeholder((n, n), name='A', dtype='float32')
+    BA = tvm.tir.decl_buffer(A.shape, A.dtype, scope='wmma.accumulator', data_alignment=32, offset_factor=256)
+    C = te.compute((n, n), lambda i, j: A[i, j], name='C')
+    BC = tvm.tir.decl_buffer(C.shape, C.dtype, scope='global', data_alignment=32, offset_factor=256)
+
+    def intrin_func(ins, outs):
+        ib = tvm.tir.ir_builder.create()
+        BA = ins[0]
+        BC = outs[0]
+        ib.emit(tvm.tir.call_intrin('handle', 'tvm_store_matrix_sync',
+                                BA.data, n, n, n, BA.elem_offset // 256,
+                                BC.access_ptr('w'), n, 'row_major'))
+        return ib.get()
+
+    return te.decl_tensor_intrin(C.op, intrin_func, binds={A: BA, C: BC})
+#@tvm.register_func
+def tvm_callback_cuda_postproc(code):
+    if not os.path.exists("perf"):
+        os.mkdir("perf")
+    write_code(code, "perf/%s_generated.cu" % TASK)
+    if USE_MANUAL_CODE:
+        code = open("perf/%s_manual.cu" % TASK).read()
+    return code
+
 #NHWC = True
+
+def deformable_conv2d_half_tensorcore(data, offset, kernel, strides, padding, dilation, deformable_groups,
+                                      groups, out_dtype):
+    """Deformable conv2D operator in NCHW layout.
+
+    The deformable convolution operation is described in https://arxiv.org/abs/1703.06211
+
+    Parameters
+    ----------
+    data : tvm.te.Tensor
+        4-D with shape [batch, in_channel, in_height, in_width]
+
+    offset : tvm.te.Tensor
+        4-D with shape [batch, deformable_groups * filter_height * filter_width * 2,
+        out_height, out_width].
+
+    kernel : tvm.te.Tensor
+        4-D with shape [num_filter, in_channel, filter_height, filter_width]
+
+    strides : int or a list/tuple of two ints
+        stride size, or [stride_height, stride_width]
+
+    padding : int or a list/tuple of two ints
+        padding size, or [pad_height, pad_width]
+
+    dilation : int or a list/tuple of two ints
+        dilation size, or [dilation_height, dilation_width]
+
+    deformable_groups : int
+        number of deformable groups
+
+    groups : int
+        number of groups
+
+    Returns
+    -------
+    output : tvm.te.Tensor
+        4-D with shape [batch, out_channel, out_height, out_width]
+    """
+    if out_dtype is None:
+        out_dtype = data.dtype
+
+    if isinstance(strides, int):
+        stride_h = stride_w = strides
+    else:
+        stride_h, stride_w = strides
+
+    if isinstance(dilation, int):
+        dilation_h = dilation_w = dilation
+    else:
+        dilation_h, dilation_w = dilation
+
+    batch, in_channel, in_height, in_width = get_const_tuple(data.shape)
+    kernel_h, kernel_w, channel, out_channel_div_block_size, _, _ = get_const_tuple(kernel.shape) # out_channel is actually out_channel // 16
+    _, _, out_height, out_width = get_const_tuple(offset.shape)
+    block_size = 16
+    assert in_channel % deformable_groups == 0, "Input cahnnels must divide deformable group size"
+    assert groups == 1, "deformable_conv2d_nchw does not support groups > 1"
+
+    ic_per_dgroup = channel * block_size // deformable_groups
+
+    dilated_kernel_h = (kernel_h - 1) * dilation_h + 1
+    dilated_kernel_w = (kernel_w - 1) * dilation_w + 1
+    pad_top, pad_left, _, _ = get_pad_tuple(
+        padding, (dilated_kernel_h, dilated_kernel_w))
+    rco = te.reduce_axis((0, in_channel//block_size), name='rco')
+    rci = te.reduce_axis((0, block_size), name='rci')
+    ry = te.reduce_axis((0, kernel_h), name='ry')
+    rx = te.reduce_axis((0, kernel_w), name='rx')
+
+    zero = tvm.tir.const(0.0, data.dtype)
+
+    def _bilinear(n, c, h, w):
+        outside = tvm.tir.any(h < 0, w < 0, h >= in_height, w >= in_width)
+        val = bilinear_sample_nchw(data, (n, c, h, w), in_height - 1, in_width - 1)
+        return tvm.tir.if_then_else(outside, zero, val)
+
+    data_deform = \
+        te.compute((batch, in_channel, kernel_h, kernel_w, out_height, out_width),
+                   lambda n, c, kh, kw, y, x:
+                   _bilinear(n, c,
+                             y * stride_h - pad_top + kh * dilation_h +
+                             offset[n, c // ic_per_dgroup * (kernel_w*kernel_h*2) +
+                                    (kh * kernel_w + kw) * 2, y, x],
+                             x * stride_w - pad_left + kw * dilation_w +
+                             offset[n, c // ic_per_dgroup * (kernel_w*kernel_h*2) +
+                                    (kh * kernel_w + kw) * 2 + 1, y, x]), tag="data_deform", name='data_deform')
+    data_deform_packed = te.compute((batch, in_channel // block_size, kernel_h, kernel_w, out_height, out_width // block_size, block_size, block_size), 
+    lambda n,co,kh,kw,h,wo, wi, ci: data_deform[n, co * block_size + ci, kh, kw, h, wo * block_size + wi], tag='data_deform_packed', name='data_deform_packed')
+    # return packed output
+    return te.compute((batch, out_channel_div_block_size, out_height, out_width//block_size, block_size, block_size), lambda n, fo, h, wo,  wi, fi:
+    te.sum(data_deform_packed[n, rco, ry, rx, h, wo, wi, rci].astype('float32') * 
+    kernel[ry, rx, rco, fo, rci, fi].astype('float32'), axis=[rco,ry,rx,rci]), tag='deformable_conv2d_nchw')
+    # return te.compute(
+    #     (batch, out_channel, out_height, out_width),
+    #     lambda n, f, y, x: te.sum(
+    #         data_deform[n, rc, ry, rx, y, x].astype(out_dtype) *
+    #         kernel[f, rc, ry, rx].astype(out_dtype),
+    #         axis=[rc, ry, rx]), tag="deformable_conv2d_nchw")
+
+def _schedule_tensorcore(s, conv):
+    data_deform_packed, W = s[conv].op.input_tensors
+    data_deform = s[data_deform_packed].op.input_tensors[0]
+    s[data_deform].compute_inline()
+
+    AS = s.cache_read(data_deform_packed, 'shared', [conv])
+    s[data_deform_packed].compute_inline()
+    AF = s.cache_read(AS, 'wmma.matrix_a', [conv])
+    WS = s.cache_read(W, 'shared', [conv])
+    WF = s.cache_read(WS, 'wmma.matrix_b', [conv])
+    
+    block_row_warps = 4
+    block_col_warps = 2
+    warp_row_tiles = 2
+    warp_col_tiles = 4
+    warp_size = 32
+    chunk = 2
+
+    conv_local = s.cache_write(conv, 'wmma.accumulator')
+
+    n, f, h, w, wi, fi = s[conv].op.axis
+    wci = wi
+    kernel_scope, n = s[conv].split(n, nparts=1)
+
+    n_o, n_i = s[conv].split(n, factor=1)
+    n_o_o, n_o_i = s[conv].split(n_o, factor=1)
+    n_o_o_o, n_o_o_i = s[conv].split(n_o_o, factor=1)
+    f_o, f_i = s[conv].split(f, factor=warp_row_tiles)
+    f_o_o, f_o_i = s[conv].split(f_o, factor=block_row_warps)
+    f_o_o_o, f_o_o_i = s[conv].split(f_o_o, factor=1)
+    h_o, h_i = s[conv].split(h, factor=block_col_warps)
+    h_o_o, h_o_i = s[conv].split(h_o, factor=2)
+    h_o_o_o, h_o_o_i = s[conv].split(h_o_o, factor=1)
+    w_o, w_i = s[conv].split(w, factor=warp_col_tiles)
+    w_o_o, w_o_i = s[conv].split(w_o, factor=2)
+    w_o_o_o, w_o_o_i = s[conv].split(w_o_o, factor=1)
+    s[conv].reorder(n_o_o_o, f_o_o_o, h_o_o_o, w_o_o_o, n_o_o_i, f_o_o_i, h_o_o_i, w_o_o_i, n_o_i, f_o_i, h_o_i, w_o_i, n_i, f_i, h_i, w_i)
+
+    s[conv].bind(n_o_o_o, te.thread_axis('blockIdx.z'))
+    s[conv].bind(f_o_o_o, te.thread_axis('blockIdx.y'))
+    s[conv].bind(s[conv].fuse(h_o_o_o, w_o_o_o), te.thread_axis('blockIdx.x'))
+    s[conv].bind(n_o_o_i, te.thread_axis('vthread'))
+    s[conv].bind(f_o_o_i, te.thread_axis('vthread'))
+    s[conv].bind(h_o_o_i, te.thread_axis('vthread'))
+    s[conv].bind(w_o_o_i, te.thread_axis('vthread'))
+    s[conv].bind(f_o_i, te.thread_axis('threadIdx.z'))
+    s[conv].bind(h_o_i, te.thread_axis('threadIdx.y'))
+
+
+    s[conv_local].compute_at(s[conv], w_o_i)
+    n, f, h, w, wi, fi = conv_local.op.axis
+    rco, ry, rx, rci = conv_local.op.reduce_axis
+    print(rco, ry, rx, rci)
+    ko, ki = s[conv_local].split(rco, factor=chunk)
+    s[conv_local].reorder(ko, ry, ki, rx, n, f, h, w, wi, fi, rci)
+
+    s[AF].compute_at(s[conv_local], rx)
+    s[WF].compute_at(s[conv_local], rx)
+    
+    s[AS].compute_at(s[conv_local], rx)
+    fused = s[AS].fuse(*s[AS].op.axis)
+    fused_o, fused_i = s[AS].split(fused, factor=warp_size)
+    fused_o_o, fused_o_i = s[AS].split(fused_o, factor=warp_col_tiles)
+    fused_o_o_o, fused_o_o_i = s[AS].split(fused_o_o, factor=block_col_warps)
+    s[AS].bind(fused_i, te.thread_axis('threadIdx.x'))
+    s[AS].bind(fused_o_i, te.thread_axis('threadIdx.y'))
+    s[AS].bind(fused_o_o_i, te.thread_axis('threadIdx.z'))
+
+    s[WS].compute_at(s[conv_local], ry)
+
+    WS_axes = s[WS].op.axis
+    vo, vi = s[WS].split(WS_axes[-1], factor=8)
+    s[WS].vectorize(vi)
+    fused = s[WS].fuse(*WS_axes[:-1], vo)
+    fused_o, fused_i = s[WS].split(fused, factor=warp_size)
+    fused_o_o, fused_o_i = s[WS].split(fused_o, factor=warp_col_tiles)
+    fused_o_o_o, fused_o_o_i = s[WS].split(fused_o_o, factor=block_col_warps)
+    s[WS].bind(fused_i, te.thread_axis('threadIdx.x'))
+    s[WS].bind(fused_o_i, te.thread_axis('threadIdx.y'))
+    s[WS].bind(fused_o_o_i, te.thread_axis('threadIdx.z'))
+    
+    
+    s[AF].tensorize(AF.op.axis[-2], intrin_wmma_load_matrix('wmma.matrix_a'))
+    s[WF].tensorize(WF.op.axis[-2], intrin_wmma_load_matrix('wmma.matrix_b'))
+    s[conv].tensorize(wci, intrin_wmma_store_matrix())
+    s[conv_local].tensorize(wi, intrin_wmma_gemm())
+    
+    # s[conv].pragma(kernel_scope, 'unroll_explicit', True)
+    # s[conv].pragma(kernel_scope, 'auto_unroll_max_step', 512)
+
+
+
+
+
+
+
+    # fused = s[conv].fuse(*s[conv].op.axis)
+    # fused_o, fused_i = s[conv].split(fused, factor=256)
+    # fused_oo, fused_oi = s[conv].split(fused_o, factor=1024)
+    # s[conv].bind(fused_i, te.thread_axis('threadIdx.x'))
+    # s[conv].bind(fused_oi, te.thread_axis('blockIdx.x'))
+    
+
+    
+ 
+    #f_o, f_i = s[conv].split(f, factor=warp_row_tiles)
+    #f_o_o, f_o_i = s[conv].split(f_o, factor=block_row_warps)
+    #fused_h_w = s[conv].fuse(h, w)
+    #fused_h_w_o, fused_h_w_i = s[conv].split(fused_h_w, factor=warp_col_tiles)
+    #fused_h_w_o_o, fused_h_w_o_i = s[conv].split(fused_h_w_o, factor=block_col_warps)
+    #s[conv].reorder(n, f_o_o, fused_h_w_o_o, f_o_i, fused_h_w_o_i, f_i, fused_h_w_i, wi, fi)
+
+    # s[conv].bind(n, te.thread_axis('blockIdx.z'))
+    # s[conv].bind(f_o_o, te.thread_axis('blockIdx.y'))
+    # s[conv].bind(fused_h_w_o_o, te.thread_axis('blockIdx.x'))
+    # s[conv].bind(f_o_i, te.thread_axis('threadIdx.z'))
+    # s[conv].bind(fused_h_w_o_i, te.thread_axis('threadIdx.y'))
+
+    #s[conv_local].compute_at(s[conv], fused_h_w_o_i)
+    #n, f, h, w, wi, fi = conv_local.op.axis
+    #rco, ry, rx, rci = conv_local.op.reduce_axis
+    #print(rco, ry, rx, rci)
+    #ko, ki = s[conv_local].split(rco, factor=chunk)
+    #s[conv_local].reorder(ko, ry, ki, rx, n, f, h, w, wi, fi, rci)
+
+    #s[AF].compute_at(s[conv_local], rx)
+    #s[WF].compute_at(s[conv_local], rx)
+    #
+    #s[AS].compute_at(s[conv_local], rx)
+    #fused = s[AS].fuse(*s[AS].op.axis)
+    #fused_o, fused_i = s[AS].split(fused, factor=warp_size)
+    #fused_o_o, fused_o_i = s[AS].split(fused_o, factor=warp_col_tiles)
+    #fused_o_o_o, fused_o_o_i = s[AS].split(fused_o_o, factor=block_col_warps)
+    #s[AS].bind(fused_i, te.thread_axis('threadIdx.x'))
+    #s[AS].bind(fused_o_i, te.thread_axis('threadIdx.y'))
+    #s[AS].bind(fused_o_o_i, te.thread_axis('threadIdx.z'))
+
+    #s[WS].compute_at(s[conv_local], ry)
+
+    #fused = s[WS].fuse(*s[WS].op.axis)
+    # #fused, fused_v = s[WS].split(fused, factor=8)
+    # WS_axes = s[WS].op.axis
+    # vo, vi = s[WS].split(WS_axes[-1], factor=8)
+    # s[WS].vectorize(vi)
+    # fused = s[WS].fuse(*WS_axes[:-1], vo)
+    # fused_o, fused_i = s[WS].split(fused, factor=warp_size)
+    # fused_o_o, fused_o_i = s[WS].split(fused_o, factor=warp_col_tiles)
+    # fused_o_o_o, fused_o_o_i = s[WS].split(fused_o_o, factor=block_col_warps)
+    # s[WS].bind(fused_i, te.thread_axis('threadIdx.x'))
+    # s[WS].bind(fused_o_i, te.thread_axis('threadIdx.y'))
+    # s[WS].bind(fused_o_o_i, te.thread_axis('threadIdx.z'))
+    
+    # f_o, f_i = s[conv].split(f, factor=4)
+    # f_oo, f_oi = s[conv].split(f_o, factor=8)
+    # h_o, h_i = s[conv].split(h, factor=4)
+    # h_oo, h_oi = s[conv].split(h_o, factor=4)
+
+    # AW
+    #n, co, kh, kw, h, wo, wi, ci = s[AS].op.axis
+    
+    #s[AF].tensorize(AF.op.axis[-2], intrin_wmma_load_matrix('wmma.matrix_a'))
+    #s[WF].tensorize(WF.op.axis[-2], intrin_wmma_load_matrix('wmma.matrix_b'))
+    #s[conv].tensorize(wci, intrin_wmma_store_matrix())
+    #s[conv_local].tensorize(wi, intrin_wmma_gemm())
+    
+    #s[conv].pragma(kernel_scope, 'unroll_explicit', True)
+    #s[conv].pragma(kernel_scope, 'auto_unroll_max_step', 512)
+    # fused = s[conv].fuse(*s[conv].op.axis)
+    # fused_o, fused_i = s[conv].split(fused, factor=256)
+    # fused_oo, fused_oi = s[conv].split(fused_o, factor=1024)
+    # s[conv].bind(fused_i, te.thread_axis('threadIdx.x'))
+    # s[conv].bind(fused_oi, te.thread_axis('blockIdx.x'))
+    
+
+def schedule_deformable_conv2d_half_tensorcore(outs):
+    outs = [outs] if isinstance(outs, te.tensor.Tensor) else outs
+    s = te.create_schedule([x.op for x in outs])
+
+    def _callback(op):
+        if op.tag == 'deformable_conv2d_nchw':
+            #_schedule_direct_cuda(cfg, s, op.output(0))
+            _schedule_tensorcore(s, op.output(0))
+
+    traverse_inline(s, outs[0].op, _callback)
+    return s
+
 
 def deformable_conv2d_nchw_cuda(data, offset, kernel, strides, padding, dilation, deformable_groups,
                                 groups, out_dtype):
@@ -101,8 +484,8 @@ def deformable_conv2d_nchw_cuda(data, offset, kernel, strides, padding, dilation
         return tvm.tir.if_then_else(outside, zero, val)
 
     data_deform = \
-        te.compute((batch, kernel_h, kernel_w, out_height, out_width, in_channel),
-                   lambda n, kh, kw, y, x, c:
+        te.compute((batch, in_channel, kernel_h, kernel_w, out_height, out_width),
+                   lambda n, c, kh, kw, y, x:
                    _bilinear(n, c,
                              y * stride_h - pad_top + kh * dilation_h +
                              offset[n, c // ic_per_dgroup * (kernel_w*kernel_h*2) +
@@ -117,6 +500,137 @@ def deformable_conv2d_nchw_cuda(data, offset, kernel, strides, padding, dilation
             kernel[f, rc, ry, rx].astype(out_dtype),
             axis=[rc, ry, rx]), tag="deformable_conv2d_nchw")
 
+def deformable_conv2d_deformed_input(data_deform, kernel, strides, padding, dilation, deformable_groups, groups, out_dtype):
+    batch, in_channel, kernel_h, kernel_w, out_height, out_width = get_const_tuple(data_deform.shape)
+    out_channel = get_const_tuple(kernel.shape)[0]
+    rc = te.reduce_axis((0, in_channel), name='rc')
+    ry = te.reduce_axis((0, kernel_h), name='ry')
+    rx = te.reduce_axis((0, kernel_w), name='rx')
+    return te.compute(
+        (batch, out_channel, out_height, out_width),
+        lambda n, f, y, x: te.sum(
+            data_deform[n, rc, ry, rx, y, x].astype(out_dtype) *
+            kernel[f, rc, ry, rx].astype(out_dtype),
+            axis=[rc, ry, rx]), tag="deformable_conv2d_nchw")
+
+def _schedule_deformable_conv2d_deformed_input(s, conv):
+    data_deform, kernel = s[conv].op.input_tensors
+    if conv.op in s.outputs:
+        # output is conv
+        conv_local = s.cache_write(conv, 'local')
+    else:
+        s[conv].set_scope('local')
+        conv_local = conv
+        # output is relu but named conv
+        conv = s.outputs[0].output(0)
+
+    n, f, y, x = tuple(conv.op.axis)
+    n_c, f_c, y_c, x_c, rc, ry, rx = tuple(conv_local.op.axis) + tuple(conv_local.op.reduce_axis)
+    n_c_o_i, n_c_i = s[conv_local].split(n_c, factor=1)
+    n_c_o_o_i, n_c_o_i = s[conv_local].split(n_c_o_i, factor=1)
+    n_c_o_o_o_i, n_c_o_o_i = s[conv_local].split(n_c_o_o_i, factor=1)
+    n_c_o_o_o_o, n_c_o_o_o_i = s[conv_local].split(n_c_o_o_o_i, factor=1)
+    f_c_o_i, f_c_i = s[conv_local].split(f_c, factor=4)
+    f_c_o_o_i, f_c_o_i = s[conv_local].split(f_c_o_i, factor=1)
+    f_c_o_o_o_i, f_c_o_o_i = s[conv_local].split(f_c_o_o_i, factor=32)
+    f_c_o_o_o_o, f_c_o_o_o_i = s[conv_local].split(f_c_o_o_o_i, factor=1)
+    y_c_o_i, y_c_i = s[conv_local].split(y_c, factor=2)
+    y_c_o_o_i, y_c_o_i = s[conv_local].split(y_c_o_i, factor=1)
+    y_c_o_o_o_i, y_c_o_o_i = s[conv_local].split(y_c_o_o_i, factor=1)
+    y_c_o_o_o_o, y_c_o_o_o_i = s[conv_local].split(y_c_o_o_o_i, factor=1)
+    x_c_o_i, x_c_i = s[conv_local].split(x_c, factor=4)
+    x_c_o_o_i, x_c_o_i = s[conv_local].split(x_c_o_i, factor=1)
+    x_c_o_o_o_i, x_c_o_o_i = s[conv_local].split(x_c_o_o_i, factor=8)
+    x_c_o_o_o_o, x_c_o_o_o_i = s[conv_local].split(x_c_o_o_o_i, factor=1)
+    rc_o_i, rc_i = s[conv_local].split(rc, factor=2)
+    rc_o_o, rc_o_i = s[conv_local].split(rc_o_i, factor=2)
+    ry_o_i, ry_i = s[conv_local].split(ry, factor=3)
+    ry_o_o, ry_o_i = s[conv_local].split(ry_o_i, factor=1)
+    rx_o_i, rx_i = s[conv_local].split(rx, factor=3)
+    rx_o_o, rx_o_i = s[conv_local].split(rx_o_i, factor=1)
+    s[conv_local].reorder(n_c_o_o_o_o, f_c_o_o_o_o, y_c_o_o_o_o, x_c_o_o_o_o, n_c_o_o_o_i, f_c_o_o_o_i, y_c_o_o_o_i, x_c_o_o_o_i, n_c_o_o_i, f_c_o_o_i, y_c_o_o_i, x_c_o_o_i, rc_o_o, ry_o_o, rx_o_o, rc_o_i, ry_o_i, rx_o_i, n_c_o_i, f_c_o_i, y_c_o_i, x_c_o_i, rc_i, ry_i, rx_i, n_c_i, f_c_i, y_c_i, x_c_i)
+    #s[conv_local].reorder(rc_o_o, ry_o_o, rx_o_o, rc_o_i, ry_o_i, rx_o_i, n_c, f_c, y_c, x_c,rc_i, ry_i, rx_i)
+    n_o_i, n_i = s[conv].split(n, factor=1)
+    n_o_o_i, n_o_i = s[conv].split(n_o_i, factor=1)
+    n_o_o_o, n_o_o_i = s[conv].split(n_o_o_i, factor=1)
+    f_o_i, f_i = s[conv].split(f, factor=4)
+    f_o_o_i, f_o_i = s[conv].split(f_o_i, factor=32)
+    f_o_o_o, f_o_o_i = s[conv].split(f_o_o_i, factor=1)
+    y_o_i, y_i = s[conv].split(y, factor=2)
+    y_o_o_i, y_o_i = s[conv].split(y_o_i, factor=1)
+    y_o_o_o, y_o_o_i = s[conv].split(y_o_o_i, factor=1)
+    x_o_i, x_i = s[conv].split(x, factor=4)
+    x_o_o_i, x_o_i = s[conv].split(x_o_i, factor=8)
+    x_o_o_o, x_o_o_i = s[conv].split(x_o_o_i, factor=1)
+    s[conv].reorder(n_o_o_o, f_o_o_o, y_o_o_o, x_o_o_o, n_o_o_i, f_o_o_i, y_o_o_i, x_o_o_i, n_o_i, f_o_i, y_o_i, x_o_i, n_i, f_i, y_i, x_i)
+    n_c_o_o_o_o_f_c_o_o_o_o_fused_y_c_o_o_o_o_fused_x_c_o_o_o_o_fused = s[conv_local].fuse(n_c_o_o_o_o, f_c_o_o_o_o, y_c_o_o_o_o, x_c_o_o_o_o)
+    n_o_o_o_f_o_o_o_fused_y_o_o_o_fused_x_o_o_o_fused = s[conv].fuse(n_o_o_o, f_o_o_o, y_o_o_o, x_o_o_o)
+    n_c_o_o_o_i_f_c_o_o_o_i_fused_y_c_o_o_o_i_fused_x_c_o_o_o_i_fused = s[conv_local].fuse(n_c_o_o_o_i, f_c_o_o_o_i, y_c_o_o_o_i, x_c_o_o_o_i)
+    n_o_o_i_f_o_o_i_fused_y_o_o_i_fused_x_o_o_i_fused = s[conv].fuse(n_o_o_i, f_o_o_i, y_o_o_i, x_o_o_i)
+    n_c_o_o_i_f_c_o_o_i_fused_y_c_o_o_i_fused_x_c_o_o_i_fused = s[conv_local].fuse(n_c_o_o_i, f_c_o_o_i, y_c_o_o_i, x_c_o_o_i)
+    n_o_i_f_o_i_fused_y_o_i_fused_x_o_i_fused = s[conv].fuse(n_o_i, f_o_i, y_o_i, x_o_i)
+    s[conv_local].compute_at(s[conv], n_o_i_f_o_i_fused_y_o_i_fused_x_o_i_fused)
+    kernel_shared = s.cache_read(kernel, "shared", [conv_local])
+    ax0, ax1, ax2, ax3 = tuple(kernel_shared.op.axis)
+    s[kernel_shared].compute_at(s[conv_local], rx_o_o)
+    ax0_ax1_fused_ax2_fused_ax3_fused = s[kernel_shared].fuse(ax0, ax1, ax2, ax3)
+    ax0_ax1_fused_ax2_fused_ax3_fused_o, ax0_ax1_fused_ax2_fused_ax3_fused_i = s[kernel_shared].split(ax0_ax1_fused_ax2_fused_ax3_fused, factor=256)
+    s[kernel_shared].bind(ax0_ax1_fused_ax2_fused_ax3_fused_i, te.thread_axis("threadIdx.x"))
+    data_deform_shared = s.cache_read(data_deform, "shared", [conv_local])
+    ax0, ax1, ax2, ax3, ax4, ax5 = tuple(data_deform_shared.op.axis)
+    s[data_deform_shared].compute_at(s[conv_local], rx_o_o)
+
+    # we want to check the loops first, bind n
+    #s[data_deform_shared].reorder(ax0, ax2, ax3, ax4, ax5, ax1)
+    #ax0_o, ax0_i = s[data_deform_shared].split(ax0, factor=256)
+    #s[data_deform_shared].bind(ax0_i, te.thread_axis('threadIdx.x'))
+    #s[data_deform_shared].vectorize(ax1)
+    
+    #ax0_ax1_fused_ax2_fused_ax3_fused_ax4_fused_ax5_fused = s[data_deform_shared].fuse(ax0, ax2, ax3, ax4, ax5, ax1)
+    ax0_ax1_fused_ax2_fused_ax3_fused_ax4_fused_ax5_fused = s[data_deform_shared].fuse(ax0, ax1, ax2, ax3, ax4, ax5)
+
+    #ax0_ax1_fused_ax2_fused_ax3_fused_ax4_fused_ax5_fused, ax0_ax1_fused_ax2_fused_ax3_fused_ax4_fused_ax5_fused_v = s[data_deform_shared].split(ax0_ax1_fused_ax2_fused_ax3_fused_ax4_fused_ax5_fused, factor=4)
+    #s[data_deform_shared].vectorize(ax0_ax1_fused_ax2_fused_ax3_fused_ax4_fused_ax5_fused_v)
+    ax0_ax1_fused_ax2_fused_ax3_fused_ax4_fused_ax5_fused_o, ax0_ax1_fused_ax2_fused_ax3_fused_ax4_fused_ax5_fused_i = s[data_deform_shared].split(ax0_ax1_fused_ax2_fused_ax3_fused_ax4_fused_ax5_fused, factor=256)
+    s[data_deform_shared].bind(ax0_ax1_fused_ax2_fused_ax3_fused_ax4_fused_ax5_fused_i, te.thread_axis("threadIdx.x"))
+
+
+    s[conv].bind(n_o_o_o_f_o_o_o_fused_y_o_o_o_fused_x_o_o_o_fused, te.thread_axis("blockIdx.x"))
+    #s[conv].bind(n_o_o_i_f_o_o_i_fused_y_o_o_i_fused_x_o_o_i_fused, te.thread_axis("vthread")) # it is useless because vthread=1
+    s[conv].bind(n_o_i_f_o_i_fused_y_o_i_fused_x_o_i_fused, te.thread_axis("threadIdx.x"))
+    s[conv_local].pragma(n_c_o_o_o_o_f_c_o_o_o_o_fused_y_c_o_o_o_o_fused_x_c_o_o_o_o_fused, "auto_unroll_max_step", 512)
+    s[conv_local].pragma(n_c_o_o_o_o_f_c_o_o_o_o_fused_y_c_o_o_o_o_fused_x_c_o_o_o_o_fused, "unroll_explicit", True)
+    # return s
+
+def schedule_deformable_conv2d_deformed_input(outs):
+    """TOPI schedule callback of deformable conv2d for cuda gpu
+
+    Parameters
+    ----------
+    cfg: ConfigEntity
+        The config for this template
+
+    outs: Array of Tensor
+        The computation graph description of conv2d
+        in the format of an array of tensors.
+
+    Returns
+    -------
+    s: Schedule
+        The computation schedule for conv2d.
+    """
+    outs = [outs] if isinstance(outs, te.tensor.Tensor) else outs
+    s = te.create_schedule([x.op for x in outs])
+
+    def _callback(op):
+        if op.tag == 'deformable_conv2d_nchw':
+            #_schedule_direct_cuda(cfg, s, op.output(0))
+            print('MANUAL')
+            _schedule_deformable_conv2d_deformed_input(s, op.output(0))
+
+    traverse_inline(s, outs[0].op, _callback)
+    return s
+    
 def deformable_conv2d_nhwc_nchw_nchw_cuda(data, offset, kernel, strides, padding, dilation, deformable_groups,
                                           groups, out_dtype):
     """Deformable conv2D operator in NHWC data, NCHW offset, NCHW output layout.
@@ -192,8 +706,8 @@ def deformable_conv2d_nhwc_nchw_nchw_cuda(data, offset, kernel, strides, padding
         return tvm.tir.if_then_else(outside, zero, val)
 
     data_deform = \
-        te.compute((batch, kernel_h, kernel_w, out_height, out_width, in_channel),
-                   lambda n, kh, kw, y, x, c:
+        te.compute((batch, in_channel, kernel_h, kernel_w, out_height, out_width),
+                   lambda n, c, kh, kw, y, x:
                    _bilinear(n, c,
                              y * stride_h - pad_top + kh * dilation_h +
                              offset[n, c // ic_per_dgroup * (kernel_w*kernel_h*2) +
@@ -373,6 +887,7 @@ def _schedule_nhwc_cuda(cfg, s, conv):
 
 def _schedule_manual_cuda(s, conv):
     data_deform, kernel = s[conv].op.input_tensors
+    print(s[data_deform].op.input_tensors)
     if conv.op in s.outputs:
         # output is conv
         conv_local = s.cache_write(conv, 'local')
@@ -428,21 +943,36 @@ def _schedule_manual_cuda(s, conv):
     n_c_o_o_i_f_c_o_o_i_fused_y_c_o_o_i_fused_x_c_o_o_i_fused = s[conv_local].fuse(n_c_o_o_i, f_c_o_o_i, y_c_o_o_i, x_c_o_o_i)
     n_o_i_f_o_i_fused_y_o_i_fused_x_o_i_fused = s[conv].fuse(n_o_i, f_o_i, y_o_i, x_o_i)
     s[conv_local].compute_at(s[conv], n_o_i_f_o_i_fused_y_o_i_fused_x_o_i_fused)
+    x_c_i, v = s[conv_local].split(x_c_i, factor=2)
+    s[conv_local].vectorize(v)
     kernel_shared = s.cache_read(kernel, "shared", [conv_local])
     ax0, ax1, ax2, ax3 = tuple(kernel_shared.op.axis)
     s[kernel_shared].compute_at(s[conv_local], rx_o_o)
     ax0_ax1_fused_ax2_fused_ax3_fused = s[kernel_shared].fuse(ax0, ax1, ax2, ax3)
+    #ax0_ax1_fused_ax2_fused_ax3_fused, ax0_ax1_fused_ax2_fused_ax3_fused_v = s[kernel_shared].split(ax0_ax1_fused_ax2_fused_ax3_fused, factor=2)
+    #s[kernel_shared].vectorize(ax0_ax1_fused_ax2_fused_ax3_fused_v)
+
     ax0_ax1_fused_ax2_fused_ax3_fused_o, ax0_ax1_fused_ax2_fused_ax3_fused_i = s[kernel_shared].split(ax0_ax1_fused_ax2_fused_ax3_fused, factor=256)
     s[kernel_shared].bind(ax0_ax1_fused_ax2_fused_ax3_fused_i, te.thread_axis("threadIdx.x"))
+
     data_deform_shared = s.cache_read(data_deform, "shared", [conv_local])
     ax0, ax1, ax2, ax3, ax4, ax5 = tuple(data_deform_shared.op.axis)
     s[data_deform_shared].compute_at(s[conv_local], rx_o_o)
+
     ax0_ax1_fused_ax2_fused_ax3_fused_ax4_fused_ax5_fused = s[data_deform_shared].fuse(ax0, ax1, ax2, ax3, ax4, ax5)
+
     ax0_ax1_fused_ax2_fused_ax3_fused_ax4_fused_ax5_fused_o, ax0_ax1_fused_ax2_fused_ax3_fused_ax4_fused_ax5_fused_i = s[data_deform_shared].split(ax0_ax1_fused_ax2_fused_ax3_fused_ax4_fused_ax5_fused, factor=256)
     s[data_deform_shared].bind(ax0_ax1_fused_ax2_fused_ax3_fused_ax4_fused_ax5_fused_i, te.thread_axis("threadIdx.x"))
+
+
     s[conv].bind(n_o_o_o_f_o_o_o_fused_y_o_o_o_fused_x_o_o_o_fused, te.thread_axis("blockIdx.x"))
-    s[conv].bind(n_o_o_i_f_o_o_i_fused_y_o_o_i_fused_x_o_o_i_fused, te.thread_axis("vthread"))
+    s[conv].bind(n_o_o_i_f_o_o_i_fused_y_o_o_i_fused_x_o_o_i_fused, te.thread_axis("vthread")) # it is useless because vthread=1
     s[conv].bind(n_o_i_f_o_i_fused_y_o_i_fused_x_o_i_fused, te.thread_axis("threadIdx.x"))
+    # n_i_f_i_y_i_x_i_fused = s[conv].fuse(n_i, f_i, y_i, x_i)
+    # _, n_i_f_i_y_i_x_i_fused_v = s[conv].split(n_i_f_i_y_i_x_i_fused, factor=2) 
+    #s[conv].vectorize(n_i_f_i_y_i_x_i_fused_v)
+    _, v = s[conv].split(x_i, factor=2)
+    s[conv].vectorize(v)
     s[conv_local].pragma(n_c_o_o_o_o_f_c_o_o_o_o_fused_y_c_o_o_o_o_fused_x_c_o_o_o_o_fused, "auto_unroll_max_step", 512)
     s[conv_local].pragma(n_c_o_o_o_o_f_c_o_o_o_o_fused_y_c_o_o_o_o_fused_x_c_o_o_o_o_fused, "unroll_explicit", True)
     s[data_deform].compute_inline()
@@ -509,6 +1039,8 @@ def _schedule_manual_nhwc_cuda(s, conv):
     ax0, ax1, ax2, ax3 = tuple(kernel_shared.op.axis)
     s[kernel_shared].compute_at(s[conv_local], rx_o_o)
     ax0_ax1_fused_ax2_fused_ax3_fused = s[kernel_shared].fuse(ax0, ax1, ax2, ax3)
+    ax0_ax1_fused_ax2_fused_ax3_fused, ax0_ax1_fused_ax2_fused_ax3_fused_v = s[kernel_shared].split(factor=2)
+    s[kernel_shared].vectorize(ax0_ax1_fused_ax2_fused_ax3_fused_v)
     ax0_ax1_fused_ax2_fused_ax3_fused_o, ax0_ax1_fused_ax2_fused_ax3_fused_i = s[kernel_shared].split(ax0_ax1_fused_ax2_fused_ax3_fused, factor=256)
     s[kernel_shared].bind(ax0_ax1_fused_ax2_fused_ax3_fused_i, te.thread_axis("threadIdx.x"))
     data_deform_shared = s.cache_read(data_deform, "shared", [conv_local])
@@ -523,6 +1055,10 @@ def _schedule_manual_nhwc_cuda(s, conv):
     s[conv].bind(n_o_o_o_f_o_o_o_fused_y_o_o_o_fused_x_o_o_o_fused, te.thread_axis("blockIdx.x"))
     s[conv].bind(n_o_o_i_f_o_o_i_fused_y_o_o_i_fused_x_o_o_i_fused, te.thread_axis("vthread"))
     s[conv].bind(n_o_i_f_o_i_fused_y_o_i_fused_x_o_i_fused, te.thread_axis("threadIdx.x"))
+    n_i_f_i_y_i_x_i_fused = s[conv].fuse(n_i, f_i, y_i, x_i)
+    _, n_i_f_i_y_i_x_i_fused_v = s[conv].split(n_i_f_i_y_i_x_i_fused, factor=2)
+    s[conv].vectorize(n_i_f_i_y_i_x_i_fused)
+
     s[conv_local].pragma(n_c_o_o_o_o_f_c_o_o_o_o_fused_y_c_o_o_o_o_fused_x_c_o_o_o_o_fused, "auto_unroll_max_step", 512)
     s[conv_local].pragma(n_c_o_o_o_o_f_c_o_o_o_o_fused_y_c_o_o_o_o_fused_x_c_o_o_o_o_fused, "unroll_explicit", True)
     s[data_deform].compute_inline()
