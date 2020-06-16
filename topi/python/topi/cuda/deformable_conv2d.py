@@ -31,8 +31,9 @@ import numpy as np
 TASK="gemm"
 USE_MANUAL_CODE = True
 
-#@tvm.register_func("tvm_callback_cuda_compile", override=True)
+@tvm.register_func("tvm_callback_cuda_compile", override=True)
 def tvm_callback_cuda_compile(code):
+    write_code(code, '/home/ubuntu/ws/code.cu')
     ptx =  nvcc.compile_cuda(code, target="ptx")
     return ptx
 
@@ -210,7 +211,7 @@ def deformable_conv2d_half_tensorcore(data, offset, kernel, strides, padding, di
                              x * stride_w - pad_left + kw * dilation_w +
                              offset[n, c // ic_per_dgroup * (kernel_w*kernel_h*2) +
                                     (kh * kernel_w + kw) * 2 + 1, y, x]), tag="data_deform", name='data_deform')
-    data_deform_packed = te.compute((batch, in_channel // block_size, kernel_h, kernel_w, out_height, out_width // block_size, block_size, block_size), 
+    data_deform_packed = te.compute((batch, in_channel // block_size, kernel_h, kernel_w, out_height, out_width, block_size), 
     lambda n,co,kh,kw,h,w, ci: data_deform[n, co * block_size + ci, kh, kw, h, w], tag='data_deform_packed', name='data_deform_packed')
     # return packed output
     return te.compute((batch, out_channel_div_block_size, out_height, out_width, block_size), lambda n, fo, h, w, fi:
@@ -247,7 +248,7 @@ def _schedule_tensorcore(s, Conv):
         s[Conv].set_scope('shared')
         OL = Conv
 
-    block_row_warps = 4
+    block_row_warps = 2
     block_col_warps = 2
     warp_row_tiles = 2
     warp_col_tiles = 4
@@ -270,32 +271,37 @@ def _schedule_tensorcore(s, Conv):
 
     AS_align = chunk * wmma_k + offset
     WS_align = warp_col_tiles * block_col_warps * wmma_n + offset
-    block_factor_w = wmma_m * warp_row_tiles * block_row_warps
+    block_factor_w = warp_row_tiles * block_row_warps # also removed wmma_m here because we switched to h instead
     block_factor_o = warp_col_tiles * block_col_warps # wmma_n is implied in shape
     CS_align = block_factor_o + offset
     AS_strides = get_strides([1, 1, AS_align, 1])
     AL_strides = get_strides([1, 1, wmma_k, 1])
     #WS_strides = get_strides([WS_align, 1])
     #WL_strides = get_strides([wmma_n * warp_col_tiles, 1])
+    # my ASAL strides
+    AS_strides = get_strides([wmma_k, 1])
+    AL_strides = get_strides([wmma_k, 1])
     # my WSWL strides
     WS_strides = get_strides([wmma_k, 1])
     WL_strides = get_strides([wmma_k, 1])
-    CL_strides = get_strides([1, 1, wmma_n * warp_col_tiles, 1])
-    CS_strides = get_strides([1, 1, CS_align, 1])
+    # end 
+    CL_strides = get_strides([wmma_k, 1])
+    CS_strides = get_strides([wmma_k, 1])
 
     #wci = wi
     #kernel_scope, n = s[conv].split(n, nparts=1)
 
     # Schedule for output
     nc, oco, hc, wc, ooi = s[Conv].op.axis
-    block_i, wc = s[output].split(wc, factor=block_factor_w)
+    block_i, hc = s[output].split(hc, factor=block_factor_w)
+    wco, wci = s[output].split(wc, factor=wmma_m)
     block_j, oco = s[output].split(oco, factor=block_factor_o)
-    s[output].reorder(nc, hc, block_i, block_j, oco, wc)
-    block_k = s[output].fuse(nc, hc)
+    s[output].reorder(nc, wco, block_i, block_j, hc, wci, oco)
+    block_k = s[output].fuse(nc, wco)
     s[output].bind(block_k, block_z)
-    s[output].reorder(block_k, block_i, block_j, oco, wc)
+    s[output].reorder(block_k, block_i, block_j, hc, oco)
 
-    t = s[output].fuse(wc, oco)
+    t = s[output].fuse(hc, wci, oco) # FIXME: order?
     #t, ti = s[output].split(t, factor=2)
     t, tx = s[output].split(t, factor=warp_size)
     t, ty = s[output].split(t, factor=block_row_warps)
@@ -315,10 +321,10 @@ def _schedule_tensorcore(s, Conv):
     oco, oci = s[OL].split(oco, factor=warp_col_tiles)
     _, oco = s[OL].split(oco, factor=block_col_warps)
     wc, wwc = s[OL].split(wc, factor=wmma_m)
-    wc, wci = s[OL].split(wc, factor=warp_row_tiles)
-    _, wc = s[OL].split(wc, factor=block_row_warps)
-    s[OL].reorder(oco, wc, wci, oci, wwc, ooc)
-    s[OL].bind(wc, thread_y)
+    hc, hci = s[OL].split(hc, factor=warp_row_tiles)
+    _, hc = s[OL].split(hc, factor=block_row_warps)
+    s[OL].reorder(oco, hc, hci, oci, wc, wwc, ooc)
+    s[OL].bind(hc, thread_y)
     s[OL].bind(oco, thread_z)
 
     # Schedule wmma computation
@@ -327,15 +333,15 @@ def _schedule_tensorcore(s, Conv):
     w, wwf = s[ConvF].split(w, factor=wmma_m)
     #ic, ii = s[ConvF].split(ico, factor=wmma_k)
     ko, ki = s[ConvF].split(ico, factor=chunk)
-    s[ConvF].reorder(kh, kw, ko, ki, oo, w, wwf, oof, ici)
+    s[ConvF].reorder(kh, kw, ko, ki, n, oo, h, w, wwf, oof, ici)
 
     s[AF].compute_at(s[ConvF], ki)
     s[WF].compute_at(s[ConvF], ki)
 
     # Schedule wmma load
     n, i, rh, rw, h, w, ii = AF.op.axis
-    #w, ww = s[AF].split(w, factor=wmma_m)
-    #s[AF].reorder(i, w, ww, ii)
+    w, ww = s[AF].split(w, factor=wmma_m)
+    s[AF].reorder(w, ww, ii)
 
     kh, kw, i, o, ii, oo = WF.op.axis
     # i, ii = s[WF].split(i, factor=wmma_k)
@@ -382,25 +388,25 @@ def _schedule_tensorcore(s, Conv):
     AL_shape = (wmma_m, wmma_k)
     WS_shape = (wmma_k, wmma_n)
     WL_shape = (wmma_k, wmma_n)
-    CL_shape = (wmma_m, 1, 1, wmma_n)
-    CS_shape = (wmma_m, 1, 1, wmma_n)
+    CL_shape = (wmma_m, wmma_n)
+    CS_shape = (wmma_m, wmma_n)
 
     AL_gemm = te.placeholder(AL_shape, name='A', dtype=in_dtype)
     WL_gemm = te.placeholder(WL_shape, name='B', dtype=in_dtype)
     k_gemm = te.reduce_axis((0, wmma_k), name="k")
-    #CL_compute = te.compute(CL_shape, lambda ii, t0, t1, jj:
-    #                        te.sum(AL_gemm[ii, t0, t1, k_gemm].astype(out_dtype) * \
-    #                               WL_gemm[k_gemm, jj].astype(out_dtype), axis=k_gemm),
-    #                        name='C')
+    CL_compute = te.compute(CL_shape, lambda ii, jj:
+                            te.sum(AL_gemm[ii, k_gemm].astype(out_dtype) * \
+                                   WL_gemm[k_gemm, jj].astype(out_dtype), axis=k_gemm),
+                            name='C')
 
-    #s[AF].tensorize(ww, intrin_wmma_load_matrix_A(AL_strides, AS_strides, shape,
-    #                                              "row_major", AS_shape, AL_shape, in_dtype))
+    s[AF].tensorize(ww, intrin_wmma_load_matrix_A(AL_strides, AS_strides, shape,
+                                                  "row_major", AS_shape, AL_shape, in_dtype))
     s[WF].tensorize(ii, intrin_wmma_load_matrix_W(WL_strides, WS_strides, shape,
                                                   "row_major", WS_shape, WL_shape, in_dtype))
-    #s[OL].tensorize(wwc, intrin_wmma_store_matrix(CS_strides, CL_strides,
-    #                                              shape, out_dtype, CL_shape, CS_shape))
-    #s[ConvF].tensorize(wwf, intrin_wmma_gemm(AL_gemm, WL_gemm, CL_compute, AL_strides,
-    #                                         WL_strides, CL_strides, shape))
+    s[OL].tensorize(wwc, intrin_wmma_store_matrix(CS_strides, CL_strides,
+                                                  shape, out_dtype, CL_shape, CS_shape))
+    s[ConvF].tensorize(wwf, intrin_wmma_gemm(AL_gemm, WL_gemm, CL_compute, AL_strides,
+                                             WL_strides, CL_strides, shape))
 
 
 
