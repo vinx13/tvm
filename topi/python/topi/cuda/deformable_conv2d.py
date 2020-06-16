@@ -26,6 +26,7 @@ from ..cpp.util import bilinear_sample_nchw, bilinear_sample_nhwc
 
 from tvm.contrib import nvcc
 import os
+import numpy as np
 
 TASK="gemm"
 USE_MANUAL_CODE = True
@@ -59,7 +60,7 @@ def intrin_wmma_load_matrix(scope):
     return te.decl_tensor_intrin(C.op, intrin_func, binds={A: BA, C: BC})
 
 
-def intrin_wmma_gemm():
+def _intrin_wmma_gemm():
     n = 16
     A = te.placeholder((n, n), name='A', dtype='float16')
     B = te.placeholder((n, n), name='B', dtype='float16')
@@ -210,10 +211,10 @@ def deformable_conv2d_half_tensorcore(data, offset, kernel, strides, padding, di
                              offset[n, c // ic_per_dgroup * (kernel_w*kernel_h*2) +
                                     (kh * kernel_w + kw) * 2 + 1, y, x]), tag="data_deform", name='data_deform')
     data_deform_packed = te.compute((batch, in_channel // block_size, kernel_h, kernel_w, out_height, out_width // block_size, block_size, block_size), 
-    lambda n,co,kh,kw,h,wo, wi, ci: data_deform[n, co * block_size + ci, kh, kw, h, wo * block_size + wi], tag='data_deform_packed', name='data_deform_packed')
+    lambda n,co,kh,kw,h,w, ci: data_deform[n, co * block_size + ci, kh, kw, h, w], tag='data_deform_packed', name='data_deform_packed')
     # return packed output
-    return te.compute((batch, out_channel_div_block_size, out_height, out_width//block_size, block_size, block_size), lambda n, fo, h, wo,  wi, fi:
-    te.sum(data_deform_packed[n, rco, ry, rx, h, wo, wi, rci].astype('float32') * 
+    return te.compute((batch, out_channel_div_block_size, out_height, out_width, block_size), lambda n, fo, h, w, fi:
+    te.sum(data_deform_packed[n, rco, ry, rx, h, w, rci].astype('float32') * 
     kernel[ry, rx, rco, fo, rci, fi].astype('float32'), axis=[rco,ry,rx,rci]), tag='deformable_conv2d_nchw')
     # return te.compute(
     #     (batch, out_channel, out_height, out_width),
@@ -222,179 +223,186 @@ def deformable_conv2d_half_tensorcore(data, offset, kernel, strides, padding, di
     #         kernel[f, rc, ry, rx].astype(out_dtype),
     #         axis=[rc, ry, rx]), tag="deformable_conv2d_nchw")
 
-def _schedule_tensorcore(s, conv):
-    data_deform_packed, W = s[conv].op.input_tensors
+def _schedule_tensorcore(s, Conv):
+    data_deform_packed, W = s[Conv].op.input_tensors
+    ico, kh, kw, ici = s[Conv].op.reduce_axis
     data_deform = s[data_deform_packed].op.input_tensors[0]
+    in_dtype = 'float16'
+    out_dtype = 'float32'
     s[data_deform].compute_inline()
 
-    AS = s.cache_read(data_deform_packed, 'shared', [conv])
+    AS = s.cache_read(data_deform_packed, 'shared', [Conv])
     s[data_deform_packed].compute_inline()
-    AF = s.cache_read(AS, 'wmma.matrix_a', [conv])
-    WS = s.cache_read(W, 'shared', [conv])
-    WF = s.cache_read(WS, 'wmma.matrix_b', [conv])
+    AF = s.cache_read(AS, 'wmma.matrix_a', [Conv])
+    WS = s.cache_read(W, 'shared', [Conv])
+    WF = s.cache_read(WS, 'wmma.matrix_b', [Conv])
+    ConvF = s.cache_write(Conv, 'wmma.accumulator')
     
+    if Conv.op in s.outputs:
+        output = Conv
+        ConvS = s.cache_read(ConvF, 'shared', [Conv])
+        OL = ConvS
+    else:
+        output = s.outputs[0].output(0)
+        s[Conv].set_scope('shared')
+        OL = Conv
+
     block_row_warps = 4
     block_col_warps = 2
     warp_row_tiles = 2
     warp_col_tiles = 4
     warp_size = 32
     chunk = 2
+    wmma_m = wmma_n = wmma_k = 16
+    offset = 0
+    vector_width = 2
 
-    conv_local = s.cache_write(conv, 'wmma.accumulator')
+    block_x = te.thread_axis('blockIdx.x')
+    block_y = te.thread_axis('blockIdx.y')
+    block_z = te.thread_axis('blockIdx.z')
+    thread_x = te.thread_axis('threadIdx.x')
+    thread_y = te.thread_axis('threadIdx.y')
+    thread_z = te.thread_axis('threadIdx.z')
 
-    n, f, h, w, wi, fi = s[conv].op.axis
-    wci = wi
-    kernel_scope, n = s[conv].split(n, nparts=1)
+    # Define the intrin strides
+    def get_strides(extents):
+        return [np.prod(extents[i:]).tolist() for i in range(len(extents))]
 
-    n_o, n_i = s[conv].split(n, factor=1)
-    n_o_o, n_o_i = s[conv].split(n_o, factor=1)
-    n_o_o_o, n_o_o_i = s[conv].split(n_o_o, factor=1)
-    f_o, f_i = s[conv].split(f, factor=warp_row_tiles)
-    f_o_o, f_o_i = s[conv].split(f_o, factor=block_row_warps)
-    f_o_o_o, f_o_o_i = s[conv].split(f_o_o, factor=1)
-    h_o, h_i = s[conv].split(h, factor=block_col_warps)
-    h_o_o, h_o_i = s[conv].split(h_o, factor=2)
-    h_o_o_o, h_o_o_i = s[conv].split(h_o_o, factor=1)
-    w_o, w_i = s[conv].split(w, factor=warp_col_tiles)
-    w_o_o, w_o_i = s[conv].split(w_o, factor=2)
-    w_o_o_o, w_o_o_i = s[conv].split(w_o_o, factor=1)
-    s[conv].reorder(n_o_o_o, f_o_o_o, h_o_o_o, w_o_o_o, n_o_o_i, f_o_o_i, h_o_o_i, w_o_o_i, n_o_i, f_o_i, h_o_i, w_o_i, n_i, f_i, h_i, w_i)
+    AS_align = chunk * wmma_k + offset
+    WS_align = warp_col_tiles * block_col_warps * wmma_n + offset
+    block_factor_w = wmma_m * warp_row_tiles * block_row_warps
+    block_factor_o = warp_col_tiles * block_col_warps # wmma_n is implied in shape
+    CS_align = block_factor_o + offset
+    AS_strides = get_strides([1, 1, AS_align, 1])
+    AL_strides = get_strides([1, 1, wmma_k, 1])
+    #WS_strides = get_strides([WS_align, 1])
+    #WL_strides = get_strides([wmma_n * warp_col_tiles, 1])
+    # my WSWL strides
+    WS_strides = get_strides([wmma_k, 1])
+    WL_strides = get_strides([wmma_k, 1])
+    CL_strides = get_strides([1, 1, wmma_n * warp_col_tiles, 1])
+    CS_strides = get_strides([1, 1, CS_align, 1])
 
-    s[conv].bind(n_o_o_o, te.thread_axis('blockIdx.z'))
-    s[conv].bind(f_o_o_o, te.thread_axis('blockIdx.y'))
-    s[conv].bind(s[conv].fuse(h_o_o_o, w_o_o_o), te.thread_axis('blockIdx.x'))
-    s[conv].bind(n_o_o_i, te.thread_axis('vthread'))
-    s[conv].bind(f_o_o_i, te.thread_axis('vthread'))
-    s[conv].bind(h_o_o_i, te.thread_axis('vthread'))
-    s[conv].bind(w_o_o_i, te.thread_axis('vthread'))
-    s[conv].bind(f_o_i, te.thread_axis('threadIdx.z'))
-    s[conv].bind(h_o_i, te.thread_axis('threadIdx.y'))
+    #wci = wi
+    #kernel_scope, n = s[conv].split(n, nparts=1)
+
+    # Schedule for output
+    nc, oco, hc, wc, ooi = s[Conv].op.axis
+    block_i, wc = s[output].split(wc, factor=block_factor_w)
+    block_j, oco = s[output].split(oco, factor=block_factor_o)
+    s[output].reorder(nc, hc, block_i, block_j, oco, wc)
+    block_k = s[output].fuse(nc, hc)
+    s[output].bind(block_k, block_z)
+    s[output].reorder(block_k, block_i, block_j, oco, wc)
+
+    t = s[output].fuse(wc, oco)
+    #t, ti = s[output].split(t, factor=2)
+    t, tx = s[output].split(t, factor=warp_size)
+    t, ty = s[output].split(t, factor=block_row_warps)
+    t, tz = s[output].split(t, factor=block_col_warps) 
+    s[output].bind(block_i, block_x)
+    s[output].bind(block_j, block_y)
+    s[output].bind(tz, thread_z)
+    s[output].bind(ty, thread_y)
+    s[output].bind(tx, thread_x)
+    #s[output].vectorize(ti)
+
+    # Schedule wmma store
+    s[OL].compute_at(s[output], block_j)
+    nc, oco, hc, wc, ooc = OL.op.axis
+    #s[OL].reorder(nc, hc, wc, oci) # FIXME
+    #s[OL].storage_align(wc, CS_align - 1, CS_align)
+    oco, oci = s[OL].split(oco, factor=warp_col_tiles)
+    _, oco = s[OL].split(oco, factor=block_col_warps)
+    wc, wwc = s[OL].split(wc, factor=wmma_m)
+    wc, wci = s[OL].split(wc, factor=warp_row_tiles)
+    _, wc = s[OL].split(wc, factor=block_row_warps)
+    s[OL].reorder(oco, wc, wci, oci, wwc, ooc)
+    s[OL].bind(wc, thread_y)
+    s[OL].bind(oco, thread_z)
+
+    # Schedule wmma computation
+    s[ConvF].compute_at(s[OL], oco)
+    n, oo, h, w, oof = ConvF.op.axis
+    w, wwf = s[ConvF].split(w, factor=wmma_m)
+    #ic, ii = s[ConvF].split(ico, factor=wmma_k)
+    ko, ki = s[ConvF].split(ico, factor=chunk)
+    s[ConvF].reorder(kh, kw, ko, ki, oo, w, wwf, oof, ici)
+
+    s[AF].compute_at(s[ConvF], ki)
+    s[WF].compute_at(s[ConvF], ki)
+
+    # Schedule wmma load
+    n, i, rh, rw, h, w, ii = AF.op.axis
+    #w, ww = s[AF].split(w, factor=wmma_m)
+    #s[AF].reorder(i, w, ww, ii)
+
+    kh, kw, i, o, ii, oo = WF.op.axis
+    # i, ii = s[WF].split(i, factor=wmma_k)
+    # o, oo = s[WF].split(o, factor=wmma_n)
+    # s[WF].reorder(o, i, oo)
+    # s[WF].reorder(i, o, ii, oo)
+
+    s[WS].compute_at(s[ConvF], ko)
+    s[AS].compute_at(s[ConvF], ko)
+
+    # Schedule for data's share memory
+    n, rco, rh, rw, h, w, rci = AS.op.axis
+    #s[AS].reorder(h, w, n, i)
+    #s[AS].storage_align(w, AS_align - 1, AS_align)
+    # t = s[AS].fuse(n, i)
+    t = s[AS].fuse(*s[AS].op.axis)
+    #t, ti = s[AS].split(t, factor=vector_width)
+    t, tx = s[AS].split(t, factor=warp_size)
+    t, ty = s[AS].split(t, factor=block_row_warps)
+    _, tz = s[AS].split(t, factor=block_col_warps)
+    s[AS].bind(ty, thread_y)
+    s[AS].bind(tz, thread_z)
+    s[AS].bind(tx, thread_x)
+    #s[AS].vectorize(ti)
+
+    # Schedule for kernel's share memory
+    kh, kw, ic, oc, _, _ = WS.op.axis
+    # t = s[WS].fuse(ic, oc)
+    # s[WS].storage_align(ic, WS_align - 1, WS_align)
+    t = s[WS].fuse(*s[WS].op.axis)
+    t, ti = s[WS].split(t, factor=vector_width)
+    t, tx = s[WS].split(t, factor=warp_size)
+    t, ty = s[WS].split(t, factor=block_row_warps)
+    _, tz = s[WS].split(t, factor=block_col_warps)
+    s[WS].bind(ty, thread_y)
+    s[WS].bind(tz, thread_z)
+    s[WS].bind(tx, thread_x)
+    s[WS].vectorize(ti)
+
+    shape = (wmma_m, wmma_n, wmma_k)
+
+    # tensorize the wmma process
+    AS_shape = (wmma_m, wmma_k)
+    AL_shape = (wmma_m, wmma_k)
+    WS_shape = (wmma_k, wmma_n)
+    WL_shape = (wmma_k, wmma_n)
+    CL_shape = (wmma_m, 1, 1, wmma_n)
+    CS_shape = (wmma_m, 1, 1, wmma_n)
+
+    AL_gemm = te.placeholder(AL_shape, name='A', dtype=in_dtype)
+    WL_gemm = te.placeholder(WL_shape, name='B', dtype=in_dtype)
+    k_gemm = te.reduce_axis((0, wmma_k), name="k")
+    #CL_compute = te.compute(CL_shape, lambda ii, t0, t1, jj:
+    #                        te.sum(AL_gemm[ii, t0, t1, k_gemm].astype(out_dtype) * \
+    #                               WL_gemm[k_gemm, jj].astype(out_dtype), axis=k_gemm),
+    #                        name='C')
+
+    #s[AF].tensorize(ww, intrin_wmma_load_matrix_A(AL_strides, AS_strides, shape,
+    #                                              "row_major", AS_shape, AL_shape, in_dtype))
+    s[WF].tensorize(ii, intrin_wmma_load_matrix_W(WL_strides, WS_strides, shape,
+                                                  "row_major", WS_shape, WL_shape, in_dtype))
+    #s[OL].tensorize(wwc, intrin_wmma_store_matrix(CS_strides, CL_strides,
+    #                                              shape, out_dtype, CL_shape, CS_shape))
+    #s[ConvF].tensorize(wwf, intrin_wmma_gemm(AL_gemm, WL_gemm, CL_compute, AL_strides,
+    #                                         WL_strides, CL_strides, shape))
 
 
-    s[conv_local].compute_at(s[conv], w_o_i)
-    n, f, h, w, wi, fi = conv_local.op.axis
-    rco, ry, rx, rci = conv_local.op.reduce_axis
-    print(rco, ry, rx, rci)
-    ko, ki = s[conv_local].split(rco, factor=chunk)
-    s[conv_local].reorder(ko, ry, ki, rx, n, f, h, w, wi, fi, rci)
-
-    s[AF].compute_at(s[conv_local], rx)
-    s[WF].compute_at(s[conv_local], rx)
-    
-    s[AS].compute_at(s[conv_local], rx)
-    fused = s[AS].fuse(*s[AS].op.axis)
-    fused_o, fused_i = s[AS].split(fused, factor=warp_size)
-    fused_o_o, fused_o_i = s[AS].split(fused_o, factor=warp_col_tiles)
-    fused_o_o_o, fused_o_o_i = s[AS].split(fused_o_o, factor=block_col_warps)
-    s[AS].bind(fused_i, te.thread_axis('threadIdx.x'))
-    s[AS].bind(fused_o_i, te.thread_axis('threadIdx.y'))
-    s[AS].bind(fused_o_o_i, te.thread_axis('threadIdx.z'))
-
-    s[WS].compute_at(s[conv_local], ry)
-
-    WS_axes = s[WS].op.axis
-    vo, vi = s[WS].split(WS_axes[-1], factor=8)
-    s[WS].vectorize(vi)
-    fused = s[WS].fuse(*WS_axes[:-1], vo)
-    fused_o, fused_i = s[WS].split(fused, factor=warp_size)
-    fused_o_o, fused_o_i = s[WS].split(fused_o, factor=warp_col_tiles)
-    fused_o_o_o, fused_o_o_i = s[WS].split(fused_o_o, factor=block_col_warps)
-    s[WS].bind(fused_i, te.thread_axis('threadIdx.x'))
-    s[WS].bind(fused_o_i, te.thread_axis('threadIdx.y'))
-    s[WS].bind(fused_o_o_i, te.thread_axis('threadIdx.z'))
-    
-    
-    s[AF].tensorize(AF.op.axis[-2], intrin_wmma_load_matrix('wmma.matrix_a'))
-    s[WF].tensorize(WF.op.axis[-2], intrin_wmma_load_matrix('wmma.matrix_b'))
-    s[conv].tensorize(wci, intrin_wmma_store_matrix())
-    s[conv_local].tensorize(wi, intrin_wmma_gemm())
-    
-    # s[conv].pragma(kernel_scope, 'unroll_explicit', True)
-    # s[conv].pragma(kernel_scope, 'auto_unroll_max_step', 512)
-
-
-
-
-
-
-
-    # fused = s[conv].fuse(*s[conv].op.axis)
-    # fused_o, fused_i = s[conv].split(fused, factor=256)
-    # fused_oo, fused_oi = s[conv].split(fused_o, factor=1024)
-    # s[conv].bind(fused_i, te.thread_axis('threadIdx.x'))
-    # s[conv].bind(fused_oi, te.thread_axis('blockIdx.x'))
-    
-
-    
- 
-    #f_o, f_i = s[conv].split(f, factor=warp_row_tiles)
-    #f_o_o, f_o_i = s[conv].split(f_o, factor=block_row_warps)
-    #fused_h_w = s[conv].fuse(h, w)
-    #fused_h_w_o, fused_h_w_i = s[conv].split(fused_h_w, factor=warp_col_tiles)
-    #fused_h_w_o_o, fused_h_w_o_i = s[conv].split(fused_h_w_o, factor=block_col_warps)
-    #s[conv].reorder(n, f_o_o, fused_h_w_o_o, f_o_i, fused_h_w_o_i, f_i, fused_h_w_i, wi, fi)
-
-    # s[conv].bind(n, te.thread_axis('blockIdx.z'))
-    # s[conv].bind(f_o_o, te.thread_axis('blockIdx.y'))
-    # s[conv].bind(fused_h_w_o_o, te.thread_axis('blockIdx.x'))
-    # s[conv].bind(f_o_i, te.thread_axis('threadIdx.z'))
-    # s[conv].bind(fused_h_w_o_i, te.thread_axis('threadIdx.y'))
-
-    #s[conv_local].compute_at(s[conv], fused_h_w_o_i)
-    #n, f, h, w, wi, fi = conv_local.op.axis
-    #rco, ry, rx, rci = conv_local.op.reduce_axis
-    #print(rco, ry, rx, rci)
-    #ko, ki = s[conv_local].split(rco, factor=chunk)
-    #s[conv_local].reorder(ko, ry, ki, rx, n, f, h, w, wi, fi, rci)
-
-    #s[AF].compute_at(s[conv_local], rx)
-    #s[WF].compute_at(s[conv_local], rx)
-    #
-    #s[AS].compute_at(s[conv_local], rx)
-    #fused = s[AS].fuse(*s[AS].op.axis)
-    #fused_o, fused_i = s[AS].split(fused, factor=warp_size)
-    #fused_o_o, fused_o_i = s[AS].split(fused_o, factor=warp_col_tiles)
-    #fused_o_o_o, fused_o_o_i = s[AS].split(fused_o_o, factor=block_col_warps)
-    #s[AS].bind(fused_i, te.thread_axis('threadIdx.x'))
-    #s[AS].bind(fused_o_i, te.thread_axis('threadIdx.y'))
-    #s[AS].bind(fused_o_o_i, te.thread_axis('threadIdx.z'))
-
-    #s[WS].compute_at(s[conv_local], ry)
-
-    #fused = s[WS].fuse(*s[WS].op.axis)
-    # #fused, fused_v = s[WS].split(fused, factor=8)
-    # WS_axes = s[WS].op.axis
-    # vo, vi = s[WS].split(WS_axes[-1], factor=8)
-    # s[WS].vectorize(vi)
-    # fused = s[WS].fuse(*WS_axes[:-1], vo)
-    # fused_o, fused_i = s[WS].split(fused, factor=warp_size)
-    # fused_o_o, fused_o_i = s[WS].split(fused_o, factor=warp_col_tiles)
-    # fused_o_o_o, fused_o_o_i = s[WS].split(fused_o_o, factor=block_col_warps)
-    # s[WS].bind(fused_i, te.thread_axis('threadIdx.x'))
-    # s[WS].bind(fused_o_i, te.thread_axis('threadIdx.y'))
-    # s[WS].bind(fused_o_o_i, te.thread_axis('threadIdx.z'))
-    
-    # f_o, f_i = s[conv].split(f, factor=4)
-    # f_oo, f_oi = s[conv].split(f_o, factor=8)
-    # h_o, h_i = s[conv].split(h, factor=4)
-    # h_oo, h_oi = s[conv].split(h_o, factor=4)
-
-    # AW
-    #n, co, kh, kw, h, wo, wi, ci = s[AS].op.axis
-    
-    #s[AF].tensorize(AF.op.axis[-2], intrin_wmma_load_matrix('wmma.matrix_a'))
-    #s[WF].tensorize(WF.op.axis[-2], intrin_wmma_load_matrix('wmma.matrix_b'))
-    #s[conv].tensorize(wci, intrin_wmma_store_matrix())
-    #s[conv_local].tensorize(wi, intrin_wmma_gemm())
-    
-    #s[conv].pragma(kernel_scope, 'unroll_explicit', True)
-    #s[conv].pragma(kernel_scope, 'auto_unroll_max_step', 512)
-    # fused = s[conv].fuse(*s[conv].op.axis)
-    # fused_o, fused_i = s[conv].split(fused, factor=256)
-    # fused_oo, fused_oi = s[conv].split(fused_o, factor=1024)
-    # s[conv].bind(fused_i, te.thread_axis('threadIdx.x'))
-    # s[conv].bind(fused_oi, te.thread_axis('blockIdx.x'))
-    
 
 def schedule_deformable_conv2d_half_tensorcore(outs):
     outs = [outs] if isinstance(outs, te.tensor.Tensor) else outs
@@ -1063,4 +1071,145 @@ def _schedule_manual_nhwc_cuda(s, conv):
     s[conv_local].pragma(n_c_o_o_o_o_f_c_o_o_o_o_fused_y_c_o_o_o_o_fused_x_c_o_o_o_o_fused, "unroll_explicit", True)
     s[data_deform].compute_inline()
     return s
-    
+def intrin_wmma_load_matrix_A(strides_dst, strides_from, shape, layout, A_shape, C_shape, in_dtype):
+    """Intrin function for loading data from shared memory to wmma.matrix_a"""
+    wmma_m, wmma_n, wmma_k = shape
+
+    A = te.placeholder(A_shape, name='A', dtype=in_dtype)
+    BA = tvm.tir.decl_buffer(A.shape, A.dtype,
+                             scope='shared', strides=strides_from,
+                             data_alignment=32, offset_factor=8)
+    C = te.compute(C_shape, lambda *i: A(*i), name='C')
+    BC = tvm.tir.decl_buffer(C.shape, C.dtype,
+                             scope="wmma.matrix_a", strides=strides_dst,
+                             data_alignment=32, offset_factor=8)
+
+    def intrin_func(ins, outs):
+        ib = tvm.tir.ir_builder.create()
+
+        BA = ins[0]
+        BC = outs[0]
+        row = wmma_m * wmma_k
+        warp_index = BC.elem_offset // row + BC.elem_offset % row // wmma_k
+        ib.emit(tvm.tir.call_intrin('handle', 'tvm_load_matrix_sync',
+                                    BC.data, wmma_m, wmma_n, wmma_k, warp_index,
+                                    BA.access_ptr('r'), strides_from[0], layout))
+        return ib.get()
+
+    return te.decl_tensor_intrin(C.op, intrin_func, binds={A: BA, C: BC})
+
+
+def intrin_wmma_load_matrix_W(strides_dst, strides_from, shape, layout, A_shape, C_shape, in_dtype):
+    """Intrin function for loading data from shared memory to wmma.matrix_b"""
+    wmma_m, wmma_n, wmma_k = shape
+
+    A = te.placeholder(A_shape, name='A', dtype=in_dtype)
+    BA = tvm.tir.decl_buffer(A.shape, A.dtype,
+                             scope='shared', strides=strides_from,
+                             data_alignment=32, offset_factor=8)
+    C = te.compute(C_shape, lambda *i: A(*i), name='C')
+    BC = tvm.tir.decl_buffer(C.shape, C.dtype,
+                             scope="wmma.matrix_b", strides=strides_dst,
+                             data_alignment=32, offset_factor=8)
+
+    def intrin_func(ins, outs):
+        ib = tvm.tir.ir_builder.create()
+
+        BA = ins[0]
+        BC = outs[0]
+        row = wmma_n * wmma_k
+        warp_index = BC.elem_offset // row + BC.elem_offset % row // wmma_n
+        ib.emit(tvm.tir.call_intrin('handle', 'tvm_load_matrix_sync',
+                                    BC.data, wmma_m, wmma_n, wmma_k, warp_index,
+                                    BA.access_ptr('r'), strides_from[0], layout))
+        return ib.get()
+
+    return te.decl_tensor_intrin(C.op, intrin_func, binds={A: BA, C: BC})
+
+
+def intrin_wmma_store_matrix(strides_dst, strides_from, shape, out_dtype, A_shape, C_shape):
+    """Intrin function for storing the results from wmma.accumulator to shared"""
+    wmma_m, wmma_n, wmma_k = shape
+    A = te.placeholder(A_shape, name='A', dtype=out_dtype)
+    BA = tvm.tir.decl_buffer(A.shape, A.dtype,
+                             scope='wmma.accumulator',
+                             strides=strides_from, data_alignment=32,
+                             offset_factor=8)
+    C = te.compute(C_shape, lambda *i: A(*i), name='C')
+    BC = tvm.tir.decl_buffer(C.shape, C.dtype,
+                             scope='shared', strides=strides_dst,
+                             data_alignment=32, offset_factor=8)
+
+    def intrin_func(ins, outs):
+        ib = tvm.tir.ir_builder.create()
+
+        BA = ins[0]
+        BC = outs[0]
+        row = wmma_m * wmma_n
+        warp_index = BA.elem_offset // row + BA.elem_offset % row // wmma_n
+        ib.emit(tvm.tir.call_intrin('handle', 'tvm_store_matrix_sync',
+                                    BA.data, wmma_m, wmma_n, wmma_k, warp_index,
+                                    BC.access_ptr('w'), strides_dst[0], 'row_major'))
+        return ib.get()
+
+    return te.decl_tensor_intrin(C.op, intrin_func, binds={A: BA, C: BC})
+
+
+def intrin_wmma_gemm(AL_gemm, WL_gemm, CL_compute, strides_A,
+                     strides_W, strides_Conv, shape):
+    """Intrin for wmma fill_fragment and mma_sync
+    Parameters
+    ----------
+    AL_gemm : tvm.te.placeholder
+        wmma matrix A
+    WL_gemm : tvm.te.placeholder
+        wmma matrix B
+    CL_compute : tvm.te.compute
+        The definition of wmma gemm
+    """
+    wmma_m, wmma_n, wmma_k = shape
+    A = AL_gemm
+    B = WL_gemm
+    C = CL_compute
+
+    BA = tvm.tir.decl_buffer(A.shape, A.dtype, name='BA',
+                             scope='wmma.matrix_a', data_alignment=32,
+                             offset_factor=8, strides=strides_A)
+    BB = tvm.tir.decl_buffer(B.shape, B.dtype, name='BB',
+                             scope='wmma.matrix_b', data_alignment=32,
+                             offset_factor=8, strides=strides_W)
+    BC = tvm.tir.decl_buffer(C.shape, C.dtype, name='BC',
+                             scope='wmma.accumulator', data_alignment=32,
+                             offset_factor=8, strides=strides_Conv)
+
+    def intrin_func(ins, outs):
+        BA, BB = ins
+        BC, = outs
+
+        def warp_idnex(offset, row, col):
+            row = row * col
+            return offset // row + offset % row // col
+
+        warp_index_A = warp_idnex(BA.elem_offset, wmma_m, wmma_k)
+        warp_index_B = warp_idnex(BB.elem_offset, wmma_k, wmma_n)
+        warp_index_C = warp_idnex(BC.elem_offset, wmma_m, wmma_n)
+
+        def init():
+            ib = tvm.tir.ir_builder.create()
+            ib.emit(
+                tvm.tir.call_intrin('handle', 'tvm_fill_fragment', BC.data, wmma_m, wmma_n, wmma_k,
+                                    warp_index_C, 0.0))
+            return ib.get()
+
+        def update():
+            ib = tvm.tir.ir_builder.create()
+            ib.emit(tvm.tir.call_intrin('handle', 'tvm_mma_sync',
+                                        BC.data, warp_index_C,
+                                        BA.data, warp_index_A,
+                                        BB.data, warp_index_B,
+                                        BC.data, warp_index_C))
+            return ib.get()
+
+        return update(), init(), update()
+
+    return te.decl_tensor_intrin(C.op, intrin_func, binds={A: BA, B: BB, C: BC}) 
