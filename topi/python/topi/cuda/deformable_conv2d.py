@@ -176,10 +176,11 @@ def deformable_conv2d_half_tensorcore(data, offset, kernel, strides, padding, di
     else:
         dilation_h, dilation_w = dilation
 
+    block_size = 16
     batch, in_channel, in_height, in_width = get_const_tuple(data.shape)
     kernel_h, kernel_w, channel, out_channel_div_block_size, _, _ = get_const_tuple(kernel.shape) # out_channel is actually out_channel // 16
+    out_channel = out_channel_div_block_size * block_size
     _, _, out_height, out_width = get_const_tuple(offset.shape)
-    block_size = 16
     assert in_channel % deformable_groups == 0, "Input cahnnels must divide deformable group size"
     assert groups == 1, "deformable_conv2d_nchw does not support groups > 1"
 
@@ -206,7 +207,7 @@ def deformable_conv2d_half_tensorcore(data, offset, kernel, strides, padding, di
                    lambda n, c, kh, kw, y, x:
                    _bilinear(n, c,
                              y * stride_h - pad_top + kh * dilation_h +
-                             offset[n, c // ic_per_dgroup * (kernel_w*kernel_h*2) +
+                             offset[n, c // ic_per_dgroup * (kernel_w*kernel_h*2)+
                                     (kh * kernel_w + kw) * 2, y, x],
                              x * stride_w - pad_left + kw * dilation_w +
                              offset[n, c // ic_per_dgroup * (kernel_w*kernel_h*2) +
@@ -214,9 +215,9 @@ def deformable_conv2d_half_tensorcore(data, offset, kernel, strides, padding, di
     data_deform_packed = te.compute((batch, in_channel // block_size, kernel_h, kernel_w, out_height, out_width, block_size), 
     lambda n,co,kh,kw,h,w, ci: data_deform[n, co * block_size + ci, kh, kw, h, w], tag='data_deform_packed', name='data_deform_packed')
     # return packed output
-    return te.compute((batch, out_channel_div_block_size, out_height, out_width, block_size), lambda n, fo, h, w, fi:
+    return te.compute((batch, out_channel, out_height, out_width), lambda n, f, h, w:
     te.sum(data_deform_packed[n, rco, ry, rx, h, w, rci].astype('float32') * 
-    kernel[ry, rx, rco, fo, rci, fi].astype('float32'), axis=[rco,ry,rx,rci]), tag='deformable_conv2d_nchw')
+    kernel[ry, rx, rco, tvm.tir.indexdiv(f, block_size), rci, tvm.tir.indexmod(f, block_size)].astype('float32'), axis=[rco,ry,rx,rci]), tag='deformable_conv2d_nchw')
     # return te.compute(
     #     (batch, out_channel, out_height, out_width),
     #     lambda n, f, y, x: te.sum(
@@ -248,10 +249,14 @@ def _schedule_tensorcore(s, Conv):
         s[Conv].set_scope('shared')
         OL = Conv
 
-    block_row_warps = 2
+    block_row_warps = 4
     block_col_warps = 2
     warp_row_tiles = 2
-    warp_col_tiles = 4
+    warp_col_tiles = 2
+    #block_row_warps = 1
+    #block_col_warps = 1
+    #warp_row_tiles = 2
+    #warp_col_tiles = 2
     warp_size = 32
     chunk = 2
     wmma_m = wmma_n = wmma_k = 16
@@ -272,7 +277,7 @@ def _schedule_tensorcore(s, Conv):
     AS_align = chunk * wmma_k + offset
     WS_align = warp_col_tiles * block_col_warps * wmma_n + offset
     block_factor_w = warp_row_tiles * block_row_warps # also removed wmma_m here because we switched to h instead
-    block_factor_o = warp_col_tiles * block_col_warps # wmma_n is implied in shape
+    block_factor_o = warp_col_tiles * block_col_warps * wmma_n # wmma_n is implied in shape
     CS_align = block_factor_o + offset
     AS_strides = get_strides([1, 1, AS_align, 1])
     AL_strides = get_strides([1, 1, wmma_k, 1])
@@ -285,17 +290,17 @@ def _schedule_tensorcore(s, Conv):
     WS_strides = get_strides([wmma_k, 1])
     WL_strides = get_strides([wmma_k, 1])
     # end 
-    CL_strides = get_strides([wmma_k, 1])
-    CS_strides = get_strides([wmma_k, 1])
+    CL_strides = get_strides([warp_row_tiles, wmma_n, 1])
+    CS_strides = get_strides([block_row_warps*warp_row_tiles, wmma_n, 1])
 
     #wci = wi
     #kernel_scope, n = s[conv].split(n, nparts=1)
 
     # Schedule for output
-    nc, oco, hc, wc, ooi = s[Conv].op.axis
+    nc, oc, hc, wc = s[Conv].op.axis
     block_i, hc = s[output].split(hc, factor=block_factor_w)
     wco, wci = s[output].split(wc, factor=wmma_m)
-    block_j, oco = s[output].split(oco, factor=block_factor_o)
+    block_j, oco = s[output].split(oc, factor=block_factor_o)
     s[output].reorder(nc, wco, block_i, block_j, hc, wci, oco)
     block_k = s[output].fuse(nc, wco)
     s[output].bind(block_k, block_z)
@@ -315,10 +320,11 @@ def _schedule_tensorcore(s, Conv):
 
     # Schedule wmma store
     s[OL].compute_at(s[output], block_j)
-    nc, oco, hc, wc, ooc = OL.op.axis
+    nc, oc, hc, wc = OL.op.axis
     #s[OL].reorder(nc, hc, wc, oci) # FIXME
     #s[OL].storage_align(wc, CS_align - 1, CS_align)
-    oco, oci = s[OL].split(oco, factor=warp_col_tiles)
+    oc, ooc = s[OL].split(oc, factor=wmma_n)
+    oco, oci = s[OL].split(oc, factor=warp_col_tiles)
     _, oco = s[OL].split(oco, factor=block_col_warps)
     wc, wwc = s[OL].split(wc, factor=wmma_m)
     hc, hci = s[OL].split(hc, factor=warp_row_tiles)
@@ -329,11 +335,12 @@ def _schedule_tensorcore(s, Conv):
 
     # Schedule wmma computation
     s[ConvF].compute_at(s[OL], oco)
-    n, oo, h, w, oof = ConvF.op.axis
+    n, o, h, w = ConvF.op.axis
+    o, oof = s[ConvF].split(o, factor=wmma_n)
     w, wwf = s[ConvF].split(w, factor=wmma_m)
     #ic, ii = s[ConvF].split(ico, factor=wmma_k)
     ko, ki = s[ConvF].split(ico, factor=chunk)
-    s[ConvF].reorder(kh, kw, ko, ki, n, oo, h, w, wwf, oof, ici)
+    s[ConvF].reorder(kh, kw, ko, ki, n, o, h, w, wwf, oof, ici)
 
     s[AF].compute_at(s[ConvF], ki)
     s[WF].compute_at(s[ConvF], ki)
@@ -388,15 +395,15 @@ def _schedule_tensorcore(s, Conv):
     AL_shape = (wmma_m, wmma_k)
     WS_shape = (wmma_k, wmma_n)
     WL_shape = (wmma_k, wmma_n)
-    CL_shape = (wmma_m, wmma_n)
-    CS_shape = (wmma_m, wmma_n)
+    CL_shape = (wmma_m, 1, wmma_n)
+    CS_shape = (wmma_m, 1, wmma_n)
 
     AL_gemm = te.placeholder(AL_shape, name='A', dtype=in_dtype)
     WL_gemm = te.placeholder(WL_shape, name='B', dtype=in_dtype)
     k_gemm = te.reduce_axis((0, wmma_k), name="k")
-    CL_compute = te.compute(CL_shape, lambda ii, jj:
-                            te.sum(AL_gemm[ii, k_gemm].astype(out_dtype) * \
-                                   WL_gemm[k_gemm, jj].astype(out_dtype), axis=k_gemm),
+    CL_compute = te.compute(CL_shape, lambda ii, yy, jj:
+                            te.sum(AL_gemm[jj, k_gemm].astype(out_dtype) * \
+                                   WL_gemm[k_gemm, ii].astype(out_dtype), axis=k_gemm),
                             name='C')
 
     s[AF].tensorize(ww, intrin_wmma_load_matrix_A(AL_strides, AS_strides, shape,
@@ -404,7 +411,7 @@ def _schedule_tensorcore(s, Conv):
     s[WF].tensorize(ii, intrin_wmma_load_matrix_W(WL_strides, WS_strides, shape,
                                                   "row_major", WS_shape, WL_shape, in_dtype))
     s[OL].tensorize(wwc, intrin_wmma_store_matrix(CS_strides, CL_strides,
-                                                  shape, out_dtype, CL_shape, CS_shape))
+                                                  shape, 'col_major', out_dtype, CL_shape, CS_shape))
     s[ConvF].tensorize(wwf, intrin_wmma_gemm(AL_gemm, WL_gemm, CL_compute, AL_strides,
                                              WL_strides, CL_strides, shape))
 
@@ -1133,7 +1140,7 @@ def intrin_wmma_load_matrix_W(strides_dst, strides_from, shape, layout, A_shape,
     return te.decl_tensor_intrin(C.op, intrin_func, binds={A: BA, C: BC})
 
 
-def intrin_wmma_store_matrix(strides_dst, strides_from, shape, out_dtype, A_shape, C_shape):
+def intrin_wmma_store_matrix(strides_dst, strides_from, shape, layout, out_dtype, A_shape, C_shape):
     """Intrin function for storing the results from wmma.accumulator to shared"""
     wmma_m, wmma_n, wmma_k = shape
     A = te.placeholder(A_shape, name='A', dtype=out_dtype)
@@ -1155,7 +1162,7 @@ def intrin_wmma_store_matrix(strides_dst, strides_from, shape, out_dtype, A_shap
         warp_index = BA.elem_offset // row + BA.elem_offset % row // wmma_n
         ib.emit(tvm.tir.call_intrin('handle', 'tvm_store_matrix_sync',
                                     BA.data, wmma_m, wmma_n, wmma_k, warp_index,
-                                    BC.access_ptr('w'), strides_dst[0], 'row_major'))
+                                    BC.access_ptr('w'), strides_dst[0], layout))
         return ib.get()
 
     return te.decl_tensor_intrin(C.op, intrin_func, binds={A: BA, C: BC})
