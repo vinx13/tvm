@@ -86,6 +86,7 @@ class TVM_DLL GraphRuntime : public ModuleNode {
    */
   const char* type_key() const final { return "GraphRuntime"; }
   void Run();
+  void RunWithCUDAGraph();
 
   /*!
    * \brief Initialize the graph executor with graph and context.

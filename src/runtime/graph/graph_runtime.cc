@@ -28,6 +28,7 @@
 #include <tvm/runtime/packed_func.h>
 #include <tvm/runtime/registry.h>
 #include <tvm/runtime/serializer.h>
+#include "../cuda/cuda_common.h"
 
 #include <algorithm>
 #include <functional>
@@ -57,6 +58,27 @@ void GraphRuntime::Run() {
     if (op_execs_[i]) op_execs_[i]();
   }
 }
+
+void GraphRuntime::RunWithCUDAGraph() {
+  auto stream = CUDAThreadEntry::ThreadLocal()->stream;
+  cudaStream_t trace_stream;
+  cudaGraph_t graph;
+  cudaGraphExec_t graph_exec;
+  auto it = std::find_if(ctxs_.begin(), ctxs_.end(),
+                         [](auto ctx) { return ctx.device_type == DLDeviceType::kDLGPU });
+  // assume only one gpu
+  CHECK(it != ctxs_.end());
+  auto gpu_context = *it;
+  TVMSetStream(gpu_context.device_type, gpu_context.device_id, trace_stream);
+  CUDA_CALL(cudaStreamCreate(trace_stream));
+  CUDA_CALL(cudaStreamBeginCapture(trace_stream, cudaStreamCaptureModeGlobal));
+  CUDA_CALL(cudaStreamEndCapture(trace_stream, &graph));
+  CUDA_CALL(cudaGraphInstantiate(&graph_exec, graph));
+  // restore stream
+  TVMSetStream(gpu_context.device_type, gpu_context.device_id, stream);
+  CUDA_CALL(cudaGraphLaunch(&graph_exec, stream));
+}
+
 /*!
  * \brief Initialize the graph executor with graph and context.
  * \param graph_json The execution graph.
@@ -431,6 +453,8 @@ PackedFunc GraphRuntime::GetFunction(const std::string& name,
         [sptr_to_self, this](TVMArgs args, TVMRetValue* rv) { *rv = this->NumOutputs(); });
   } else if (name == "run") {
     return PackedFunc([sptr_to_self, this](TVMArgs args, TVMRetValue* rv) { this->Run(); });
+  } else if (name == "run_with_cuda_graph") {
+    return PackedFunc([sptr_to_self, this](TVMArgs args, TVMRetValue* rv) { this->RunWithCUDAGraph(); });
   } else if (name == "load_params") {
     return PackedFunc([sptr_to_self, this](TVMArgs args, TVMRetValue* rv) {
       this->LoadParams(args[0].operator std::string());
