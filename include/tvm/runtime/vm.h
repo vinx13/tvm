@@ -34,6 +34,7 @@
 #include <unordered_map>
 #include <utility>
 #include <vector>
+#include <cuda_runtime.h>
 
 namespace tvm {
 namespace runtime {
@@ -445,6 +446,8 @@ struct VMFrame {
   /*! \brief Statically allocated space for objects */
   std::vector<ObjectRef> register_file;
 
+  std::map<size_t, cudaGraphNode_t> nodes;
+
   /*! \brief Register in caller's frame to put return value */
   RegName caller_return_register;
 
@@ -704,6 +707,9 @@ class VirtualMachine : public runtime::ModuleNode {
   std::unordered_map<std::string, std::vector<ObjectRef>> inputs_;
   /*! \brief The set of TVM contexts the VM is currently executing on. */
   std::vector<TVMContext> ctxs_;
+  cudaStream_t trace_stream_;
+  cudaGraph_t graph_;
+  bool cuda_graph_enabled_ = false; // TODO: move to pass context?
 
   /*! \brief Push a call frame on to the call stack. */
   void PushFrame(Index arg_count, Index ret_pc, const VMFunction& vm_func);

@@ -52,6 +52,9 @@ class CUDAModuleNode : public runtime::ModuleNode {
                           std::string cuda_source)
       : data_(data), fmt_(fmt), fmap_(fmap), cuda_source_(cuda_source) {
     std::fill(module_.begin(), module_.end(), nullptr);
+    // eager loading, assuming only one gpu
+    // CUDA_CALL(cudaSetDevice(0));
+    // CUDA_DRIVER_CALL(cuModuleLoadData(&(module_[0]), data_.c_str()));
   }
   // destructor
   ~CUDAModuleNode() {

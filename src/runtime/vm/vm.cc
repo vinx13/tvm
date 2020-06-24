@@ -38,6 +38,7 @@
 
 #include "memory_manager.h"
 #include "naive_allocator.h"
+#include "../cuda/cuda_common.h"
 
 using namespace tvm::runtime;
 
@@ -756,6 +757,12 @@ ObjectRef VirtualMachine::Invoke(const VMFunction& func, const std::vector<Objec
 
   InvokeGlobal(func, args);
   RunLoop();
+  if (cuda_graph_enabled_) {
+    cudaGraphExec_t instance;
+    CUDA_CALL(cudaGraphInstantiate(&instance, graph_, NULL, NULL, 0));
+    CUDA_CALL(cudaGraphLaunch(instance, NULL));
+    CUDA_CALL(cudaGraphLaunch(instance, NULL));
+  }
   // TODO(wweic) ctx could be obtained from the ctxs list.
   auto alloc = MemoryManager::Global()->GetAllocator(ctxs_[0]);
   DLOG(INFO) << "Memory used: " << alloc->UsedMemory() << " B";
@@ -822,9 +829,15 @@ void VirtualMachine::LoadExecutable(const Executable* exec) {
     CHECK(pf != nullptr) << "Cannot find function in module: " << packed_name;
     packed_funcs_[packed_index] = pf;
   }
-}
+  }
 
-void VirtualMachine::Init(const std::vector<TVMContext>& ctxs) { ctxs_ = ctxs; }
+void VirtualMachine::Init(const std::vector<TVMContext>& ctxs) { ctxs_ = ctxs; 
+  if (cuda_graph_enabled_) {
+    CUDA_CALL(cudaStreamCreate(&trace_stream_));
+    CUDA_CALL(cudaGraphCreate(&graph_, 0));
+    TVMSetStream(kDLGPU, 0, trace_stream_);
+  }
+}
 
 inline void VirtualMachine::WriteRegister(Index r, const ObjectRef& val) {
   frames_.back().register_file[r] = val;
@@ -919,9 +932,38 @@ void VirtualMachine::RunLoop() {
           args.push_back(arg);
         }
 
-        // We no longer need to write the registers back, we write directly
-        // through the registers mutably.
-        InvokePacked(instr.packed_index, func, arity, instr.output_size, args);
+        if (cuda_graph_enabled_) {
+          // shape func?
+          std::set<cudaGraphNode_t> s;
+          for (int i = 0; i < arity - instr.output_size; i++) {
+            LOG(INFO) << "Read result from frame " << frames_.size() - 1 << " reg " << instr.packed_args[i];
+            if (auto it = frames_.back().nodes.find(instr.packed_args[i]); it != frames_.back().nodes.end()) {
+              s.insert(it->second);
+            }
+          }
+          std::vector<cudaGraphNode_t> dependencies(s.begin(), s.end());
+          cudaGraph_t subgraph;
+          cudaGraphCreate(&subgraph, 0);
+          LOG(INFO) << "BeginCapture";
+          cudaStreamBeginCapture(trace_stream_, cudaStreamCaptureModeRelaxed);
+          InvokePacked(instr.packed_index, func, arity, instr.output_size, args);
+          cudaStreamEndCapture(trace_stream_, &subgraph);
+          size_t num_nodes;
+          CUDA_CALL(cudaGraphGetNodes(subgraph, NULL, &num_nodes));
+          LOG(INFO) << "EndCapture num_nodes=" << num_nodes << " num_dep=" << dependencies.size();
+          cudaGraphNode_t new_node;
+          CUDA_CALL(cudaGraphAddChildGraphNode(&new_node, graph_, dependencies.size() > 0 ? dependencies.data() : NULL, dependencies.size(), subgraph));
+          // CUDA_CALL(cudaGraphAddChildGraphNode(&new_node, graph_, nullptr, 0, subgraph));
+          // save new node
+          for (int i = arity - instr.output_size; i < arity; i++) {
+            LOG(INFO) << "Save result to frame " << frames_.size() - 1 << " reg " << instr.packed_args[i];
+            frames_.back().nodes[instr.packed_args[i]] = new_node;
+          }
+        } else {
+          // We no longer need to write the registers back, we write directly
+          // through the registers mutably.
+          InvokePacked(instr.packed_index, func, arity, instr.output_size, args);
+        }
         pc_++;
         goto main_loop;
       }
