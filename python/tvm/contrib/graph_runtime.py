@@ -134,6 +134,7 @@ class GraphModule(object):
         self.module = module
         self._set_input = module["set_input"]
         self._run = module["run"]
+        self._run_with_cuda_graph = module["run_with_cuda_graph"]
         self._get_output = module["get_output"]
         self._get_input = module["get_input"]
         self._get_num_outputs = module["get_num_outputs"]
@@ -180,6 +181,18 @@ class GraphModule(object):
         if input_dict:
             self.set_input(**input_dict)
         self._run()
+
+    def run_with_cuda_graph(self, **input_dict):
+        """Run forward execution of the graph
+
+        Parameters
+        ----------
+        input_dict: dict of str to NDArray
+            List of input values to be feed to
+        """
+        if input_dict:
+            self.set_input(**input_dict)
+        self._run_with_cuda_graph()
 
     def get_num_outputs(self):
         """Get the number of outputs from the graph

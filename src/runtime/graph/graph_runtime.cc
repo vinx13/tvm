@@ -65,18 +65,28 @@ void GraphRuntime::RunWithCUDAGraph() {
   cudaGraph_t graph;
   cudaGraphExec_t graph_exec;
   auto it = std::find_if(ctxs_.begin(), ctxs_.end(),
-                         [](auto ctx) { return ctx.device_type == DLDeviceType::kDLGPU });
+                         [](auto ctx) { return ctx.device_type == DLDeviceType::kDLGPU; });
   // assume only one gpu
   CHECK(it != ctxs_.end());
   auto gpu_context = *it;
+  CUDA_CALL(cudaStreamCreate(&trace_stream));
   TVMSetStream(gpu_context.device_type, gpu_context.device_id, trace_stream);
-  CUDA_CALL(cudaStreamCreate(trace_stream));
+  LOG(INFO) << "Begin trace";
   CUDA_CALL(cudaStreamBeginCapture(trace_stream, cudaStreamCaptureModeGlobal));
+  for (size_t i = 0; i < op_execs_.size(); ++i) {
+    if (op_execs_[i]) op_execs_[i]();
+  }
   CUDA_CALL(cudaStreamEndCapture(trace_stream, &graph));
-  CUDA_CALL(cudaGraphInstantiate(&graph_exec, graph));
+  CUDA_CALL(cudaStreamDestroy(trace_stream));
+  CUDA_CALL(cudaGraphInstantiate(&graph_exec, graph, NULL, NULL, 0));
   // restore stream
   TVMSetStream(gpu_context.device_type, gpu_context.device_id, stream);
-  CUDA_CALL(cudaGraphLaunch(&graph_exec, stream));
+  LOG(INFO) << "Launch CUDA graph";
+  CUDA_CALL(cudaGraphLaunch(graph_exec, stream));
+  size_t numNodes;
+  CUDA_CALL(cudaGraphGetNodes(graph, NULL, &numNodes));
+  LOG(INFO) << "NumNodes = " << numNodes;
+  CUDA_CALL(cudaStreamSynchronize(stream));
 }
 
 /*!
