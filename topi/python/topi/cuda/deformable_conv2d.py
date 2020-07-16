@@ -147,6 +147,8 @@ def _schedule_direct_cuda(cfg, s, conv):
 
 
 def _schedule_manual_cuda(s, conv):
+    print('MANUAL_nchw_cuda')
+    enable_opt = True
     data_deform, kernel = s[conv].op.input_tensors
     if conv.op in s.outputs:
         # output is conv
@@ -158,7 +160,6 @@ def _schedule_manual_cuda(s, conv):
         conv = s.outputs[0].output(0)
 
     padded_data = data_deform.op.input_tensors[0]
-
     n, c, kh, kw, _, _ = tuple(data_deform.op.axis)
     n, f, y, x = tuple(conv.op.axis)
     n_c, f_c, y_c, x_c, rc, ry, rx = tuple(conv_local.op.axis) + tuple(conv_local.op.reduce_axis)
@@ -205,24 +206,37 @@ def _schedule_manual_cuda(s, conv):
     n_c_o_o_i_f_c_o_o_i_fused_y_c_o_o_i_fused_x_c_o_o_i_fused = s[conv_local].fuse(n_c_o_o_i, f_c_o_o_i, y_c_o_o_i, x_c_o_o_i)
     n_o_i_f_o_i_fused_y_o_i_fused_x_o_i_fused = s[conv].fuse(n_o_i, f_o_i, y_o_i, x_o_i)
     s[conv_local].compute_at(s[conv], n_o_i_f_o_i_fused_y_o_i_fused_x_o_i_fused)
+    if enable_opt:
+        x_c_i, v = s[conv_local].split(x_c_i, factor=2)
+        s[conv_local].vectorize(v)
     kernel_shared = s.cache_read(kernel, "shared", [conv_local])
     ax0, ax1, ax2, ax3 = tuple(kernel_shared.op.axis)
     s[kernel_shared].compute_at(s[conv_local], rx_o_o)
     ax0_ax1_fused_ax2_fused_ax3_fused = s[kernel_shared].fuse(ax0, ax1, ax2, ax3)
+    #ax0_ax1_fused_ax2_fused_ax3_fused, ax0_ax1_fused_ax2_fused_ax3_fused_v = s[kernel_shared].split(ax0_ax1_fused_ax2_fused_ax3_fused, factor=2)
+    #s[kernel_shared].vectorize(ax0_ax1_fused_ax2_fused_ax3_fused_v)
+
     ax0_ax1_fused_ax2_fused_ax3_fused_o, ax0_ax1_fused_ax2_fused_ax3_fused_i = s[kernel_shared].split(ax0_ax1_fused_ax2_fused_ax3_fused, factor=256)
     s[kernel_shared].bind(ax0_ax1_fused_ax2_fused_ax3_fused_i, te.thread_axis("threadIdx.x"))
+
     data_deform_shared = s.cache_read(data_deform, "shared", [conv_local])
     ax0, ax1, ax2, ax3, ax4, ax5 = tuple(data_deform_shared.op.axis)
     s[data_deform_shared].compute_at(s[conv_local], rx_o_o)
+
     ax0_ax1_fused_ax2_fused_ax3_fused_ax4_fused_ax5_fused = s[data_deform_shared].fuse(ax0, ax1, ax2, ax3, ax4, ax5)
+
     ax0_ax1_fused_ax2_fused_ax3_fused_ax4_fused_ax5_fused_o, ax0_ax1_fused_ax2_fused_ax3_fused_ax4_fused_ax5_fused_i = s[data_deform_shared].split(ax0_ax1_fused_ax2_fused_ax3_fused_ax4_fused_ax5_fused, factor=256)
     s[data_deform_shared].bind(ax0_ax1_fused_ax2_fused_ax3_fused_ax4_fused_ax5_fused_i, te.thread_axis("threadIdx.x"))
+
+
     s[conv].bind(n_o_o_o_f_o_o_o_fused_y_o_o_o_fused_x_o_o_o_fused, te.thread_axis("blockIdx.x"))
-    s[conv].bind(n_o_o_i_f_o_o_i_fused_y_o_o_i_fused_x_o_o_i_fused, te.thread_axis("vthread"))
+    s[conv].bind(n_o_o_i_f_o_o_i_fused_y_o_o_i_fused_x_o_o_i_fused, te.thread_axis("vthread")) # it is useless because vthread=1
     s[conv].bind(n_o_i_f_o_i_fused_y_o_i_fused_x_o_i_fused, te.thread_axis("threadIdx.x"))
+    if enable_opt:
+        _, v = s[conv].split(x_i, factor=2)
+        s[conv].vectorize(v)
     s[conv_local].pragma(n_c_o_o_o_o_f_c_o_o_o_o_fused_y_c_o_o_o_o_fused_x_c_o_o_o_o_fused, "auto_unroll_max_step", 512)
     s[conv_local].pragma(n_c_o_o_o_o_f_c_o_o_o_o_fused_y_c_o_o_o_o_fused_x_c_o_o_o_o_fused, "unroll_explicit", True)
     s[data_deform].compute_inline()
-
-    return s
+    # return s
     
