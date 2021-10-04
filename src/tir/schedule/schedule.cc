@@ -163,6 +163,32 @@ TVM_REGISTER_GLOBAL("tir.schedule.ScheduleRFactor")
 TVM_REGISTER_GLOBAL("tir.schedule.ScheduleStorageAlign")
     .set_body_method<Schedule>(&ScheduleNode::StorageAlign);
 /******** (FFI) Blockize & Tensorize ********/
+TVM_REGISTER_GLOBAL("tir.schedule.ScheduleGetChildBlocks")
+    .set_body_typed([](Schedule self, ObjectRef rv) {
+      if (const auto* block_rv = rv.as<BlockRVNode>()) {
+        return self->GetChildBlocks(GetRef<BlockRV>(block_rv));
+      }
+      if (const auto* loop_rv = rv.as<LoopRVNode>()) {
+        return self->GetChildBlocks(GetRef<LoopRV>(loop_rv));
+      }
+      LOG(FATAL) << "TypeError: Cannot evaluate the random variable of type: " << rv->GetTypeKey()
+                 << ". Its value is: " << rv;
+      throw;
+    });
+TVM_REGISTER_GLOBAL("tir.schedule.ScheduleBlockize")
+    .set_body_method<Schedule>(&ScheduleNode::Blockize);
+TVM_REGISTER_GLOBAL("tir.schedule.ScheduleTensorize")
+    .set_body_typed([](Schedule self, LoopRV loop_rv, ObjectRef intrin) {
+      if (const auto* str = intrin.as<runtime::StringObj>()) {
+        return self->Tensorize(loop_rv, GetRef<String>(str));
+      }
+      if (const auto* p_intrin = intrin.as<TensorIntrinNode>()) {
+        return self->Tensorize(loop_rv, GetRef<TensorIntrin>(p_intrin));
+      }
+      LOG(FATAL) << "TypeError: Cannot handle type: " << intrin->GetTypeKey();
+      throw;
+    });
+
 /******** (FFI) Annotation ********/
 /******** (FFI) Misc ********/
 TVM_REGISTER_GLOBAL("tir.schedule.ScheduleEnterPostproc")

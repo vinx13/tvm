@@ -20,8 +20,8 @@ from typing import Dict, List, Optional, Union
 from tvm._ffi import register_object as _register_object
 from tvm.error import TVMError, register_error
 from tvm.ir import IRModule, PrimExpr
-from tvm.runtime import Object
-from tvm.tir import Block, For, IntImm, PrimFunc
+from tvm.runtime import Object, String
+from tvm.tir import Block, For, IntImm, PrimFunc, TensorIntrin
 
 from . import _ffi_api
 from .state import ScheduleState, StmtSRef, _parse_debug_mask, _parse_mod
@@ -366,6 +366,11 @@ class Schedule(Object):
             A list of loops above the given block in its scope, from outer to inner
         """
         return _ffi_api.ScheduleGetLoops(self, block)  # type: ignore # pylint: disable=no-member
+
+    def get_child_blocks(self, block_or_loop: Union[BlockRV, LoopRV]) -> List[BlockRV]:
+        return _ffi_api.ScheduleGetChildBlocks(  # pylint: disable=no-member
+            self, block_or_loop
+        )
 
     ########## Schedule: Transform loops ##########
     def fuse(self, *loops: List[LoopRV]) -> LoopRV:
@@ -1522,6 +1527,14 @@ class Schedule(Object):
         )
 
     ########## Schedule: Blockize & Tensorize ##########
+
+    def blockize(self, loop: LoopRV) -> BlockRV:
+        return _ffi_api.ScheduleBlockize(self, loop)  # pylint: disable=no-member
+
+    def tensorize(self, loop: LoopRV, intrin: Union[str, TensorIntrin]) -> None:
+        if isinstance(intrin, str):
+            intrin = String(intrin)
+        _ffi_api.ScheduleTensorize(self, loop, intrin)  # pylint: disable=no-member
 
     ########## Schedule: Annotation ##########
 

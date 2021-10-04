@@ -282,6 +282,20 @@ Array<LoopRV> ConcreteScheduleNode::GetLoops(const BlockRV& block_rv) {
   return CreateRV<LoopRV>(tir::GetLoops(this->GetSRef(block_rv)));
 }
 
+
+Array<BlockRV> ConcreteScheduleNode::GetChildBlocks(const BlockRV& block_rv) {
+  TVM_TIR_SCHEDULE_BEGIN();
+  return CreateRV<BlockRV>(tir::GetChildBlocks(state_, this->GetSRef(block_rv), false));
+  TVM_TIR_SCHEDULE_END("get-child-blocks", this->error_render_level_);
+  return {};
+}
+
+Array<BlockRV> ConcreteScheduleNode::GetChildBlocks(const LoopRV& loop_rv) {
+  TVM_TIR_SCHEDULE_BEGIN();
+  TVM_TIR_SCHEDULE_END("get-child-blocks", this->error_render_level_);
+  return CreateRV<BlockRV>(tir::GetChildBlocks(state_, this->GetSRef(loop_rv), false));
+}
+
 /******** Schedule: Transform loops ********/
 
 LoopRV ConcreteScheduleNode::Fuse(const Array<LoopRV>& loop_rvs) {
@@ -520,6 +534,50 @@ BlockRV ConcreteScheduleNode::RFactor(const LoopRV& loop_rv, int factor_axis) {
 }
 
 /******** Schedule: Blockize & Tensorize ********/
+BlockRV ConcreteScheduleNode::Blockize(const LoopRV& loop_rv) {
+  StmtSRef result{nullptr};
+  TVM_TIR_SCHEDULE_BEGIN();
+  result = tir::Blockize(state_, this->GetSRef(loop_rv));
+  this->state_->DebugVerify();
+  TVM_TIR_SCHEDULE_END("blockize", this->error_render_level_);
+  return CreateRV<BlockRV>(result);
+}
+
+void ConcreteScheduleNode::Tensorize(const LoopRV& loop_rv, const TensorIntrin& intrin) {
+  TVM_TIR_SCHEDULE_BEGIN();
+  tir::Tensorize(state_, this->GetSRef(loop_rv), intrin);
+  this->state_->DebugVerify();
+  TVM_TIR_SCHEDULE_END("tensorize", this->error_render_level_);
+}
+
+void ConcreteScheduleNode::Tensorize(const LoopRV& loop_rv, const String& intrin_name) {
+  TVM_TIR_SCHEDULE_BEGIN();
+  tir::Tensorize(state_, this->GetSRef(loop_rv), tir::TensorIntrin::Get(intrin_name));
+  this->state_->DebugVerify();
+  TVM_TIR_SCHEDULE_END("tensorize", this->error_render_level_);
+}
+
+// /******** Schedule: Annotation ********/
+//
+// void ConcreteScheduleNode::MarkLoop(const LoopRV& loop_rv, const String& ann_key,
+//                                     const ObjectRef& ann_val) {
+//   TVM_TIR_SCHEDULE_BEGIN();
+//   if (const auto* str = ann_val.as<StringObj>()) {
+//     tir::MarkLoop(state_, this->GetSRef(loop_rv), ann_key, StringImm(GetRef<String>(str)));
+//   } else if (const auto* int_imm = ann_val.as<IntImmNode>()) {
+//     tir::MarkLoop(state_, this->GetSRef(loop_rv), ann_key, GetRef<IntImm>(int_imm));
+//   } else if (const auto* expr = ann_val.as<PrimExprNode>()) {
+//     int64_t value = Downcast<IntImm>(this->Get(GetRef<PrimExpr>(expr)))->value;
+//     tir::MarkBlock(state_, this->GetSRef(loop_rv), ann_key, StringImm(std::to_string(value)));
+//   } else {
+//     LOG(FATAL) << "TypeError: Only strings, integers and ExprRVs are supported for now, but gets: "
+//                << ann_val->GetTypeKey();
+//     throw;
+//   }
+//   this->state_->DebugVerify();
+//   TVM_TIR_SCHEDULE_END("mark-loop", this->error_render_level_);
+// }
+//
 /******** Schedule: Annotation ********/
 /******** Schedule: Misc ********/
 

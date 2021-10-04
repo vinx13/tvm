@@ -93,6 +93,8 @@ class ConcreteScheduleNode : public ScheduleNode {
   /******** Schedule: Get blocks & loops ********/
   BlockRV GetBlock(const String& name, const String& func_name = "main") override;
   Array<LoopRV> GetLoops(const BlockRV& block_rv) override;
+  Array<BlockRV> GetChildBlocks(const BlockRV& block_rv) override;
+  Array<BlockRV> GetChildBlocks(const LoopRV& loop_rv) override;
   /******** Schedule: Transform loops ********/
   LoopRV Fuse(const Array<LoopRV>& loop_rvs) override;
   Array<LoopRV> Split(const LoopRV& loop_rv, const Array<Optional<ExprRV>>& factors) override;
@@ -120,6 +122,10 @@ class ConcreteScheduleNode : public ScheduleNode {
   void StorageAlign(const BlockRV& block_rv, int buffer_index, int axis, int factor,
                     int offset) override;
   /******** Schedule: Blockize & Tensorize ********/
+  BlockRV Blockize(const LoopRV& loop_rv) override;
+  void Tensorize(const LoopRV& loop_rv, const TensorIntrin& intrin) override;
+  void Tensorize(const LoopRV& loop_rv, const String& intrin_name) override;
+
   /******** Schedule: Annotation ********/
   /******** Schedule: Misc ********/
   void EnterPostproc() override {}
