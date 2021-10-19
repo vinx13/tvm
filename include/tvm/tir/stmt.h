@@ -1346,6 +1346,11 @@ constexpr const char* script_parsing_detect_access = "tir.script_parsing_detect_
 constexpr const char* pragma_loop_partition_hint = "pragma_loop_partition_hint";
 
 /*!
+ * \brief Mark the scope of the software pipeline
+ */
+constexpr const char* pipeline_scope = "pipeline_scope";
+
+/*!
  * \brief Check if attr_key is a pragma key extension
  * \param attr_key The attr key to be compared
  * \return true if it is a pragma key
