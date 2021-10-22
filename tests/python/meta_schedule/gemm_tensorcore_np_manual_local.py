@@ -1,5 +1,5 @@
 import tvm
-import tvm.testing 
+import tvm.testing
 from tvm.script import tir
 import numpy as np
 
@@ -58,7 +58,7 @@ def func(a: tir.handle, b: tir.handle, c: tir.handle) -> None:
                             tir.writes([C_wmma_accumulator[io * 16 : io * 16 + 16, jo * 16 : jo * 16 + 16]])
                             C_1 = tir.match_buffer(C_wmma_accumulator[io * 16 : io * 16 + 16, jo * 16 : jo * 16 + 16], [16, 16], dtype="float32", scope="wmma.accumulator", offset_factor=16)
                             tir.evaluate(tir.tvm_fill_fragment(C_1.data, 16, 16, 16, tir.floordiv(C_1.elem_offset, 256) + tir.floordiv(tir.floormod(C_1.elem_offset, 256), 16), tir.float32(0), dtype="handle"))
-                for i2_0_0 in tir.serial(0, 32):
+                for i2_0_0 in tir.serial(0, 32, annotations={'pipeline_scope': 2}):
                     for ax0_ax1_fused_1 in tir.thread_binding(0, 8, thread="threadIdx.y"):
                         for ax0_ax1_fused_2 in tir.thread_binding(0, 32, thread="threadIdx.x"):
                             for ax0 in tir.serial(0, 2):
@@ -98,7 +98,7 @@ def func(a: tir.handle, b: tir.handle, c: tir.handle) -> None:
                                         tir.block_attr({"buffer_dim_align":[[0, 0, 32, 8]]})
                                         B_shared[v0, v1] = B_shared_local[tir.floordiv(v0 - i2_0_0 * 32, 16), tir.floormod(v1 - i0_0_1_i1_0_1_fused * 128, 8)]
 
-                    for i2_0_1 in tir.serial(0, 2):
+                    for i2_0_1 in tir.serial(0, 2, annotations={'pipeline_scope': 2}):
                         for ax0_0, ax1_0 in tir.grid(4, 1):
                             with tir.block([64, 64], "blockized_A_shared_wmma.matrix_a") as [v0o, v1o]:
                                 tir.bind(v0o, i0_0_0_i1_0_0_fused * 8 + tir.floordiv(i0_0_2_i1_0_2_fused, 4) * 4 + ax0_0)
