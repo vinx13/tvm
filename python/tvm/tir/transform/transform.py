@@ -715,3 +715,16 @@ def MergeDynamicSharedMemoryAllocations():
         The result pass
     """
     return _ffi_api.MergeDynamicSharedMemoryAllocations()  # type: ignore
+
+
+def InjectSoftwarePipeline():
+    """Transform annotated loops into pipelined one that parallelize producers and consumers
+
+    Returns
+    -------
+    fpass : tvm.transform.Pass
+        The result pass
+    """
+    return _ffi_api.InjectSoftwarePipeline()
+
+
