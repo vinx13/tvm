@@ -993,7 +993,7 @@ class PipelineRewriter : public StmtExprMutator {
 
   Stmt EmitBody() {
     Array<Stmt> stmts;
-    Var new_loop_var(*(pipeline_loop_->loop_var.get()));
+    Var new_loop_var(pipeline_loop_->loop_var->name_hint);
     for (const auto& stmt : ordered_stmts_) {
       BlockRealize block_realize = Downcast<BlockRealize>(stmt);
       Block block = block_realize->block;
