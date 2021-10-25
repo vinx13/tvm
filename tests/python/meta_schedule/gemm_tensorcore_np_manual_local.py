@@ -9,14 +9,14 @@ def write_code(code, fname):
         f.write(code)
 
 TASK='gemm'
-USE_MANUAL_CODE=False
+USE_MANUAL_CODE=True
 @tvm.register_func('tvm_callback_cuda_postproc', override=True)
 def tvm_callback_cuda_postproc(code):
     if not os.path.exists("perf"):
         os.mkdir("perf")
     write_code(code, "perf/%s_generated.cu" % TASK)
     if USE_MANUAL_CODE:
-        code = open("perf/%s_manual.cu" % TASK).read()
+        code = open("perf/gemm_local_stage_double_buffer.cu").read()
     return code
 M = N = K = 1024
 
@@ -166,7 +166,7 @@ def main():
     f(a, b, c)
     tvm.testing.assert_allclose(c.numpy(), c_np, rtol=1e-3)
 
-    evaluator = f.time_evaluator(f.entry_name, dev, number=10)
+    evaluator = f.time_evaluator(f.entry_name, dev, number=100)
     gflops = (N*M*K) * 2 / 1e9
     time_ms = evaluator(a, b, c).mean * 1e3
     print("matmul with tensor core: %f ms, %f GFLOPS" % (time_ms, gflops / (time_ms / 1e3)))
