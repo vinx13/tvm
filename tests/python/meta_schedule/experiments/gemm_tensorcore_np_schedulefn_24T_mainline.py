@@ -27,6 +27,19 @@ import numpy as np
 
 TARGET = tvm.target.Target("nvidia/geforce-rtx-2080-ti")
 
+import os
+def write_code(code, fname):
+    with open(fname, "w") as f:
+        f.write(code)
+
+TASK="gemm"
+@tvm.register_func('tvm_callback_cuda_postproc', override=True)
+def tvm_callback_cuda_postproc(code):
+    if not os.path.exists("perf"):
+        os.mkdir("perf")
+    write_code(code, "perf/%s_generated.cu" % TASK)
+    return code
+
 
 def test_integration_matmul():
     N = 1024
