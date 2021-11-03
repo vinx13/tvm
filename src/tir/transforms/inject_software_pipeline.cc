@@ -213,8 +213,7 @@ class PipelineInjector : public StmtExprMutator {
     ObjectPtr<BufferNode> new_buffer = make_object<BufferNode>(*(buffer.get()));
     new_buffer->shape.insert(new_buffer->shape.begin(), num_stages);
     if (new_buffer->strides.size()) {
-      PrimExpr stride_0 = foldl([](PrimExpr a, PrimExpr b, Span span) { return mul(a, b, span); },
-                                make_const(DataType::Int(32), 1), new_buffer->strides);
+      PrimExpr stride_0 = new_buffer->strides[0] * new_buffer->shape[1];
       new_buffer->strides.insert(new_buffer->strides.begin(), stride_0);
     }
     return Buffer(new_buffer);
@@ -808,7 +807,16 @@ class PipelineBodyRewriter : public StmtExprMutator {
       if (it != buffer_remap_.end()) {
         Array<PrimExpr> new_args = call->args;
         const Buffer& new_buffer = (*it).second;
-        new_args.Set(2, RewriteWmmaFragmentIndex(buffer, new_buffer, call->args[2]));
+        const PrimExpr& old_index = call->args[2];
+        PrimExpr offset;
+        if (new_buffer->strides.empty()) {
+          offset = foldl([](PrimExpr a, PrimExpr b, Span span) { return mul(a, b, span); },
+                         make_const(DataType::Int(32), 1), buffer->shape);
+        } else {
+          offset = new_buffer->strides[0];
+        }
+        PrimExpr new_index = old_index + floormod(pipeline_loop_->loop_var, 2) * offset;
+        new_args.Set(2, new_index);
         return Call(call->dtype, call->op, new_args, call->span);
       }
     }
@@ -823,14 +831,8 @@ class PipelineBodyRewriter : public StmtExprMutator {
 
 class PipelineRewriter : public StmtExprMutator {
  public:
-  PipelineRewriter(Map<Var, Buffer> buffer_data_to_buffer)
-      : buffer_data_to_buffer_(std::move(buffer_data_to_buffer)) {}
-
-  std::pair<int, int> GetBlockStageOrder(const Block& block) {
-    int stage = block->annotations.at(attr::pipeline_stage).as<IntImmNode>()->value;
-    int order = block->annotations.at(attr::pipeline_order).as<IntImmNode>()->value;
-    return {stage, order};
-  }
+  PipelineRewriter(Map<Var, Buffer> buffer_data_to_buffer, const std::unordered_set<Buffer, ObjectPtrHash, ObjectPtrEqual>& double_buffers)
+      : buffer_data_to_buffer_(std::move(buffer_data_to_buffer)), double_buffers_(double_buffers) {}
 
   Stmt BuildPipeline(const Array<Block>& blocks, Array<Buffer> pipeline_allocs, For pipeline_loop) {
     pipeline_loop_ = pipeline_loop;
@@ -866,9 +868,12 @@ class PipelineRewriter : public StmtExprMutator {
     return BlockRealize({}, Bool(true), block);
   }
 
-  std::unordered_set<Buffer, ObjectPtrHash, ObjectPtrEqual> cross_stage_buffers;
-  Map<Buffer, Buffer> buffer_remap_;
-  Array<Block> ordered_stmts_;
+ private:
+  std::pair<int, int> GetBlockStageOrder(const Block& block) {
+    int stage = block->annotations.at(attr::pipeline_stage).as<IntImmNode>()->value;
+    int order = block->annotations.at(attr::pipeline_order).as<IntImmNode>()->value;
+    return {stage, order};
+  }
 
   std::unordered_map<Buffer, BufferInfo, ObjectPtrHash, ObjectPtrEqual> GetBufferInfo(
       const Array<Block>& blocks) {
@@ -968,6 +973,9 @@ class PipelineRewriter : public StmtExprMutator {
         num_versions = 1;
       }
     }
+    if (num_versions == 1 && double_buffers_.count(buffer)) {
+      num_versions = 2;
+    }
     return num_versions;
   }
 
@@ -999,8 +1007,7 @@ class PipelineRewriter : public StmtExprMutator {
     new_buffer->shape.insert(new_buffer->shape.begin(), num_versions);
     if (new_buffer->strides.size()) {
       ICHECK(new_buffer->strides.size() + 1 == new_buffer->shape.size());
-      PrimExpr stride_0 = foldl([](PrimExpr a, PrimExpr b, Span span) { return mul(a, b, span); },
-                                make_const(DataType::Int(32), 1), new_buffer->strides);
+      PrimExpr stride_0 = new_buffer->strides[0] * new_buffer->shape[1];
       new_buffer->strides.insert(new_buffer->strides.begin(), stride_0);
     }
     return Buffer(new_buffer);
@@ -1056,6 +1063,9 @@ class PipelineRewriter : public StmtExprMutator {
   For pipeline_loop_;
   int max_stage_ = -1;
   Map<Var, Buffer> buffer_data_to_buffer_;
+  Map<Buffer, Buffer> buffer_remap_;
+  Array<Block> ordered_stmts_;
+  const std::unordered_set<Buffer, ObjectPtrHash, ObjectPtrEqual>& double_buffers_;
 };
 
 class PipelineInjector : private StmtExprMutator {
@@ -1113,7 +1123,7 @@ class PipelineInjector : private StmtExprMutator {
         << pipeline_body->GetTypeKey();
     Array<Block> blocks = BlockizePipelineBody(pipeline_body.as<SeqStmtNode>()->seq);
     Array<Block> annotated_body = AnnotatePipelineBody(blocks);
-    PipelineRewriter rewriter(buffer_data_to_buffer_);
+    PipelineRewriter rewriter(buffer_data_to_buffer_, double_buffers);
     Stmt pipeline = rewriter.BuildPipeline(annotated_body, pipeline_allocs, GetRef<For>(op));
 
     if (const auto* realize = op->body.as<BlockRealizeNode>()) {
@@ -1179,6 +1189,12 @@ class PipelineInjector : private StmtExprMutator {
       ICHECK(buffer->IsInstance<BufferNode>());
       buffer_data_to_buffer_.Set(buffer->data, buffer);
     }
+
+    if (op->annotations.count("pragma_double_buffer")) {
+      for (const auto& write : op->writes) {
+        double_buffers.insert(write->buffer);
+      }
+    }
     Block block = Downcast<Block>(StmtExprMutator::VisitStmt_(op));
 
     if (block->body->IsInstance<SeqStmtNode>()) {
@@ -1194,6 +1210,7 @@ class PipelineInjector : private StmtExprMutator {
   }
 
   Map<Var, Buffer> buffer_data_to_buffer_;
+  std::unordered_set<Buffer, ObjectPtrHash, ObjectPtrEqual> double_buffers;
 };
 
 }  // namespace pipeline_v2
