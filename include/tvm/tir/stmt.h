@@ -1351,6 +1351,19 @@ constexpr const char* pragma_loop_partition_hint = "pragma_loop_partition_hint";
 constexpr const char* pipeline_scope = "pipeline_scope";
 
 /*!
+ * \brief TODO
+ */
+constexpr const char* pipeline_stage = "pipeline_stage";
+
+constexpr const char* pipeline_order = "pipeline_order";
+
+constexpr const char* pipeline_prologue_scope = "pipeline_prologue_scope";
+
+constexpr const char* pipeline_epilogue_scope = "pipeline_epilogue_scope";
+
+constexpr const char* pipeline_body_scope = "pipeline_body_scope";
+
+/*!
  * \brief Check if attr_key is a pragma key extension
  * \param attr_key The attr key to be compared
  * \return true if it is a pragma key
