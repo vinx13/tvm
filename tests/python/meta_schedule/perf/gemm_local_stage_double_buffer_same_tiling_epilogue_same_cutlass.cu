@@ -415,26 +415,38 @@ extern "C" __global__ void __launch_bounds__(256) main_kernel0(half* __restrict_
 
   const int padding = 8;
   const int shared_mem_stride = 128 + padding;
+  const int global_mem_stride = 1024;
   const int frag_width = 16;
   int warp_m = threadIdx.y & 3;
   int warp_n = threadIdx.y >> 2;
-  int warp_shape_m = 16;
+  int warp_shape_m = 32;
   int warp_shape_n = 64;
+  float4 tmp[8];
       
   __syncthreads(); // sync because C_shared reuse A_shared/B_shared
   for (int ax0_04 = 0; ax0_04 < 2; ++ax0_04) {
     for (int ax1_04 = 0; ax1_04 < 4; ++ax1_04) {
       // (void)nvcuda::wmma::store_matrix_sync(((float *)C + (((((((((int)blockIdx.x) * 131072) + ((((int)threadIdx.y) & 3) * 32768)) + (ax0_04 * 16384)) + (((int)blockIdx.y) * 128)) + ((((int)threadIdx.y) >> 2) * 64)) + (ax1_04 * 16)))), C_wmma_accumulator[((ax0_04 * 4) + ax1_04)], 1024, nvcuda::wmma::mem_row_major);
-      nvcuda::wmma::store_matrix_sync(C_shared + warp_m * warp_shape_m * shared_mem_stride + warp_n * warp_shape_n + ax1_04 * frag_width,
+      nvcuda::wmma::store_matrix_sync(C_shared + warp_m * frag_width * shared_mem_stride + warp_n * warp_shape_n + ax1_04 * frag_width,
                                       C_wmma_accumulator[((ax0_04 * 4) +ax1_04)], shared_mem_stride, nvcuda::wmma::mem_row_major);
     }
-    for (int ax1_04 = 0; ax1_04 < 4; ++ax1_04) {
-      for (int v = 0; v < 2; v++) {
-        *(float4*)((float *)C + (((((((((int)blockIdx.x) * 131072) + ((((int)threadIdx.y) & 3) * 32768)) + (ax0_04 * 16384)) + (((int)blockIdx.y) * 128)) + ((((int)threadIdx.y) >> 2) * 64)) + (ax1_04 * 16)) + (v * 8 + threadIdx.x / 4) * 1024 + threadIdx.x % 4 * 4)) = 
-            *(float4*)(C_shared + warp_m * warp_shape_m * shared_mem_stride + warp_n * warp_shape_n + ax1_04 * frag_width + (v * 8 + threadIdx.x / 4) * shared_mem_stride + threadIdx.x % 4 * 4);
-      }
+    __syncthreads();
+    // each loads 32x128 to registers
+    for (int tm = 0; tm < 4; tm++) {
+        for (int tn = 0; tn < 2; tn++) {
+            // each warp loads 2x64 in the innermost loop
+            tmp[tm * 2 + tn] = *(float4*)(C_shared + (threadIdx.y * 8 + tm * 2 + threadIdx.x / 16) * shared_mem_stride + tn * 64 + threadIdx.x % 16 * 4);
+        }
     }
-    __syncthreads(); // not needed, but adding it will be faster
+    // store (scatter) 32x128 to 64x128 global memory
+    // the outermost loop ax0_04 has two iterations, the first iteration stores to the upper half 32x128 of the 64x128 region, 
+    // the second iteration stores to the lower half 32x128 of the 64x128 region
+    for (int tm = 0; tm < 4; tm++) {
+        for (int tn = 0; tn < 2; tn++) {
+            *(float4*)((float *)C + (blockIdx.x * 128 + ax0_04 * 16 + threadIdx.y % 2 * 8 + threadIdx.y / 2 * warp_shape_m + tm * 2 + threadIdx.x / 16) * global_mem_stride +  blockIdx.y * 128 + tn * 64 + threadIdx.x % 16 * 4) = tmp[tm * 2 + tn];
+        }
+    }
+    __syncthreads(); 
   }
 }
 
