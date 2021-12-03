@@ -1109,8 +1109,6 @@ class PipelineInjector : private StmtExprMutator {
     if (const auto* realize = for_node->body.as<BlockRealizeNode>()) {
       const auto& block = realize->block;
       for (const auto& buffer : block->alloc_buffers) {
-        ICHECK(buffer->IsInstance<BufferNode>());
-        LOG(INFO) << "Push " << buffer->data;
         buffer_data_to_buffer_.Set(buffer->data, buffer);
       }
       pipeline_body = block->body;
@@ -1190,7 +1188,7 @@ class PipelineInjector : private StmtExprMutator {
       buffer_data_to_buffer_.Set(buffer->data, buffer);
     }
 
-    if (op->annotations.count("pragma_double_buffer")) {
+    if (op->annotations.count(attr::double_buffer_scope)) {
       for (const auto& write : op->writes) {
         double_buffers.insert(write->buffer);
       }
