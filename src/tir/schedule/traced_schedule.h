@@ -85,7 +85,16 @@ class TracedScheduleNode : public ConcreteScheduleNode {
   void StorageAlign(const BlockRV& block_rv, int buffer_index, int axis, int factor,
                     int offset) final;
   /******** Schedule: Blockize & Tensorize ********/
+  BlockRV Blockize(const LoopRV& loop_rv) final;
+  void Tensorize(const LoopRV& loop_rv, const String& intrin_name) final;
   /******** Schedule: Annotation ********/
+  void Annotate(const LoopRV& loop_rv, const String& ann_key, const ObjectRef& ann_val) override;
+  void Unannotate(const LoopRV& loop_rv, const String& ann_key) override;
+  void Annotate(const BlockRV& loop_rv, const String& ann_key, const ObjectRef& ann_val) override;
+  void Unannotate(const BlockRV& loop_rv, const String& ann_key) override;
+  /******** Schedule: Layout transformation ********/
+  void TransformLayout(const BlockRV& block_rv, int buffer_index, bool is_write_index,
+                       const IndexMap& index_map) override;
   /******** Schedule: Misc ********/
   void EnterPostproc() final;
 };
