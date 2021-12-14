@@ -119,6 +119,9 @@ class ConcreteScheduleNode : public ScheduleNode {
   void StorageAlign(const BlockRV& block_rv, int buffer_index, int axis, int factor,
                     int offset) override;
   /******** Schedule: Blockize & Tensorize ********/
+  BlockRV Blockize(const LoopRV& loop_rv) override;
+  void Tensorize(const LoopRV& loop_rv, const TensorIntrin& intrin) override;
+  void Tensorize(const LoopRV& loop_rv, const String& intrin_name) override;
   /******** Schedule: Annotation ********/
   /******** Schedule: Misc ********/
   void EnterPostproc() override {}
