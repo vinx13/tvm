@@ -121,13 +121,16 @@ std::vector<State> SubRule(std::vector<State> states, FLambda sub_rule) {
 class MultiLevelTilingNode : public ScheduleRuleNode {
  public:
   virtual ~MultiLevelTilingNode() = default;
-
+  // SubRule 0. detect compute intrin
+  inline std::vector<State> DetectTensorCore(State state) const;
   // SubRule 1. add write cache
-  std::vector<State> AddWriteReuse(State state) const;
+  inline std::vector<State> AddWriteReuse(State state) const;
   // SubRule 2. tile the loop nest
-  std::vector<State> TileLoopNest(State state) const;
+  inline std::vector<State> TileLoopNest(State state) const;
   // SubRule 3. add read cache
-  std::vector<State> AddReadReuse(State state) const;
+  inline std::vector<State> AddReadReuse(State state) const;
+  // SubRule 4. fuse write cache
+  inline std::vector<State> FuseWriteReuse(State state) const;
 
   // Do nothing; Inherited from ScheduleRuleNode
   void InitializeWithTuneContext(const TuneContext& context) final;
@@ -137,6 +140,13 @@ class MultiLevelTilingNode : public ScheduleRuleNode {
 
  protected:
   virtual std::vector<State> ApplySubRules(std::vector<State> states);
+
+  // TODO: refactor this
+  // TensorCore related
+  State TensorCoreLoad(State state) const;
+  State TensorCoreStore(State state) const;
+  State TensorCoreStoreFusion(State state, int level) const;
+  BlockRV GetRootBlockRV(const Schedule& sch, BlockRV block_rv) const;
 
  public:
   /*!
