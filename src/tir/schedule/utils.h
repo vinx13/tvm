@@ -267,7 +267,7 @@ inline Map<Var, arith::IntSet> AsIntSet(const Map<Var, Range>& var_dom) {
   return {result.begin(), result.end()};
 }
 
-/**************** Loop extents ****************/
+/**************** PrimExpr parsing and extents ****************/
 
 /*!
  * \brief Get the extents of a loop

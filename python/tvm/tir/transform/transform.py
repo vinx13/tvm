@@ -17,6 +17,7 @@
 """Wrapping existing transformations."""
 # pylint: disable=invalid-name
 from typing import Optional
+
 from . import _ffi_api
 from . import function_pass as _fpass
 
@@ -797,7 +798,18 @@ def ExtractPrimFuncConstants():
     return _ffi_api.ExtractPrimFuncConstants()  # type: ignore
 
 
-def RenormalizeSplitPattern():
+def LowerAutoCopy():
+    """Automatically do memory optimizations for auto copy blocks
+
+    Returns
+    -------
+    fpass : tvm.transform.Pass
+        The result pass
+    """
+    return _ffi_api.LowerAutoCopy()
+
+
+def RenomalizeSplitPattern():
     """Renormalize the split pattern from floordiv(floormod()) to floormod(floordiv())
 
     Returns
@@ -806,3 +818,15 @@ def RenormalizeSplitPattern():
         The result pass
     """
     return _ffi_api.RenormalizeSplitPattern()  # type: ignore
+
+
+def ApplyBlockBoundPredicate():
+    """Narrow the extents of some loops by checking whether some constraints in the block iter
+    bound predicates can be directly applied on the loops.
+
+    Returns
+    -------
+    fpass : tvm.transform.Pass
+        The result pass
+    """
+    return _ffi_api.ApplyBlockBoundPredicate()  # type: ignore

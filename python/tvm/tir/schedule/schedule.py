@@ -1056,6 +1056,30 @@ class Schedule(Object):
             self, block, write_buffer_index, storage_scope
         )
 
+    ########## Schedule: Data movement ##########
+
+    def read_at(
+        self,
+        loop: LoopRV,
+        block: BlockRV,
+        read_buffer_index: int,
+        storage_scope: str,
+    ) -> BlockRV:
+        return _ffi_api.ScheduleReadAt(  # type: ignore # pylint: disable=no-member
+            self, loop, block, read_buffer_index, storage_scope
+        )
+
+    def write_at(
+        self,
+        loop: LoopRV,
+        block: BlockRV,
+        write_buffer_index: int,
+        storage_scope: str,
+    ) -> BlockRV:
+        return _ffi_api.ScheduleWriteAt(  # type: ignore # pylint: disable=no-member
+            self, loop, block, write_buffer_index, storage_scope
+        )
+
     ########## Schedule: Compute location ##########
 
     @type_checked
@@ -2114,28 +2138,48 @@ class Schedule(Object):
 
     ########## Schedule: Layout transformation ##########
 
+<<<<<<< HEAD
     @type_checked
+=======
+>>>>>>> 44df33629 (Squashed commit: AutoTIR)
     def transform_layout(
         self,
         block: BlockRV,
         buffer_index: int,
+<<<<<<< HEAD
         buffer_index_type: str,
         index_map: Union[IndexMap, Callable],
     ) -> None:
         """Apply a transformation represented by IndexMap to buffer
+=======
+        is_write_index: bool,
+        index_map: Union[IndexMap, Callable],
+    ) -> None:
+        """Apply a transformation represented by IndexMap to buffer
+
+>>>>>>> 44df33629 (Squashed commit: AutoTIR)
         Parameters
         ----------
         block_rv : BlockRV
             The block that accesses the target buffer
         buffer_index: int
             The index of the buffer in block's read or write region
+<<<<<<< HEAD
         buffer_index_type : str
             Type of the buffer index, "read" or "write"
+=======
+        is_write_index : bool
+            Whether the buffer_index is the index of the block's write region
+>>>>>>> 44df33629 (Squashed commit: AutoTIR)
         index_map : Union[IndexMap, Callable]
             The transformation to apply
 
         Examples
         --------
+<<<<<<< HEAD
+=======
+
+>>>>>>> 44df33629 (Squashed commit: AutoTIR)
         Before transform_layout, in TensorIR, the IR is:
 
         .. code-block:: python
@@ -2159,7 +2203,11 @@ class Schedule(Object):
         .. code-block:: python
 
             sch = tir.Schedule(before_storage_align)
+<<<<<<< HEAD
             sch.transform_layout(sch.get_block("B"), buffer_index=0, "write",
+=======
+            sch.transform_layout(sch.get_block("B"), buffer_index=0, is_write_index=True,
+>>>>>>> 44df33629 (Squashed commit: AutoTIR)
                                  index_map=lambda m, n: (m // 16, n // 16, m % 16, n % 16))
             print(sch.mod["main"].script())
 
@@ -2180,6 +2228,7 @@ class Schedule(Object):
                     with T.block("C"):
                         vi, vj = T.axis.remap("SS", [i, j])
                         C[vi, vj] = B[vi // 16, vj // 16, vi % 16, vj % 16] + 1.0
+<<<<<<< HEAD
 
         """
         if callable(index_map):
@@ -2188,6 +2237,13 @@ class Schedule(Object):
         buffer_index_type_enum = 0 if buffer_index_type == "read" else 1
         _ffi_api.ScheduleTransformLayout(  # type: ignore # pylint: disable=no-member
             self, block, buffer_index, buffer_index_type_enum, index_map
+=======
+        """
+        if callable(index_map):
+            index_map = IndexMap.from_func(index_map)
+        _ffi_api.ScheduleTransformLayout(  # type: ignore # pylint: disable=no-member
+            self, block, buffer_index, is_write_index, index_map
+>>>>>>> 44df33629 (Squashed commit: AutoTIR)
         )
 
     ########## Schedule: Misc ##########

@@ -335,6 +335,47 @@ bool HasBeenMultiLevelTiled(const StmtSRef& block_sref);
 std::pair<Array<StmtSRef>, std::vector<int>> CollectComputeLocation(const ScheduleState& self,
                                                                     const StmtSRef& block_sref);
 
+/******** Tensorization ********/
+
+/*! \brief Necessary information used for tensorization */
+class TensorizeInfoNode : public Object {
+ public:
+  /*! \brief Maps block loops to desc loops */
+  Map<tir::StmtSRef, tir::For> loop_map;
+  /*! \brief Maps loops in desc to its index, outer to inner */
+  Map<tir::For, Integer> desc_loop_indexer;
+
+  void VisitAttrs(tvm::AttrVisitor* v) {
+    v->Visit("loop_map", &loop_map);
+    v->Visit("desc_loop_indexer", &desc_loop_indexer);
+  }
+
+  static constexpr const char* _type_key = "tir.analysis.TensorizeInfo";
+  TVM_DECLARE_FINAL_OBJECT_INFO(TensorizeInfoNode, Object);
+};
+
+/*!
+ * \brief Managed reference to TensorizeInfoNode
+ * \sa TensorizeInfoNode
+ */
+class TensorizeInfo : public ObjectRef {
+ public:
+  TVM_DEFINE_NOTNULLABLE_OBJECT_REF_METHODS(TensorizeInfo, ObjectRef, TensorizeInfoNode);
+};
+
+/*!
+ * \brief Check if the given block can be tensorized, and in the meantime gather the necessary
+ * information for tensorization
+ * \param self The schedule state
+ * \param block_sref The block to be analyzed
+ * \param desc_func The target function for tensorization
+ * \return The necessary information used for tensorization, or NullOpt if the block cannot be
+ * tensorized
+ */
+TVM_DLL Optional<TensorizeInfo> GetTensorizeLoopMapping(const tir::ScheduleState& self,
+                                                        const tir::StmtSRef& block_sref,
+                                                        const tir::PrimFunc& desc_func);
+
 /******** Producer-consumer relation ********/
 
 /*!
@@ -473,6 +514,80 @@ bool FromIdentityCombiner(const PrimExpr& identity, const BufferStore& combiner,
                           CommReducer* result_reducer, PrimExpr* lhs, PrimExpr* rhs);
 
 /******** Misc ********/
+
+/*!
+ * \brief Given the read/write region, extract the pattern of their index correspondence
+ * namely, the mapping from read index to the write index.
+ * \param read_region The read region
+ * \param write_region The write region
+ * \return A tuple of booleans, the extracted pattern
+ * 0) exists: if the pattern is found
+ * 1) surjective: if the pattern is surjective, i.e. each write index is mapped at least once
+ *    e.g. A[i, j] = B[i, i, j]
+ * 2) injective: if the pattern is injective, i.e. each write index is mapped at most once.
+ *    e.g. A[i, j] = B[i]
+ * 3) ordered: if the mapping is ordered
+ * 4) no_const_read: if there is no constant indexing in the read indices,
+ *    e.g. A[i, j] = B[0, i, j]
+ * 5) no_shift_read: if there is no constant shift in the read indices,
+ *    e.g. A[i, j] = B[i + 1, j]
+ */
+std::tuple</*exists=*/bool,
+           /*surjective=*/bool,
+           /*injective=*/bool,
+           /*ordered=*/bool,
+           /*no_const_read=*/bool,
+           /*no_shift_read=*/bool>
+AnalyzeReadWritePattern(const BufferRegion& read_region, const BufferRegion& write_region);
+
+/*!
+ * \brief Checks if the given block has data reuse opportunity and thus multi-level tiling is
+ * beneficial.
+ * \param self The schedule state
+ * \param block_sref The block to be checked
+ * \return A boolean indicating whether the block has data reuse opportunity
+ */
+bool NeedsMultiLevelTiling(const ScheduleState& self, const StmtSRef& block_sref);
+
+/*!
+ * \brief Checks if the given block has been applied by multi-level tiling. We check this by examine
+ * the block's annotation.
+ * \param block_sref The block to be checked
+ * \return A boolean indicating whether the block has been multi-level tiled.
+ */
+bool HasBeenMultiLevelTiled(const StmtSRef& block_sref);
+
+/*!
+ * \brief Checks if the rfactor or cross thread reduction is beneficial to the given block.
+ * \param self The schedule state.
+ * \param block_sref The block to be checked.
+ * \param max_parallel_extent The maximum parallel jobs on the target.
+ * \param max_parallel_extent The maximum cores on the target.
+ * \return A boolean indicating whether the operation is beneficial.
+ */
+bool NeedsRFactorOrCrossThreadReduction(const tir::ScheduleState& self,   //
+                                        const tir::StmtSRef& block_sref,  //
+                                        int64_t max_parallel_extent,      //
+                                        int64_t max_parallel_basic);
+
+/*!
+ * \brief Checks if the given AST contains the specific operators
+ * \param stmt The AST to be checked
+ * \param ops The list of operators to be checked
+ * \return A boolean indicating whether the AST contains the specific operators
+ */
+bool HasOp(const Stmt& stmt, const Array<Op>& ops);
+
+/*!
+ * \brief Checks if the given AST contains if-then-else, including
+ * 1) IfThenElse statement
+ * 2) Select expression
+ * 3) The operator `tir.if_then_else`
+ * 4) Block predicates
+ */
+bool HasIfThenElse(const Stmt& stmt);
+
+/******** Storage Scope ********/
 
 /*!
  * \brief Check whether the input storage scope string is valid. Throw an error if not.
