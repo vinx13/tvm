@@ -160,6 +160,79 @@ Block MakeCacheStage(const BufferRegion& cache_region, CacheStageInfo* info,
   return block;
 }
 
+Block MakeReIndexStage(const BlockNode* block, CacheStageInfo* info,
+                       const std::unordered_set<Var, ObjectPtrHash, ObjectPtrEqual>& covered,
+                       const Array<PrimExpr>& original_indices, int buffer_index,
+                       bool is_write_index) {
+  // loop variables
+  std::vector<Var> loop_vars;
+  // bindings in block realize
+  std::vector<PrimExpr> iter_values;
+  // create loop vars and block vars' binding_value
+  for (const IterVar& iter : block->iter_vars) {
+    Var loop_var("ax" + std::to_string(loop_vars.size()));
+    loop_vars.push_back(loop_var);
+    iter_values.push_back(loop_var);
+  }
+  // block vars
+  Array<IterVar> block_vars;
+  std::unordered_map<Var, PrimExpr, ObjectPtrHash, ObjectEqual> block_var_replace_map;
+  // block access region of reindexed buffer and original buffer
+  Region reindex_region, original_region;
+  // indices used in block body
+  Array<PrimExpr> reindex_indices;
+  // Create block vars, block's accessed region and accessing indices
+  for (const IterVar& iter : block->iter_vars) {
+    Var var("v" + std::to_string(block_vars.size()));
+    bool flag = covered.count(iter->var);
+    block_vars.push_back(IterVar(/*dom=*/flag ? iter->dom : Range::FromMinExtent(0, 1),
+                                 /*var=*/var,
+                                 /*IterVarType=*/kDataPar));
+    if (flag) {
+      reindex_indices.push_back(var);
+      reindex_region.push_back(Range::FromMinExtent(var, 1));
+    }
+    block_var_replace_map[iter->var] = var;
+  }
+  BufferRegion buffer_region =
+      is_write_index ? block->writes[buffer_index] : block->reads[buffer_index];
+  original_region = Substitute(buffer_region->region, block_var_replace_map);
+  Array<PrimExpr> new_indices;
+  for (const auto& original_index : original_indices) {
+    new_indices.push_back(Substitute(original_index, block_var_replace_map));
+  }
+  // Create the body block
+  Block new_block(
+      /*iter_vars=*/block_vars,
+      /*reads=*/
+      {BufferRegion(info->read_buffer, is_write_index ? reindex_region : original_region)},
+      /*writes=*/
+      {BufferRegion(info->write_buffer, is_write_index ? original_region : reindex_region)},
+      /*name_hint=*/buffer_region->buffer->name + "_reindex",
+      /*body=*/
+      BufferStore(info->write_buffer,
+                  BufferLoad(info->read_buffer, is_write_index ? reindex_indices : new_indices),
+                  is_write_index ? new_indices : reindex_indices),
+      /*init=*/NullOpt,
+      /*alloc_buffers=*/{},
+      /*match_buffers=*/{},
+      /*annotations=*/{});
+  // Create the block realize node
+  Stmt body = BlockRealize(/*values=*/iter_values,
+                           /*predicate=*/const_true(),
+                           /*block=*/new_block);
+  // Create surrounding loops
+  for (size_t i = loop_vars.size(); i >= 1; --i) {
+    body = For(/*loop_var=*/loop_vars[i - 1],
+               /*min=*/block_vars[i - 1]->dom->min,
+               /*extent=*/block_vars[i - 1]->dom->extent,
+               /*kind=*/ForKind::kSerial,
+               /*body=*/body);
+  }
+  info->cache_stage = std::move(body);
+  return new_block;
+}
+
 /*!
  * \brief Create the reindex block and generate the corresponding outer loops.
  * \details The reindex block is a data copy block between the reindex buffer (the intermediate
@@ -373,9 +446,11 @@ class CacheLocDetector : public StmtVisitor {
  public:
   /*!
    * \brief Detect the insertion position of the cache stage, and write the position into the
-   * CacheStageInfo \param self The state of the schedule \param block_sref The sref of the unique
-   * writer block of the buffer being applied cache_read or cache_write \param scope_sref The sref
-   * of the scope block of the cached block \param info The cache stage info.
+   * CacheStageInfo
+   * \param self The state of the schedule
+   * \param block_sref The sref of the unique writer block of the buffer being applied cache_read or
+   * cache_write \param scope_sref The sref of the scope block of the cached block \param info The
+   * cache stage info.
    */
   static void Detect(const ScheduleState& self, const StmtSRef& block_sref,
                      const StmtSRef& scope_sref, CacheStageInfo* info) {
@@ -402,8 +477,9 @@ class CacheLocDetector : public StmtVisitor {
    * \brief Constructor
    * \param self The state of the schedule
    * \param block_sref The sref of the unique writer block of the buffer being applied cache_read or
-   * cache_write \param scope_sref The sref of the scope block of the cached block \param
-   * related_blocks Producer blocks for cache_write, or consumer blocks for cache_read
+   * cache_write
+   * \param scope_sref The sref of the scope block of the cached block
+   * \param related_blocks Producer blocks for cache_write, or consumer blocks for cache_read
    */
   CacheLocDetector(const ScheduleState self, const StmtSRef& block_sref, const StmtSRef& scope_sref,
                    const std::vector<StmtSRef>& related_blocks)
