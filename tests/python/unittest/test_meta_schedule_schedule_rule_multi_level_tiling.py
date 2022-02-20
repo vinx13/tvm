@@ -20,12 +20,14 @@ from tvm.meta_schedule.space_generator.post_order_apply import PostOrderApply
 from tvm.meta_schedule.testing import te_workload
 from tvm.meta_schedule.testing.schedule_rule import (
     multi_level_tiling,
+    multi_level_tiling_tensor_core,
 )
 from tvm.meta_schedule.testing.space_generation import check_trace
 from tvm.meta_schedule.tune_context import TuneContext
 from tvm.script import tir as T
 from tvm.te import create_prim_func
 from tvm.target import Target
+from tvm.meta_schedule.testing import tir_tensor_intrin
 
 
 def _create_context(mod, target, rule) -> TuneContext:
@@ -170,20 +172,21 @@ def test_cuda_matmul():
         [
             'b0 = sch.get_block(name="C", func_name="main")',
             'sch.annotate(block_or_loop=b0, ann_key="meta_schedule.tiling_structure", ann_val="SSSRRSRS")',
-            "l1, l2, l3 = sch.get_loops(block=b0)",
-            "v4, v5, v6, v7, v8 = sch.sample_perfect_tile(loop=l1, n=5, max_innermost_factor=64)",
-            "l9, l10, l11, l12, l13 = sch.split(loop=l1, factors=[v4, v5, v6, v7, v8])",
-            "v14, v15, v16, v17, v18 = sch.sample_perfect_tile(loop=l2, n=5, max_innermost_factor=64)",
-            "l19, l20, l21, l22, l23 = sch.split(loop=l2, factors=[v14, v15, v16, v17, v18])",
-            "v24, v25, v26 = sch.sample_perfect_tile(loop=l3, n=3, max_innermost_factor=64)",
-            "l27, l28, l29 = sch.split(loop=l3, factors=[v24, v25, v26])",
-            "sch.reorder(l9, l19, l10, l20, l11, l21, l27, l28, l12, l22, l29, l13, l23)",
-            "l30 = sch.fuse(l9, l19)",
-            'sch.bind(loop=l30, thread_axis="blockIdx.x")',
+            'b1 = sch.cache_write(block=b0, write_buffer_index=0, storage_scope="local")',
+            "l2, l3, l4 = sch.get_loops(block=b0)",
+            "v5, v6, v7, v8, v9 = sch.sample_perfect_tile(loop=l2, n=5, max_innermost_factor=64)",
+            "l10, l11, l12, l13, l14 = sch.split(loop=l2, factors=[v5, v6, v7, v8, v9])",
+            "v15, v16, v17, v18, v19 = sch.sample_perfect_tile(loop=l3, n=5, max_innermost_factor=64)",
+            "l20, l21, l22, l23, l24 = sch.split(loop=l3, factors=[v15, v16, v17, v18, v19])",
+            "v25, v26, v27 = sch.sample_perfect_tile(loop=l4, n=3, max_innermost_factor=64)",
+            "l28, l29, l30 = sch.split(loop=l4, factors=[v25, v26, v27])",
+            "sch.reorder(l10, l20, l11, l21, l12, l22, l28, l29, l13, l23, l30, l14, l24)",
             "l31 = sch.fuse(l10, l20)",
-            'sch.bind(loop=l31, thread_axis="vthread.x")',
+            'sch.bind(loop=l31, thread_axis="blockIdx.x")',
             "l32 = sch.fuse(l11, l21)",
-            'sch.bind(loop=l32, thread_axis="threadIdx.x")',
+            'sch.bind(loop=l32, thread_axis="vthread.x")',
+            "l33 = sch.fuse(l12, l22)",
+            'sch.bind(loop=l33, thread_axis="threadIdx.x")',
             'sch.annotate(block_or_loop=b0, ann_key="meta_schedule.thread_extent_low_inclusive", ann_val=32)',
             'sch.annotate(block_or_loop=b0, ann_key="meta_schedule.thread_extent_high_inclusive", ann_val=1024)',
             'b33 = sch.cache_write(block=b0, write_buffer_index=0, storage_scope="local")',
@@ -200,6 +203,7 @@ def test_cuda_matmul():
             "l50 = sch.fuse(l48, l49)",
             "v51 = sch.sample_categorical(candidates=[1, 2, 3, 4], probs=[0.25, 0.25, 0.25, 0.25])",
             'sch.annotate(block_or_loop=b43, ann_key="meta_schedule.cooperative_fetch", ann_val=v51)',
+            "sch.reverse_compute_at(block=b1, loop=l33, preserve_unit_loops=True)",
         ]
     ]
     # pylint: enable=line-too-long
@@ -226,18 +230,17 @@ def test_cuda_matmul_relu():
         [
             'b0 = sch.get_block(name="C", func_name="main")',
             'sch.annotate(block_or_loop=b0, ann_key="meta_schedule.tiling_structure", ann_val="SSSRRSRS")',
-            "l1, l2, l3 = sch.get_loops(block=b0)",
-            "v4, v5, v6, v7, v8 = sch.sample_perfect_tile(loop=l1, n=5, max_innermost_factor=64)",
-            "l9, l10, l11, l12, l13 = sch.split(loop=l1, factors=[v4, v5, v6, v7, v8])",
-            "v14, v15, v16, v17, v18 = sch.sample_perfect_tile(loop=l2, n=5, max_innermost_factor=64)",
-            "l19, l20, l21, l22, l23 = sch.split(loop=l2, factors=[v14, v15, v16, v17, v18])",
-            "v24, v25, v26 = sch.sample_perfect_tile(loop=l3, n=3, max_innermost_factor=64)",
-            "l27, l28, l29 = sch.split(loop=l3, factors=[v24, v25, v26])",
-            "sch.reorder(l9, l19, l10, l20, l11, l21, l27, l28, l12, l22, l29, l13, l23)",
-            "l30 = sch.fuse(l9, l19)",
-            'sch.bind(loop=l30, thread_axis="blockIdx.x")',
+            'b1 = sch.cache_write(block=b0, write_buffer_index=0, storage_scope="local")',
+            "l2, l3, l4 = sch.get_loops(block=b0)",
+            "v5, v6, v7, v8, v9 = sch.sample_perfect_tile(loop=l2, n=5, max_innermost_factor=64)",
+            "l10, l11, l12, l13, l14 = sch.split(loop=l2, factors=[v5, v6, v7, v8, v9])",
+            "v15, v16, v17, v18, v19 = sch.sample_perfect_tile(loop=l3, n=5, max_innermost_factor=64)",
+            "l20, l21, l22, l23, l24 = sch.split(loop=l3, factors=[v15, v16, v17, v18, v19])",
+            "v25, v26, v27 = sch.sample_perfect_tile(loop=l4, n=3, max_innermost_factor=64)",
+            "l28, l29, l30 = sch.split(loop=l4, factors=[v25, v26, v27])",
+            "sch.reorder(l10, l20, l11, l21, l12, l22, l28, l29, l13, l23, l30, l14, l24)",
             "l31 = sch.fuse(l10, l20)",
-            'sch.bind(loop=l31, thread_axis="vthread.x")',
+            'sch.bind(loop=l31, thread_axis="blockIdx.x")',
             "l32 = sch.fuse(l11, l21)",
             'sch.bind(loop=l32, thread_axis="threadIdx.x")',
             'b33 = sch.cache_write(block=b0, write_buffer_index=0, storage_scope="local")',
@@ -254,6 +257,7 @@ def test_cuda_matmul_relu():
             "l50 = sch.fuse(l48, l49)",
             "v51 = sch.sample_categorical(candidates=[1, 2, 3, 4], probs=[0.25, 0.25, 0.25, 0.25])",
             'sch.annotate(block_or_loop=b43, ann_key="meta_schedule.cooperative_fetch", ann_val=v51)',
+            "sch.reverse_compute_at(block=b1, loop=l33, preserve_unit_loops=True)",
         ]
     ]
     # pylint: enable=line-too-long
@@ -301,9 +305,155 @@ def test_cuda_sum_with_trivial_block_iter():
     check_trace(spaces, expected)
 
 
+def test_cuda_tensor_core_matmul():
+    expected = [
+        [
+            'b0 = sch.get_block(name="C", func_name="main")',
+            'sch.annotate(block_or_loop=b0, ann_key="meta_schedule.tiling_structure", ann_val="SSSRRSRS")',
+            "l1, l2, l3 = sch.get_loops(block=b0)",
+            "l4, l5 = sch.split(loop=l1, factors=[32, 16])",
+            "l6, l7 = sch.split(loop=l2, factors=[32, 16])",
+            "l8, l9 = sch.split(loop=l3, factors=[32, 16])",
+            "l10, l11, l12, l13, l14, l15 = sch.get_loops(block=b0)",
+            "sch.reorder(l12, l14, l5, l7, l9)",
+            "b16 = sch.blockize(loop=l5)",
+            'sch.annotate(block_or_loop=b0, ann_key="meta_schedule.auto_tensorize", ann_val="wmma_sync")',
+            'sch.annotate(block_or_loop=b16, ann_key="meta_schedule.auto_tensorize", ann_val="wmma_fill")',
+            'b17 = sch.get_block(name="root", func_name="main")',
+            'sch.annotate(block_or_loop=b17, ann_key="meta_schedule.tensor_core_enabled", ann_val="1")',
+            'b18 = sch.cache_write(block=b16, write_buffer_index=0, storage_scope="local")',
+            'b19 = sch.cache_write(block=b16, write_buffer_index=0, storage_scope="wmma.accumulator")',
+            'sch.annotate(block_or_loop=b19, ann_key="meta_schedule.auto_tensorize", ann_val="wmma_store")',
+            "l20, l21, l22 = sch.get_loops(block=b16)",
+            "v23, v24, v25, v26, v27 = sch.sample_perfect_tile(loop=l20, n=5, max_innermost_factor=64)",
+            "l28, l29, l30, l31, l32 = sch.split(loop=l20, factors=[v23, v24, v25, v26, v27])",
+            "v33, v34, v35, v36, v37 = sch.sample_perfect_tile(loop=l21, n=5, max_innermost_factor=64)",
+            "l38, l39, l40, l41, l42 = sch.split(loop=l21, factors=[v33, v34, v35, v36, v37])",
+            "v43, v44, v45 = sch.sample_perfect_tile(loop=l22, n=3, max_innermost_factor=64)",
+            "l46, l47, l48 = sch.split(loop=l22, factors=[v43, v44, v45])",
+            "sch.reorder(l28, l38, l29, l39, l30, l40, l46, l47, l31, l41, l48, l32, l42)",
+            "l49 = sch.fuse(l28, l38)",
+            'sch.bind(loop=l49, thread_axis="blockIdx.x")',
+            "l50 = sch.fuse(l29, l39)",
+            'sch.bind(loop=l50, thread_axis="blockIdx.y")',
+            "l51 = sch.fuse(l30, l40)",
+            'sch.bind(loop=l51, thread_axis="threadIdx.y")',
+            'b52 = sch.cache_read(block=b16, read_buffer_index=1, storage_scope="shared")',
+            "sch.compute_at(block=b52, loop=l46, preserve_unit_loops=True)",
+            "l53, l54, l55, l56, l57, l58 = sch.get_loops(block=b52)",
+            "l59 = sch.fuse(l57, l58)",
+            "v60 = sch.sample_categorical(candidates=[1, 2, 3, 4], probs=[0.25, 0.25, 0.25, 0.25])",
+            'sch.annotate(block_or_loop=b52, ann_key="meta_schedule.cooperative_fetch", ann_val=v60)',
+            'b61 = sch.cache_read(block=b16, read_buffer_index=2, storage_scope="shared")',
+            "sch.compute_at(block=b61, loop=l46, preserve_unit_loops=True)",
+            "l62, l63, l64, l65, l66, l67 = sch.get_loops(block=b61)",
+            "l68 = sch.fuse(l66, l67)",
+            "v69 = sch.sample_categorical(candidates=[1, 2, 3, 4], probs=[0.25, 0.25, 0.25, 0.25])",
+            'sch.annotate(block_or_loop=b61, ann_key="meta_schedule.cooperative_fetch", ann_val=v69)',
+            'b70 = sch.cache_read(block=b16, read_buffer_index=1, storage_scope="wmma.matrix_a")',
+            'b71 = sch.cache_read(block=b16, read_buffer_index=2, storage_scope="wmma.matrix_b")',
+            "sch.compute_at(block=b70, loop=l48, preserve_unit_loops=True)",
+            "sch.compute_at(block=b71, loop=l48, preserve_unit_loops=True)",
+            'sch.annotate(block_or_loop=b70, ann_key="meta_schedule.auto_tensorize", ann_val="wmma_load_a")',
+            'sch.annotate(block_or_loop=b71, ann_key="meta_schedule.auto_tensorize", ann_val="wmma_load_b")',
+            "sch.reverse_compute_at(block=b19, loop=l51, preserve_unit_loops=True)",
+            "sch.reverse_compute_at(block=b18, loop=l51, preserve_unit_loops=True)",
+        ]
+    ]
+    target = Target("cuda", host="llvm")
+    ctx = _create_context(
+        create_prim_func(
+            te_workload.matmul_fp16(
+                n=512,
+                m=512,
+                k=512,
+            )
+        ),
+        target=target,
+        rule=multi_level_tiling_tensor_core(target=target),
+    )
+    spaces = ctx.space_generator.generate_design_space(mod=ctx.mod)
+    assert len(spaces) == 1
+    check_trace(spaces, expected)
+
+
+def test_cuda_tensor_core_matmul_relu():
+    expected = [
+        [
+            'b0 = sch.get_block(name="C", func_name="main")',
+            'sch.annotate(block_or_loop=b0, ann_key="meta_schedule.tiling_structure", ann_val="SSSRRSRS")',
+            "l1, l2, l3 = sch.get_loops(block=b0)",
+            "l4, l5 = sch.split(loop=l1, factors=[32, 16])",
+            "l6, l7 = sch.split(loop=l2, factors=[32, 16])",
+            "l8, l9 = sch.split(loop=l3, factors=[32, 16])",
+            "l10, l11, l12, l13, l14, l15 = sch.get_loops(block=b0)",
+            "sch.reorder(l12, l14, l5, l7, l9)",
+            "b16 = sch.blockize(loop=l5)",
+            'sch.annotate(block_or_loop=b0, ann_key="meta_schedule.auto_tensorize", ann_val="wmma_sync")',
+            'sch.annotate(block_or_loop=b16, ann_key="meta_schedule.auto_tensorize", ann_val="wmma_fill")',
+            'b17 = sch.get_block(name="root", func_name="main")',
+            'sch.annotate(block_or_loop=b17, ann_key="meta_schedule.tensor_core_enabled", ann_val="1")',
+            'b18 = sch.cache_write(block=b16, write_buffer_index=0, storage_scope="local")',
+            'b19 = sch.cache_write(block=b16, write_buffer_index=0, storage_scope="wmma.accumulator")',
+            'sch.annotate(block_or_loop=b19, ann_key="meta_schedule.auto_tensorize", ann_val="wmma_store")',
+            "l20, l21, l22 = sch.get_loops(block=b16)",
+            "v23, v24, v25, v26, v27 = sch.sample_perfect_tile(loop=l20, n=5, max_innermost_factor=64)",
+            "l28, l29, l30, l31, l32 = sch.split(loop=l20, factors=[v23, v24, v25, v26, v27])",
+            "v33, v34, v35, v36, v37 = sch.sample_perfect_tile(loop=l21, n=5, max_innermost_factor=64)",
+            "l38, l39, l40, l41, l42 = sch.split(loop=l21, factors=[v33, v34, v35, v36, v37])",
+            "v43, v44, v45 = sch.sample_perfect_tile(loop=l22, n=3, max_innermost_factor=64)",
+            "l46, l47, l48 = sch.split(loop=l22, factors=[v43, v44, v45])",
+            "sch.reorder(l28, l38, l29, l39, l30, l40, l46, l47, l31, l41, l48, l32, l42)",
+            "l49 = sch.fuse(l28, l38)",
+            'sch.bind(loop=l49, thread_axis="blockIdx.x")',
+            "l50 = sch.fuse(l29, l39)",
+            'sch.bind(loop=l50, thread_axis="blockIdx.y")',
+            "l51 = sch.fuse(l30, l40)",
+            'sch.bind(loop=l51, thread_axis="threadIdx.y")',
+            'b52 = sch.cache_read(block=b16, read_buffer_index=1, storage_scope="shared")',
+            "sch.compute_at(block=b52, loop=l46, preserve_unit_loops=True)",
+            "l53, l54, l55, l56, l57, l58 = sch.get_loops(block=b52)",
+            "l59 = sch.fuse(l57, l58)",
+            "v60 = sch.sample_categorical(candidates=[1, 2, 3, 4], probs=[0.25, 0.25, 0.25, 0.25])",
+            'sch.annotate(block_or_loop=b52, ann_key="meta_schedule.cooperative_fetch", ann_val=v60)',
+            'b61 = sch.cache_read(block=b16, read_buffer_index=2, storage_scope="shared")',
+            "sch.compute_at(block=b61, loop=l46, preserve_unit_loops=True)",
+            "l62, l63, l64, l65, l66, l67 = sch.get_loops(block=b61)",
+            "l68 = sch.fuse(l66, l67)",
+            "v69 = sch.sample_categorical(candidates=[1, 2, 3, 4], probs=[0.25, 0.25, 0.25, 0.25])",
+            'sch.annotate(block_or_loop=b61, ann_key="meta_schedule.cooperative_fetch", ann_val=v69)',
+            'b70 = sch.cache_read(block=b16, read_buffer_index=1, storage_scope="wmma.matrix_a")',
+            'b71 = sch.cache_read(block=b16, read_buffer_index=2, storage_scope="wmma.matrix_b")',
+            "sch.compute_at(block=b70, loop=l48, preserve_unit_loops=True)",
+            "sch.compute_at(block=b71, loop=l48, preserve_unit_loops=True)",
+            'sch.annotate(block_or_loop=b70, ann_key="meta_schedule.auto_tensorize", ann_val="wmma_load_a")',
+            'sch.annotate(block_or_loop=b71, ann_key="meta_schedule.auto_tensorize", ann_val="wmma_load_b")',
+            "sch.reverse_compute_at(block=b19, loop=l51, preserve_unit_loops=True)",
+            "sch.reverse_compute_at(block=b18, loop=l51, preserve_unit_loops=True)",
+        ]
+    ]
+    target = Target("cuda", host="llvm")
+    ctx = _create_context(
+        create_prim_func(
+            te_workload.matmul_relu_fp16(
+                n=512,
+                m=512,
+                k=512,
+            )
+        ),
+        target=target,
+        rule=multi_level_tiling_tensor_core(target=target),
+    )
+    spaces = ctx.space_generator.generate_design_space(mod=ctx.mod)
+    assert len(spaces) == 1
+    check_trace(spaces, expected)
+
+
 if __name__ == "__main__":
     test_cpu_matmul()
     test_cpu_matmul_relu()
     test_cuda_matmul()
     test_cuda_matmul_relu()
     test_cuda_sum_with_trivial_block_iter()
+    test_cuda_tensor_core_matmul()
+    test_cuda_tensor_core_matmul_relu()
