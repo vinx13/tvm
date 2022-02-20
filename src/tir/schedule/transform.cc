@@ -33,6 +33,7 @@ Block WithAnnotation(const BlockNode* block, const String& attr_key, const Objec
 }
 
 /******** Buffer Related ********/
+
 Buffer WithScope(const Buffer& buffer, const String& scope) {
   ObjectPtr<BufferNode> new_buffer = make_object<BufferNode>(*buffer.get());
   ObjectPtr<VarNode> new_var = make_object<VarNode>(*buffer->data.get());
@@ -40,6 +41,25 @@ Buffer WithScope(const Buffer& buffer, const String& scope) {
   new_var->type_annotation = PointerType(ptr_type->element_type, scope);
   new_buffer->data = Var(new_var->name_hint + "_" + scope, new_var->type_annotation);
   new_buffer->name = buffer->name + "_" + scope;
+  return Buffer(new_buffer);
+}
+
+Buffer WithBlockIters(const Buffer& buffer, const Array<IterVar>& block_iters,
+                      const std::unordered_set<Var, ObjectPtrHash, ObjectPtrEqual>& covered) {
+  ObjectPtr<BufferNode> new_buffer = make_object<BufferNode>(*buffer.get());
+  ObjectPtr<VarNode> new_var = make_object<VarNode>(*buffer->data.get());
+  std::vector<PrimExpr> new_shape;
+  std::vector<PrimExpr> new_strides;
+  for (const auto& iter : block_iters) {
+    if (covered.count(iter->var)) {
+      new_shape.push_back(iter->dom->min + iter->dom->extent);
+    }
+  }
+  new_strides.clear();
+  new_buffer->shape = new_shape;
+  new_buffer->strides = new_strides;
+  new_buffer->data = Var(new_var->name_hint + "_reindex", new_var->type_annotation);
+  new_buffer->name = buffer->name + "_reindex";
   return Buffer(new_buffer);
 }
 
