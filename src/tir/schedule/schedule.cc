@@ -165,6 +165,12 @@ TVM_REGISTER_GLOBAL("tir.schedule.ScheduleCacheRead")
     .set_body_method<Schedule>(&ScheduleNode::CacheRead);
 TVM_REGISTER_GLOBAL("tir.schedule.ScheduleCacheWrite")
     .set_body_method<Schedule>(&ScheduleNode::CacheWrite);
+TVM_REGISTER_GLOBAL("tir.schedule.ScheduleReIndex")
+    .set_body_method<Schedule>(&ScheduleNode::ReIndex);
+/******** (FFI) Data movement ********/
+TVM_REGISTER_GLOBAL("tir.schedule.ScheduleReadAt").set_body_method<Schedule>(&ScheduleNode::ReadAt);
+TVM_REGISTER_GLOBAL("tir.schedule.ScheduleWriteAt")
+    .set_body_method<Schedule>(&ScheduleNode::WriteAt);
 /******** (FFI) Compute location ********/
 TVM_REGISTER_GLOBAL("tir.schedule.ScheduleComputeAt")
     .set_body_method<Schedule>(&ScheduleNode::ComputeAt);
@@ -234,6 +240,8 @@ TVM_REGISTER_GLOBAL("tir.schedule.ScheduleTransformLayout")
                                    static_cast<BufferIndexType>(buffer_index_type), index_map);
     });
 
+TVM_REGISTER_GLOBAL("tir.schedule.ScheduleTransformBlockLayout")
+    .set_body_method<Schedule>(&ScheduleNode::TransformBlockLayout);
 /******** (FFI) Misc ********/
 TVM_REGISTER_GLOBAL("tir.schedule.ScheduleEnterPostproc")
     .set_body_method<Schedule>(&ScheduleNode::EnterPostproc);

@@ -17,6 +17,7 @@
 """Wrapping existing transformations."""
 # pylint: disable=invalid-name
 from typing import Optional
+
 from . import _ffi_api
 from . import function_pass as _fpass
 
@@ -795,6 +796,17 @@ def ExtractPrimFuncConstants():
         The result pass
     """
     return _ffi_api.ExtractPrimFuncConstants()  # type: ignore
+
+
+def LowerAutoCopy():
+    """Automatically do memory optimizations for auto copy blocks
+
+    Returns
+    -------
+    fpass : tvm.transform.Pass
+        The result pass
+    """
+    return _ffi_api.LowerAutoCopy()  # type: ignore
 
 
 def RenormalizeSplitPattern():

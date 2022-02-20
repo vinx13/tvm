@@ -1056,6 +1056,36 @@ class Schedule(Object):
             self, block, write_buffer_index, storage_scope
         )
 
+    @type_checked
+    def reindex(self, block: BlockRV, buffer_index: int, is_write_index: bool) -> BlockRV:
+        return _ffi_api.ScheduleReIndex(  # type: ignore # pylint: disable=no-member
+            self, block, buffer_index, is_write_index
+        )
+
+    ########## Schedule: Data movement ##########
+
+    def read_at(
+        self,
+        loop: LoopRV,
+        block: BlockRV,
+        read_buffer_index: int,
+        storage_scope: str,
+    ) -> BlockRV:
+        return _ffi_api.ScheduleReadAt(  # type: ignore # pylint: disable=no-member
+            self, loop, block, read_buffer_index, storage_scope
+        )
+
+    def write_at(
+        self,
+        loop: LoopRV,
+        block: BlockRV,
+        write_buffer_index: int,
+        storage_scope: str,
+    ) -> BlockRV:
+        return _ffi_api.ScheduleWriteAt(  # type: ignore # pylint: disable=no-member
+            self, loop, block, write_buffer_index, storage_scope
+        )
+
     ########## Schedule: Compute location ##########
 
     @type_checked
@@ -2113,7 +2143,6 @@ class Schedule(Object):
         )
 
     ########## Schedule: Layout transformation ##########
-
     @type_checked
     def transform_layout(
         self,
@@ -2188,6 +2217,31 @@ class Schedule(Object):
         buffer_index_type_enum = 0 if buffer_index_type == "read" else 1
         _ffi_api.ScheduleTransformLayout(  # type: ignore # pylint: disable=no-member
             self, block, buffer_index, buffer_index_type_enum, index_map
+        )
+
+    @type_checked
+    def transform_block_layout(
+        self,
+        block: BlockRV,
+        index_map: Union[IndexMap, Callable],
+    ) -> None:
+        """Apply a transformation represented by IndexMap to block
+
+        Parameters
+        ----------
+        block_rv : BlockRV
+            The block to be transformeed
+        index_map : Union[IndexMap, Callable]
+            The transformation to apply
+
+        Examples
+        --------
+
+        """
+        if callable(index_map):
+            index_map = IndexMap.from_func(index_map)
+        _ffi_api.ScheduleTransformBlockLayout(  # type: ignore # pylint: disable=no-member
+            self, block, index_map
         )
 
     ########## Schedule: Misc ##########
