@@ -16,6 +16,7 @@
 # under the License.
 import tvm
 from tvm import te
+from tvm.arith import analyzer
 
 
 def test_cast():
@@ -48,6 +49,14 @@ def test_mul():
     m = analyzer.modular_set((x * 4 + 2) * (y * 6 + 1))
     assert m.coeff == 4
     assert m.base == 2
+
+
+def test_floormod():
+    analyzer = tvm.arith.Analyzer()
+    x, y = te.var("x"), te.var("y")
+    m = analyzer.modular_set(tvm.tir.floormod(x * 128 + y * 4, 256))
+    assert m.coeff == 4
+    assert m.base == 0
 
 
 def test_div_shift():
@@ -175,6 +184,7 @@ if __name__ == "__main__":
     test_add_sub()
     test_mul()
     test_div_shift()
+    test_floormod()
     test_min_max_select()
     test_mix_index()
     test_constraint_scope()

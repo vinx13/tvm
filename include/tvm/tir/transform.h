@@ -601,6 +601,25 @@ TVM_DLL Pass UnifiedStaticMemoryPlanner();
  */
 TVM_DLL Pass InjectSoftwarePipeline();
 
+/*!
+ * \brief Automatically do memory optimizations for auto copy blocks
+ * \return The pass.
+ */
+TVM_DLL Pass LowerAutoCopy();
+
+/*!
+ * \brief Renormalize the split pattern from floordiv(floormod()) to floormod(floordiv())
+ * \return The pass.
+ */
+TVM_DLL Pass RenormalizeSplitPattern();
+
+/*!
+ * \brief Narrow the extents of some loops by checking whether some constraints in the block iter
+ * bound predicates can be directly applied on the loops.
+ * \return The pass.
+ */
+TVM_DLL Pass ApplyBlockBoundPredicate();
+
 }  // namespace transform
 }  // namespace tir
 }  // namespace tvm

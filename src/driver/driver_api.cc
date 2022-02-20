@@ -36,6 +36,8 @@
 #include <mutex>
 #include <stack>
 
+#include "../printer/text_printer.h"
+
 namespace tvm {
 
 // Register build pipeline related options
@@ -189,6 +191,14 @@ transform::Pass Filter(FCond fcond) {
   return tir::transform::CreatePrimFuncPass(fpass, 0, "Filter", {});
 }
 
+Pass Print() {
+  auto pass_func = [](tir::PrimFunc f, IRModule m, transform::PassContext ctx) {
+    LOG(INFO) << tir::AsTVMScript(f);
+    return f;
+  };
+  return tir::transform::CreatePrimFuncPass(pass_func, 0, "tir.Print", {});
+}
+
 Array<tvm::transform::Pass> CreatePassList(bool disable_loop_partition) {
   transform::PassContext pass_ctx = transform::PassContext::Current();
 
@@ -245,9 +255,12 @@ Array<tvm::transform::Pass> CreatePassList(bool disable_loop_partition) {
   pass_list.push_back(tir::transform::LowerCrossThreadReduction());
   pass_list.push_back(tir::transform::LowerInitBlock());
   pass_list.push_back(tir::transform::PlanAndUpdateBufferAllocationLocation());
+  // pass_list.push_back(tir::transform::ApplyBlockBoundPredicate());
   pass_list.push_back(tir::transform::ConvertBlocksToOpaque());
-  pass_list.push_back(tir::transform::UnifyThreadBinding());
   pass_list.push_back(tir::transform::CompactBufferAllocation());
+  pass_list.push_back(tir::transform::Simplify());
+  pass_list.push_back(tir::transform::LowerAutoCopy());
+  pass_list.push_back(tir::transform::UnifyThreadBinding());
   pass_list.push_back(tir::transform::LowerMatchBuffer());
   pass_list.push_back(tir::transform::InjectSoftwarePipeline());
   pass_list.push_back(tir::transform::FlattenBuffer());
@@ -269,12 +282,14 @@ Array<tvm::transform::Pass> CreatePassList(bool disable_loop_partition) {
   if (!disable_storage_rewrite) {
     pass_list.push_back(tir::transform::StorageRewrite());
   }
+  pass_list.push_back(tir::transform::Simplify());
   pass_list.push_back(tir::transform::UnrollLoop());
 
   // Add user-defined phase-2 passes
   pass_list.insert(pass_list.end(), user_lower_phase2.begin(), user_lower_phase2.end());
 
   // PHASE 3
+  pass_list.push_back(tir::transform::RenormalizeSplitPattern());
   pass_list.push_back(tir::transform::Simplify());
   pass_list.push_back(tir::transform::RemoveNoOp());
   pass_list.push_back(tir::transform::RewriteUnsafeSelect());

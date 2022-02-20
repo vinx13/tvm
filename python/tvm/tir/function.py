@@ -16,7 +16,8 @@
 # under the License.
 """Function data types."""
 
-from typing import Mapping, Union
+from typing import Callable, List, Mapping, Union
+import inspect
 
 import tvm._ffi
 import tvm.runtime
@@ -210,3 +211,65 @@ class TensorIntrin(Object):
             The TensorIntrin with the specified name.
         """
         return _ffi_api.TensorIntrinGet(name)  # pylint: type: ignore
+
+
+@tvm._ffi.register_object("tir.IndexMap")
+class IndexMap(Object):
+    """A mapping from multi-dimensional indices to another set of multi-dimensional indices
+
+    Parameters
+    ----------
+    src_iters : list of Var
+        The source indices
+    tgt_iters : list of PrimExpr
+        The target indices
+    """
+
+    src_iters: List[Var]
+    """The source indices"""
+
+    tgt_iters: List[PrimExpr]
+    """The target indices"""
+
+    def __init__(self, src_iters: List[Var], tgt_iters: List[PrimExpr]):
+        self._init_handle_by_constructor(
+            _ffi_api.IndexMap,  # type: ignore # pylint: disable=no-member
+            src_iters,
+            tgt_iters,
+        )
+
+    def apply(self, indices: List[PrimExpr]) -> List[PrimExpr]:
+        """Apply the index map to a set of indices
+
+        Parameters
+        ----------
+        indices : List[PriExpr]
+            The indices to be mapped
+
+        Returns
+        -------
+        result : List[PrimExpr]
+            The mapped indices
+        """
+        return _ffi_api.IndexMapApply(self, indices)  # type: ignore # pylint: disable=no-member
+
+    @staticmethod
+    def from_func(func: Callable) -> "IndexMap":
+        """Create an index map from a function
+
+        Parameters
+        ----------
+        func : Callable
+            The function to map from source indices to target indices
+        """
+
+        def wrap(args: List[Var]) -> List[PrimExpr]:
+            result = func(*args)
+            if isinstance(result, tuple):
+                return list(result)
+            if not isinstance(result, list):
+                result = [result]
+            return result
+
+        ndim = len(inspect.signature(func).parameters)
+        return _ffi_api.IndexMapFromFunc(ndim, wrap)  # type: ignore # pylint: disable=no-member

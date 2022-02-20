@@ -355,6 +355,11 @@ class ScheduleNode : public runtime::Object {
    */
   virtual BlockRV CacheWrite(const BlockRV& block_rv, int write_buffer_index,
                              const String& storage_scope) = 0;
+  /******** Schedule: Data movement ********/
+  virtual BlockRV ReadAt(const LoopRV& loop_rv, const BlockRV& block_rv, int read_buffer_index,
+                         const String& storage_scope) = 0;
+  virtual BlockRV WriteAt(const LoopRV& loop_rv, const BlockRV& block_rv, int write_buffer_index,
+                          const String& storage_scope) = 0;
   /******** Schedule: Compute location ********/
   /*!
    * \brief Move a producer block under the specific loop, and regenerate the
@@ -520,6 +525,21 @@ class ScheduleNode : public runtime::Object {
    * \param ann_key The annotation key
    */
   virtual void Unannotate(const BlockRV& block_rv, const String& ann_key) = 0;
+
+  /******** Schedule: Layout transformation ********/
+  /*!
+   * \brief Apply a transformation represented by IndexMap to buffer
+   * \details The indices and the access region to the target buffer is transformed by the given
+   * index_map. The index_map is used to infer the new shape of the buffer. Buffer must be either
+   * a function parameter, or allocated in a block (it cannot be a buffer subregion created via
+   * 'match_buffer').
+   * \param block_rv The block that accesses the target buffer.
+   * \param buffer_index The index of the buffer in block's read or write region.
+   * \param is_write_index Whether the buffer_index is the index of the block's write region.
+   * \param index_map The transformation to apply.
+   */
+  virtual void TransformLayout(const BlockRV& block_rv, int buffer_index, bool is_write_index,
+                               const IndexMap& index_map) = 0;
 
   /******** Schedule: Misc ********/
   /*! \brief A no-op that marks the start of postprocessing phase of scheduling */

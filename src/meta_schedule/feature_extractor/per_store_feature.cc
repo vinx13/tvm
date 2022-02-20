@@ -288,6 +288,7 @@ Sequential PassListForPerStoreFeature() {
       tir::transform::LowerCrossThreadReduction(),
       tir::transform::LowerInitBlock(),
       tir::transform::PlanAndUpdateBufferAllocationLocation(),
+      tir::transform::ApplyBlockBoundPredicate(),
       tir::transform::ConvertBlocksToOpaque(),
       tir::transform::UnifyThreadBinding(),
       tir::transform::CompactBufferAllocation(),
@@ -437,6 +438,7 @@ struct Feature {
       kPosMiddleReduce = 5,   // The annotated iterator is a middle reduce iterator
       kPosOuterReduce = 6,    // The annotated iterator is the outermost reduce iterator
       kPosMixed = 7,          // The annotated iterator is a mixed space and reduce iterator
+      kEnd = 8,
     };
     int64_t num = 0;           // The number of iterators with the annotation
     int64_t prod = 0;          // The product of the lengths of iterators with the annotation
@@ -1303,7 +1305,7 @@ class PerStoreFeatureNode : public FeatureExtractorNode {
     auto f = [this, is_gpu, &candidates, &results](int, int task_id) -> void {
       const auto& candidate = candidates[task_id];
       std::vector<std::vector<double>> features;
-      ExtractSingle(candidate->sch->mod(), is_gpu, &features);
+      ExtractSingle(DeepCopyIRModule(candidate->sch->mod()), is_gpu, &features);
       results[task_id] = tir::utils::AsNDArray(features);
     };
     support::parallel_for_dynamic(0, candidates.size(), tune_context->num_threads, f);

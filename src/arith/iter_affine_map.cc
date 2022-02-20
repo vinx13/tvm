@@ -201,8 +201,9 @@ class IterMapRewriter : public ExprMutator {
     return NormalizeToIterWithOffset(ToIterSumExpr(DirectMutate(expr)));
   }
 
-  IterSumExpr RewriteIterConstraint(const PrimExpr& expr, const PrimExpr& predicate_induced_min,
-                                    const PrimExpr& predicate_induced_max) {
+  IterSumExpr RewriteIterConstraint(const PrimExpr& expr,
+                                    const Optional<PrimExpr>& predicate_induced_min,
+                                    const Optional<PrimExpr>& predicate_induced_max) {
     return NormalizeToIterOnBoundExpr(ToIterSumExpr(DirectMutate(expr)), predicate_induced_min,
                                       predicate_induced_max);
   }
@@ -494,14 +495,16 @@ class IterMapRewriter : public ExprMutator {
    * \param predicate_induced_max Open upper bound from iter constraint, maybe undefined.
    * \return The Normalized expression.
    */
-  IterSumExpr NormalizeToIterOnBoundExpr(IterSumExpr expr, PrimExpr predicate_induced_min,
-                                         PrimExpr predicate_induced_max) {
+  IterSumExpr NormalizeToIterOnBoundExpr(IterSumExpr expr, Optional<PrimExpr> predicate_induced_min,
+                                         Optional<PrimExpr> predicate_induced_max) {
     // normalize to zero base
     PrimExpr base = expr->base;
     if (!is_zero(base)) {
       expr.CopyOnWrite()->base = 0;
-      if (predicate_induced_min.defined()) predicate_induced_min = predicate_induced_min - base;
-      if (predicate_induced_max.defined()) predicate_induced_max = predicate_induced_max - base;
+      if (predicate_induced_min.defined())
+        predicate_induced_min = predicate_induced_min.value() - base;
+      if (predicate_induced_max.defined())
+        predicate_induced_max = predicate_induced_max.value() - base;
     }
     if (expr->args.size() < 1) return expr;
     Optional<IterSumExpr> opt = TryFuseIters(expr);
@@ -522,10 +525,10 @@ class IterMapRewriter : public ExprMutator {
       PrimExpr iter_min = mark_offset;
       PrimExpr iter_max = iter_min + mark->extent;
       if (predicate_induced_min.defined()) {
-        iter_min = max(predicate_induced_min, iter_min);
+        iter_min = max(predicate_induced_min.value(), iter_min);
       }
       if (predicate_induced_max.defined()) {
-        iter_max = min(predicate_induced_max, iter_max);
+        iter_max = min(predicate_induced_max.value(), iter_max);
       }
       if (!is_zero(iter_min)) {
         // structured form's offset should be updated
@@ -536,7 +539,6 @@ class IterMapRewriter : public ExprMutator {
       }
       mark.CopyOnWrite()->extent = iter_max - iter_min;
       sum_fuse_map_[flattened_form] = {mark, iter_min};
-
       // we need to note down the flattened form of constrained iterators
       // to check the validity of constraints, see also CheckConstraints()
       constrained_iters_flattened_.push_back(flattened_form);
@@ -771,14 +773,15 @@ class IterMapRewriter : public ExprMutator {
 struct IterConstraint {
   // The expr of the iter
   PrimExpr iter;
-  // The expr of the lower_bound
-  PrimExpr lower_bound;
-  // The expr of the upper_bound
-  PrimExpr upper_bound;
+  // The expr of the lower_bound, maybe undefined
+  Optional<PrimExpr> lower_bound;
+  // The expr of the upper_bound, maybe undefined
+  Optional<PrimExpr> upper_bound;
   // The size of the iter, which is the number of nodes
   size_t expr_size = 0;
 
-  IterConstraint(PrimExpr iter, PrimExpr lower_bound, PrimExpr upper_bound, size_t size)
+  IterConstraint(PrimExpr iter, Optional<PrimExpr> lower_bound, Optional<PrimExpr> upper_bound,
+                 size_t size)
       : iter(std::move(iter)),
         lower_bound(std::move(lower_bound)),
         upper_bound(std::move(upper_bound)),
@@ -788,11 +791,11 @@ struct IterConstraint {
 /*!
  * \brief Split the predicate into `(a < b) && (c < d) && ...`
  * \param pred The predicate to be split.
+ * \param result The result of predicate split.
  * \return A list of IterConstraint, empty if the split failed.
  */
-std::vector<IterConstraint> MatchBoundConstraints(PrimExpr pred,
-                                                  const Map<Var, Range>& input_iters) {
-  std::vector<IterConstraint> result;
+bool MatchBoundConstraints(PrimExpr pred, Map<Var, Range>& input_iters,
+                           std::vector<IterConstraint>& result) {
   arith::PVar<PrimExpr> lhs, rhs, rest;
   for (;;) {
     // try extract comparisions
@@ -821,14 +824,14 @@ std::vector<IterConstraint> MatchBoundConstraints(PrimExpr pred,
       is_equal = true;
       is_finish = true;
     } else {
-      return std::vector<IterConstraint>();
+      return false;
     }
     PrimExpr lhs_expr = lhs.Eval();
     PrimExpr rhs_expr = rhs.Eval();
     // we only accept predicate of integers
     if (!((lhs_expr->dtype.is_int() || lhs_expr->dtype.is_uint()) &&
           (rhs_expr->dtype.is_int() || rhs_expr->dtype.is_uint()))) {
-      return std::vector<IterConstraint>();
+      return false;
     }
     // determine iter and bound, if we can not distinguish them simply,
     // try divide (lhs - rhs) into itervar aware and itervar free parts
@@ -864,24 +867,25 @@ std::vector<IterConstraint> MatchBoundConstraints(PrimExpr pred,
       lhs_expr = analyzer.Simplify(lhs_expr);
       rhs_expr = analyzer.Simplify(rhs_expr);
     }
-    PrimExpr lower_bound, upper_bound, iter;
+    Optional<PrimExpr> lower_bound = NullOpt, upper_bound = NullOpt;
+    PrimExpr iter;
     if (is_greater) {
       if (bound_at_left) {
-        // bound > iter
+        // bound > iter / bound >= iter
         upper_bound = is_equal ? lhs_expr + 1 : lhs_expr;
         iter = rhs_expr;
       } else {
-        // iter > bound
+        // iter > bound / iter >= bound
         lower_bound = is_equal ? rhs_expr : rhs_expr + 1;
         iter = lhs_expr;
       }
     } else {
       if (bound_at_left) {
-        // bound < iter
+        // bound < iter / bound <= iter
         lower_bound = is_equal ? lhs_expr : lhs_expr + 1;
         iter = rhs_expr;
       } else {
-        // iter < bound
+        // iter < bound / iter <= bound
         upper_bound = is_equal ? rhs_expr + 1 : rhs_expr;
         iter = lhs_expr;
       }
@@ -892,7 +896,7 @@ std::vector<IterConstraint> MatchBoundConstraints(PrimExpr pred,
     }
     pred = rest.Eval();
   }
-  return result;
+  return true;
 }
 
 bool IterRangeSanityCheck(const Map<Var, Range>& iter_ranges) {
@@ -912,8 +916,10 @@ Array<IterSumExpr> DetectIterMap(const Array<PrimExpr>& indices, const Map<Var, 
   // - Step0: IterMapRewriter rewrites the expression to use IterMapExpr patterns.
   // - Step1: IterIndependenceChecker checks if the iterator are independent.
   if (!IterRangeSanityCheck(input_iters)) return Array<IterSumExpr>();
-  std::vector<IterConstraint> constraints = MatchBoundConstraints(predicate, input_iters);
-  if (!is_one(predicate) && constraints.empty()) {
+  Map<Var, Range> constrained_input_iters = input_iters;
+  std::vector<IterConstraint> constraints;
+  if (!is_one(predicate) &&
+      !MatchBoundConstraints(predicate, constrained_input_iters, constraints)) {
     diag_ctx.Emit(Diagnostic::Error(predicate->span)
                   << "Fail to collect constraints from iteration predicate: " << predicate);
     return Array<IterSumExpr>();
@@ -930,10 +936,11 @@ Array<IterSumExpr> DetectIterMap(const Array<PrimExpr>& indices, const Map<Var, 
       constraints.begin(), constraints.end(),
       [](const IterConstraint& a, const IterConstraint& b) { return a.expr_size < b.expr_size; });
 
-  IterMapRewriter rewriter(analyzer, input_iters, diag_ctx);
+  IterMapRewriter rewriter(analyzer, constrained_input_iters, diag_ctx);
   // Step0.0: rewrite constraints in the order from size-small ones to size-big ones
   for (const IterConstraint& constraint : constraints) {
-    rewriter.RewriteIterConstraint(constraint.iter, constraint.lower_bound, constraint.upper_bound);
+    auto res = rewriter.RewriteIterConstraint(constraint.iter, constraint.lower_bound,
+                                              constraint.upper_bound);
     if (rewriter.unresolved_count() != 0) return Array<IterSumExpr>();
   }
   if (!rewriter.CheckConstraints()) {
@@ -945,7 +952,10 @@ Array<IterSumExpr> DetectIterMap(const Array<PrimExpr>& indices, const Map<Var, 
   Array<IterSumExpr> results;
   for (PrimExpr value : indices) {
     results.push_back(rewriter.Rewrite(value));
-    if (rewriter.unresolved_count() != 0) return Array<IterSumExpr>();
+    if (rewriter.unresolved_count() != 0) {
+      diag_ctx.Emit(Diagnostic::Error(predicate->span) << "Affine mapping detection failed");
+      return Array<IterSumExpr>();
+    }
   }
   // Step1: IterIndependenceChecker checks if the iterator are independent.
   if (!rewriter.CheckMapping(results, require_bijective)) {
@@ -1306,7 +1316,8 @@ class IterMapToExprNormalizer : public ExprMutator {
     } else if (analyzer_->CanProve(expr->source->extent == expr->lower_factor * expr->extent)) {
       return floordiv(source, expr->lower_factor) * expr->scale;
     } else {
-      return floormod(floordiv(source, expr->lower_factor), expr->extent) * expr->scale;
+      return floordiv(floormod(source, expr->lower_factor * expr->extent), expr->lower_factor) *
+             expr->scale;
     }
   }
 
