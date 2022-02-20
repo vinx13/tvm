@@ -1,22 +1,3 @@
-# Licensed to the Apache Software Foundation (ASF) under one
-# or more contributor license agreements.  See the NOTICE file
-# distributed with this work for additional information
-# regarding copyright ownership.  The ASF licenses this file
-# to you under the Apache License, Version 2.0 (the
-# "License"); you may not use this file except in compliance
-# with the License.  You may obtain a copy of the License at
-#
-#   http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing,
-# software distributed under the License is distributed on an
-# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
-# KIND, either express or implied.  See the License for the
-# specific language governing permissions and limitations
-# under the License.
-"""Workloads in Relay IR"""
-# pylint: disable=import-outside-toplevel
-import logging
 import multiprocessing
 import os
 import pickle
@@ -26,10 +7,30 @@ import tvm
 import tvm.relay.testing
 from tvm import relay
 from tvm.ir import IRModule
-from tvm.meta_schedule import ExtractedTask, extract_task_from_relay
+from tvm.meta_schedule.integration import ExtractedTask, extract_task_from_relay
 from tvm.runtime import NDArray, load_param_dict, save_param_dict
 from tvm.target import Target
-logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
+
+SUPPORTED = [
+    # TorchVision
+    "resnet_18",
+    "resnet_50",
+    "mobilenet_v2",
+    "mobilenet_v3",
+    "wide_resnet_50",
+    "resnext_50",
+    "resnet3d_18",
+    "inception_v3",
+    "densenet_121",
+    "vgg_16",
+    # Transformer
+    "bert_tiny",
+    "bert_base",
+    "bert_medium",
+    "bert_large",
+    # Relay testing
+    "dcgan",
+]
 
 
 def _get_network(
@@ -53,8 +54,9 @@ def _get_network(
         "resnet3d_18",
         "vgg_16",
     ]:
+        # torchvision>=0.9.0
         import torch  # type: ignore
-        from torchvision import models  # type: ignore
+        import torchvision.models as models  # type: ignore
 
         if name in ["resnet_18", "resnet_50"]:
             model = getattr(models, name.replace("_", ""))(pretrained=False)
@@ -76,9 +78,9 @@ def _get_network(
             model = getattr(models, name.replace("_", ""))(pretrained=False)
 
         dtype = "float32"
-        input_data = torch.randn(input_shape).type(  # pylint: disable=no-member
+        input_data = torch.randn(input_shape).type(
             {
-                "float32": torch.float32,  # pylint: disable=no-member
+                "float32": torch.float32,
             }[dtype]
         )
         scripted_model = torch.jit.trace(model, input_data).eval()
@@ -140,9 +142,9 @@ def _get_network(
         model = transformers.BertModel(configuration)
         input_name = "input_ids"
         input_dtype = "int64"
-        a = torch.randint(10000, input_shape)  # pylint: disable=no-member
+        A = torch.randint(10000, input_shape)
         model.eval()
-        scripted_model = torch.jit.trace(model, [a], strict=False)
+        scripted_model = torch.jit.trace(model, [A], strict=False)
         input_name = "input_ids"
         shape_list = [(input_name, input_shape)]
         mod, params = relay.frontend.from_pytorch(scripted_model, shape_list)
@@ -172,7 +174,7 @@ def _load_cache(cache_dir: Optional[str], filename: str) -> Optional[List[Any]]:
     path = os.path.join(os.path.expanduser(cache_dir), filename)
     if not os.path.exists(path):
         return None
-    logger.info("Loaded from cached: %s", path)
+    print(f"Load from cache: {path}")
     with open(path, "rb") as i_f:
         return pickle.load(i_f)
 
@@ -184,40 +186,19 @@ def _save_cache(cache_dir: Optional[str], filename: str, objects: List[Any]) -> 
     with open(path, "wb") as o_f:
         pickle.dump(objects, o_f)
 
+
 def get_network(
     name: str,
     input_shape: List[int],
     *,
     cache_dir: Optional[str] = None,
 ) -> Tuple[IRModule, Dict[str, NDArray], Tuple[str, List[int], str]]:
-    """Get the symbol definition and random weight of a network
-
-    Parameters
-    ----------
-    name : str
-        The name of the network.
-    input_shape : List[int]
-        The shape of the input tensor.
-    cache_dir : Optional[str], optional
-        The directory to cache the generated network.
-        If not specified, the cache will be disabled.
-
-    Returns
-    -------
-    mod : IRModule
-        The IRModule representing the network.
-    params : Dict[str, NDArray]
-        The parameters of the networks.
-    inputs : Tuple[str, List[int], str]
-        The name, shape and dtype of the input tensor.
-    """
-
     mod: IRModule
     params: Dict[str, NDArray]
     inputs: Tuple[str, List[int], str]
     params_bytearray: bytearray
 
-    filename = f'relay-{name}-{",".join(str(i) for i in input_shape)}.json'
+    filename = f'{name}-{",".join(str(i) for i in input_shape)}.json'
     cached = _load_cache(cache_dir, filename)
     if cached is None:
         with multiprocessing.Pool(processes=1) as pool:
@@ -230,48 +211,19 @@ def get_network(
     return mod, params, inputs
 
 
-def extract_from_relay(
+def extract(
+    filename: str,
     mod: IRModule,
     target: Target,
-    params: Optional[Dict[str, NDArray]],
-    name: str,
-    input_shape: List[int],
+    params: Optional[Dict[str, NDArray]] = None,
     *,
     cache_dir: Optional[str] = None,
     opt_level: int = 3,
-    pass_config: Optional[Dict[str, Any]] = None,
-    disabled_pass: Optional[List[str]] = None,
+    pass_config: Dict[str, Any] = {
+        "relay.backend.use_meta_schedule": True,
+    },
+    disabled_pass: List[str] = [],
 ) -> List[ExtractedTask]:
-    """Extract the tasks from a network.
-
-    Parameters
-    ----------
-    mod : IRModule
-        The IRModule representing the network.
-    target : Target
-        The target that the network will be deployed to.
-    params : Optional[Dict[str, NDArray]]
-        The parameters of the networks.
-    name : str
-        The name of the network.
-    input_shape : List[int]
-        The shape of the input tensor.
-    cache_dir : Optional[str]
-        The directory to cache the generated network.
-        If not specified, the cache will be disabled.
-    opt_level : int
-        The optimization level of the compiler.
-    pass_config : Optional[Dict[str, Any]]
-        The pass config of the compiler.
-    disabled_pass : Optional[List[str]]
-        The disabled pass of the compiler.
-
-    Returns
-    -------
-    extracted_tasks : List[ExtractedTask]
-        The extracted tasks.
-    """
-    filename = f'tasks-{target.kind.name}-{name}-{",".join(str(i) for i in input_shape)}.json'
     extracted_tasks = _load_cache(cache_dir, filename)
     if extracted_tasks is None:
         extracted_tasks = extract_task_from_relay(
@@ -285,64 +237,3 @@ def extract_from_relay(
         extracted_tasks = list(extracted_tasks)
         _save_cache(cache_dir, filename, extracted_tasks)
     return extracted_tasks
-
-
-def _build_dataset() -> List[Tuple[str, List[int]]]:
-    network_keys = []
-    for name in [
-        "resnet_18",
-        "resnet_50",
-        "mobilenet_v2",
-        "mobilenet_v3",
-        "wide_resnet_50",
-        "resnext_50",
-        "densenet_121",
-        "vgg_16",
-    ]:
-        for batch_size in [1, 4, 8]:
-            for image_size in [224, 240, 256]:
-                network_keys.append((name, [batch_size, 3, image_size, image_size]))
-    # inception-v3
-    for name in ["inception_v3"]:
-        for batch_size in [1, 2, 4]:
-            for image_size in [299]:
-                network_keys.append((name, [batch_size, 3, image_size, image_size]))
-    # resnet3d
-    for name in ["resnet3d_18"]:
-        for batch_size in [1, 2, 4]:
-            for image_size in [112, 128, 144]:
-                network_keys.append((name, [batch_size, 3, image_size, image_size, 16]))
-    # bert
-    for name in ["bert_tiny", "bert_base", "bert_medium", "bert_large"]:
-        for batch_size in [1, 2, 4]:
-            for seq_length in [64, 128, 256]:
-                network_keys.append((name, [batch_size, seq_length]))
-    # dcgan
-    for name in ["dcgan"]:
-        for batch_size in [1, 4, 8]:
-            for image_size in [64]:
-                network_keys.append((name, [batch_size, 3, image_size, image_size]))
-
-    return network_keys
-
-
-SUPPORTED = [
-    # TorchVision
-    "resnet_18",
-    "resnet_50",
-    "mobilenet_v2",
-    "mobilenet_v3",
-    "wide_resnet_50",
-    "resnext_50",
-    "resnet3d_18",
-    "inception_v3",
-    "densenet_121",
-    "vgg_16",
-    # Transformer
-    "bert_tiny",
-    "bert_base",
-    "bert_medium",
-    "bert_large",
-    # Relay testing
-    "dcgan",
-]
