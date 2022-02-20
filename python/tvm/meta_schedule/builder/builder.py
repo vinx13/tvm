@@ -17,6 +17,7 @@
 """Meta Schedule builders that translate IRModule to runtime.Module, and then export"""
 from typing import Callable, Dict, List, Optional
 
+from tvm.runtime import NDArray
 from tvm._ffi import register_object
 from tvm.ir import IRModule
 from tvm.runtime import NDArray, Object

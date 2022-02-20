@@ -27,7 +27,6 @@ from tvm.tir.schedule.testing import verify_trace_roundtrip
 # fmt: off
 # pylint: disable=no-member,invalid-name,unused-variable,line-too-long,redefined-outer-name,unexpected-keyword-arg,too-many-nested-blocks
 
-
 def packed_index_map_func(m, n):
     return m // 16, n // 16, m % 16, n % 16
 

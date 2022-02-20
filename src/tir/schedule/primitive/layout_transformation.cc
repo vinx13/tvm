@@ -197,6 +197,7 @@ struct TransformLayoutTraits : public UnpackedInstTraits<TransformLayoutTraits> 
   static constexpr size_t kNumDecisions = 0;
 
   static void UnpackedApplyToSchedule(Schedule sch, BlockRV block_rv, Integer buffer_index,
+<<<<<<< HEAD
                                       Integer buffer_index_type, IndexMap index_map) {
     return sch->TransformLayout(block_rv, buffer_index,
                                 static_cast<BufferIndexType>(buffer_index_type->value), index_map);
@@ -209,6 +210,18 @@ struct TransformLayoutTraits : public UnpackedInstTraits<TransformLayoutTraits> 
     py.Input("buffer_index", buffer_index);
     py.Input("buffer_index_type",
              BufferIndexType2Str(static_cast<BufferIndexType>(buffer_index_type->value)));
+=======
+                                      Bool is_write_index, IndexMap index_map) {
+    return sch->TransformLayout(block_rv, buffer_index, is_write_index, index_map);
+  }
+
+  static String UnpackedAsPython(Array<String> outputs, String block_rv, Integer buffer_index,
+                                 Bool is_write_index, IndexMap index_map) {
+    PythonAPICall py("transform_layout");
+    py.Input("block", block_rv);
+    py.Input("buffer_index", buffer_index);
+    py.Input("is_write_index", is_write_index);
+>>>>>>> 44df33629 (Squashed commit: AutoTIR)
     py.Input("index_map", index_map->ToPythonString());
     return py.Str();
   }

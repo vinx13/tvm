@@ -18,8 +18,6 @@
  */
 #include "./concrete_schedule.h"
 
-#include <random>
-
 namespace tvm {
 namespace tir {
 
@@ -511,6 +509,30 @@ BlockRV ConcreteScheduleNode::CacheWrite(const BlockRV& block_rv, int write_buff
   return CreateRV<BlockRV>(result);
 }
 
+/******** Schedule: Data movement ********/
+
+BlockRV ConcreteScheduleNode::ReadAt(const LoopRV& loop_rv, const BlockRV& block_rv,
+                                     int read_buffer_index, const String& storage_scope) {
+  StmtSRef result{nullptr};
+  TVM_TIR_SCHEDULE_BEGIN();
+  result = tir::ReadAt(state_, this->GetSRef(loop_rv), this->GetSRef(block_rv), read_buffer_index,
+                       storage_scope);
+  TVM_TIR_SCHEDULE_END("read-at", this->error_render_level_);
+  this->state_->DebugVerify();
+  return CreateRV<BlockRV>(result);
+}
+
+BlockRV ConcreteScheduleNode::WriteAt(const LoopRV& loop_rv, const BlockRV& block_rv,
+                                      int write_buffer_index, const String& storage_scope) {
+  StmtSRef result{nullptr};
+  TVM_TIR_SCHEDULE_BEGIN();
+  result = tir::WriteAt(state_, this->GetSRef(loop_rv), this->GetSRef(block_rv), write_buffer_index,
+                        storage_scope);
+  TVM_TIR_SCHEDULE_END("write-at", this->error_render_level_);
+  this->state_->DebugVerify();
+  return CreateRV<BlockRV>(result);
+}
+
 /******** Schedule: Compute location ********/
 
 void ConcreteScheduleNode::ComputeAt(const BlockRV& block_rv, const LoopRV& loop_rv,
@@ -655,7 +677,20 @@ ObjectRef ConcreteScheduleNode::CheckAndGetAnnotationValue(const ObjectRef& ann_
 void ConcreteScheduleNode::Annotate(const LoopRV& loop_rv, const String& ann_key,
                                     const ObjectRef& ann_val) {
   TVM_TIR_SCHEDULE_BEGIN();
-  tir::Annotate(state_, this->GetSRef(loop_rv), ann_key, this->CheckAndGetAnnotationValue(ann_val));
+  if (const auto* str = ann_val.as<StringObj>()) {
+    tir::Annotate(state_, this->GetSRef(loop_rv), ann_key, GetRef<String>(str));
+  } else if (const auto* expr = ann_val.as<PrimExprNode>()) {
+    ICHECK(!ann_val->IsInstance<StringImmNode>())
+        << "TypeError: runtime::String is expected, but gets StringImm";
+    tir::Annotate(state_, this->GetSRef(loop_rv), ann_key, this->Get(GetRef<PrimExpr>(expr)));
+  } else if (ann_val.as<ArrayNode>()) {
+    tir::Annotate(state_, this->GetSRef(loop_rv), ann_key, ann_val);
+  } else {
+    LOG(FATAL)
+        << "TypeError: Only strings, integers, floats and ExprRVs are supported for now, but gets: "
+        << ann_val->GetTypeKey();
+    throw;
+  }
   this->state_->DebugVerify();
   TVM_TIR_SCHEDULE_END("annotate", this->error_render_level_);
 }
@@ -670,8 +705,20 @@ void ConcreteScheduleNode::Unannotate(const LoopRV& loop_rv, const String& ann_k
 void ConcreteScheduleNode::Annotate(const BlockRV& block_rv, const String& ann_key,
                                     const ObjectRef& ann_val) {
   TVM_TIR_SCHEDULE_BEGIN();
-  tir::Annotate(state_, this->GetSRef(block_rv), ann_key,
-                this->CheckAndGetAnnotationValue(ann_val));
+  if (const auto* str = ann_val.as<StringObj>()) {
+    tir::Annotate(state_, this->GetSRef(block_rv), ann_key, GetRef<String>(str));
+  } else if (const auto* expr = ann_val.as<PrimExprNode>()) {
+    ICHECK(!ann_val->IsInstance<StringImmNode>())
+        << "TypeError: runtime::String is expected, but gets StringImm";
+    tir::Annotate(state_, this->GetSRef(block_rv), ann_key, this->Get(GetRef<PrimExpr>(expr)));
+  } else if (ann_val.as<ArrayNode>()) {
+    tir::Annotate(state_, this->GetSRef(block_rv), ann_key, ann_val);
+  } else {
+    LOG(FATAL)
+        << "TypeError: Only strings, integers, floats and ExprRVs are supported for now, but gets: "
+        << ann_val->GetTypeKey();
+    throw;
+  }
   this->state_->DebugVerify();
   TVM_TIR_SCHEDULE_END("annotate", this->error_render_level_);
 }
@@ -685,10 +732,16 @@ void ConcreteScheduleNode::Unannotate(const BlockRV& block_rv, const String& ann
 
 /******** Schedule: Layout transformation ********/
 void ConcreteScheduleNode::TransformLayout(const BlockRV& block_rv, int buffer_index,
+<<<<<<< HEAD
                                            BufferIndexType buffer_index_type,
                                            const IndexMap& index_map) {
   TVM_TIR_SCHEDULE_BEGIN();
   tir::TransformLayout(state_, this->GetSRef(block_rv), buffer_index, buffer_index_type, index_map);
+=======
+                                           bool is_write_index, const IndexMap& index_map) {
+  TVM_TIR_SCHEDULE_BEGIN();
+  tir::TransformLayout(state_, this->GetSRef(block_rv), buffer_index, is_write_index, index_map);
+>>>>>>> 44df33629 (Squashed commit: AutoTIR)
   this->state_->DebugVerify();
   TVM_TIR_SCHEDULE_END("transform_layout", this->error_render_level_);
 }

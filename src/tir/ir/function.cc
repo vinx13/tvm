@@ -21,9 +21,13 @@
  * \file src/tir/ir/function.cc
  * \brief The function data structure.
  */
+#include <tvm/arith/analyzer.h>
 #include <tvm/runtime/registry.h>
 #include <tvm/tir/function.h>
 #include <tvm/tir/op.h>
+#include <tvm/tir/stmt_functor.h>
+
+#include "../../support/nd_int_set.h"
 
 namespace tvm {
 namespace tir {
@@ -58,6 +62,7 @@ FuncType PrimFuncNode::func_type_annotation() const {
 }
 
 TVM_REGISTER_NODE_TYPE(PrimFuncNode);
+
 
 class TensorIntrinManager {
  public:

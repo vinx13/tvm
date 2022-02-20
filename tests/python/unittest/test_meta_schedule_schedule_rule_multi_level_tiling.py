@@ -20,12 +20,14 @@ from tvm.meta_schedule.space_generator.post_order_apply import PostOrderApply
 from tvm.meta_schedule.testing import te_workload
 from tvm.meta_schedule.testing.schedule_rule import (
     multi_level_tiling,
+    multi_level_tiling_tensor_core,
 )
 from tvm.meta_schedule.testing.space_generation import check_trace
 from tvm.meta_schedule.tune_context import TuneContext
 from tvm.script import tir as T
 from tvm.te import create_prim_func
 from tvm.target import Target
+from tvm.meta_schedule.testing import tir_tensor_intrin
 
 
 def _create_context(mod, target, rule) -> TuneContext:
@@ -170,20 +172,21 @@ def test_cuda_matmul():
         [
             'b0 = sch.get_block(name="C", func_name="main")',
             'sch.annotate(block_or_loop=b0, ann_key="meta_schedule.tiling_structure", ann_val="SSSRRSRS")',
-            "l1, l2, l3 = sch.get_loops(block=b0)",
-            "v4, v5, v6, v7, v8 = sch.sample_perfect_tile(loop=l1, n=5, max_innermost_factor=64)",
-            "l9, l10, l11, l12, l13 = sch.split(loop=l1, factors=[v4, v5, v6, v7, v8])",
-            "v14, v15, v16, v17, v18 = sch.sample_perfect_tile(loop=l2, n=5, max_innermost_factor=64)",
-            "l19, l20, l21, l22, l23 = sch.split(loop=l2, factors=[v14, v15, v16, v17, v18])",
-            "v24, v25, v26 = sch.sample_perfect_tile(loop=l3, n=3, max_innermost_factor=64)",
-            "l27, l28, l29 = sch.split(loop=l3, factors=[v24, v25, v26])",
-            "sch.reorder(l9, l19, l10, l20, l11, l21, l27, l28, l12, l22, l29, l13, l23)",
-            "l30 = sch.fuse(l9, l19)",
-            'sch.bind(loop=l30, thread_axis="blockIdx.x")',
+            'b1 = sch.cache_write(block=b0, write_buffer_index=0, storage_scope="local")',
+            "l2, l3, l4 = sch.get_loops(block=b0)",
+            "v5, v6, v7, v8, v9 = sch.sample_perfect_tile(loop=l2, n=5, max_innermost_factor=64)",
+            "l10, l11, l12, l13, l14 = sch.split(loop=l2, factors=[v5, v6, v7, v8, v9])",
+            "v15, v16, v17, v18, v19 = sch.sample_perfect_tile(loop=l3, n=5, max_innermost_factor=64)",
+            "l20, l21, l22, l23, l24 = sch.split(loop=l3, factors=[v15, v16, v17, v18, v19])",
+            "v25, v26, v27 = sch.sample_perfect_tile(loop=l4, n=3, max_innermost_factor=64)",
+            "l28, l29, l30 = sch.split(loop=l4, factors=[v25, v26, v27])",
+            "sch.reorder(l10, l20, l11, l21, l12, l22, l28, l29, l13, l23, l30, l14, l24)",
             "l31 = sch.fuse(l10, l20)",
-            'sch.bind(loop=l31, thread_axis="vthread.x")',
+            'sch.bind(loop=l31, thread_axis="blockIdx.x")',
             "l32 = sch.fuse(l11, l21)",
-            'sch.bind(loop=l32, thread_axis="threadIdx.x")',
+            'sch.bind(loop=l32, thread_axis="vthread.x")',
+            "l33 = sch.fuse(l12, l22)",
+            'sch.bind(loop=l33, thread_axis="threadIdx.x")',
             'sch.annotate(block_or_loop=b0, ann_key="meta_schedule.thread_extent_low_inclusive", ann_val=32)',
             'sch.annotate(block_or_loop=b0, ann_key="meta_schedule.thread_extent_high_inclusive", ann_val=1024)',
             'b33 = sch.cache_write(block=b0, write_buffer_index=0, storage_scope="local")',
@@ -200,6 +203,7 @@ def test_cuda_matmul():
             "l50 = sch.fuse(l48, l49)",
             "v51 = sch.sample_categorical(candidates=[1, 2, 3, 4], probs=[0.25, 0.25, 0.25, 0.25])",
             'sch.annotate(block_or_loop=b43, ann_key="meta_schedule.cooperative_fetch", ann_val=v51)',
+            "sch.reverse_compute_at(block=b1, loop=l33, preserve_unit_loops=True)",
         ]
     ]
     # pylint: enable=line-too-long
@@ -226,18 +230,17 @@ def test_cuda_matmul_relu():
         [
             'b0 = sch.get_block(name="C", func_name="main")',
             'sch.annotate(block_or_loop=b0, ann_key="meta_schedule.tiling_structure", ann_val="SSSRRSRS")',
-            "l1, l2, l3 = sch.get_loops(block=b0)",
-            "v4, v5, v6, v7, v8 = sch.sample_perfect_tile(loop=l1, n=5, max_innermost_factor=64)",
-            "l9, l10, l11, l12, l13 = sch.split(loop=l1, factors=[v4, v5, v6, v7, v8])",
-            "v14, v15, v16, v17, v18 = sch.sample_perfect_tile(loop=l2, n=5, max_innermost_factor=64)",
-            "l19, l20, l21, l22, l23 = sch.split(loop=l2, factors=[v14, v15, v16, v17, v18])",
-            "v24, v25, v26 = sch.sample_perfect_tile(loop=l3, n=3, max_innermost_factor=64)",
-            "l27, l28, l29 = sch.split(loop=l3, factors=[v24, v25, v26])",
-            "sch.reorder(l9, l19, l10, l20, l11, l21, l27, l28, l12, l22, l29, l13, l23)",
-            "l30 = sch.fuse(l9, l19)",
-            'sch.bind(loop=l30, thread_axis="blockIdx.x")',
+            'b1 = sch.cache_write(block=b0, write_buffer_index=0, storage_scope="local")',
+            "l2, l3, l4 = sch.get_loops(block=b0)",
+            "v5, v6, v7, v8, v9 = sch.sample_perfect_tile(loop=l2, n=5, max_innermost_factor=64)",
+            "l10, l11, l12, l13, l14 = sch.split(loop=l2, factors=[v5, v6, v7, v8, v9])",
+            "v15, v16, v17, v18, v19 = sch.sample_perfect_tile(loop=l3, n=5, max_innermost_factor=64)",
+            "l20, l21, l22, l23, l24 = sch.split(loop=l3, factors=[v15, v16, v17, v18, v19])",
+            "v25, v26, v27 = sch.sample_perfect_tile(loop=l4, n=3, max_innermost_factor=64)",
+            "l28, l29, l30 = sch.split(loop=l4, factors=[v25, v26, v27])",
+            "sch.reorder(l10, l20, l11, l21, l12, l22, l28, l29, l13, l23, l30, l14, l24)",
             "l31 = sch.fuse(l10, l20)",
-            'sch.bind(loop=l31, thread_axis="vthread.x")',
+            'sch.bind(loop=l31, thread_axis="blockIdx.x")',
             "l32 = sch.fuse(l11, l21)",
             'sch.bind(loop=l32, thread_axis="threadIdx.x")',
             'b33 = sch.cache_write(block=b0, write_buffer_index=0, storage_scope="local")',
@@ -254,6 +257,7 @@ def test_cuda_matmul_relu():
             "l50 = sch.fuse(l48, l49)",
             "v51 = sch.sample_categorical(candidates=[1, 2, 3, 4], probs=[0.25, 0.25, 0.25, 0.25])",
             'sch.annotate(block_or_loop=b43, ann_key="meta_schedule.cooperative_fetch", ann_val=v51)',
+            "sch.reverse_compute_at(block=b1, loop=l33, preserve_unit_loops=True)",
         ]
     ]
     # pylint: enable=line-too-long

@@ -65,6 +65,26 @@ Optional<BlockRV> ParseAnnotate(const Schedule& sch, const Instruction& inst,
   return Downcast<BlockRV>(inst->inputs[0]);
 }
 
+/*!
+ * \brief Parse instruction: sch.annotate(..., attr::meta_schedule_tensor_core_enabled)
+ * \param sch The schedule
+ * \param inst The instruction to be parsed
+ * \return Whether ths parsing is successful
+ */
+bool ParseTensorCoreAnn(const Schedule& sch, const Instruction& inst) {
+  static InstructionKind inst_kind_annotate = InstructionKind::Get("Annotate");
+  if (!inst->kind.same_as(inst_kind_annotate)) {
+    return false;
+  }
+  ICHECK_EQ(inst->inputs.size(), 2);
+  ICHECK_EQ(inst->attrs.size(), 1);
+  String ann_key = Downcast<String>(inst->attrs[0]);
+  if (ann_key != attr::meta_schedule_tensor_core_enabled) {
+    return false;
+  }
+  return true;
+}
+
 }  // namespace tir
 
 namespace meta_schedule {
