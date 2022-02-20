@@ -12,7 +12,7 @@
 # software distributed under the License is distributed on an
 # "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
 # KIND, either express or implied.  See the License for the
-# specific language governing permissions and limitations
+# specific language governing permissions and limitatios
 # under the License.
 """Meta schedule integration with high-level IR"""
 from typing import Dict, List, Optional, Union
@@ -24,6 +24,7 @@ from tvm._ffi import register_object, get_global_func
 from tvm.ir import IRModule, transform
 from tvm.relay import Any
 from tvm.relay import Function as RelayFunc
+from tvm.relay import vm
 from tvm.runtime import NDArray, Object
 from tvm.target import Target
 

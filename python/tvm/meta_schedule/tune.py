@@ -709,8 +709,14 @@ def tune_extracted_tasks(
         builder=Parse._builder(builder),
         runner=Parse._runner(runner),
         database=database,
-        cost_model=Parse._cost_model(cost_model),
-        measure_callbacks=Parse._callbacks(measure_callbacks),
+        cost_model=cost_model,
+        measure_callbacks=measure_callbacks,
+        task_scheduler=task_scheduler,
+        space=space,
+        sch_rules=sch_rules,
+        postprocs=postprocs,
+        mutator_probs=mutator_probs,
+        num_threads=num_threads,
     )
     # pylint: enable=protected-access
     task_scheduler.tune()

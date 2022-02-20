@@ -64,6 +64,26 @@ Optional<BlockRV> ParseAnnotate(const Schedule& sch, const Instruction& inst, in
   return Downcast<BlockRV>(inst->inputs[0]);
 }
 
+/*!
+ * \brief Parse instruction: sch.annotate(..., attr::meta_schedule_tensor_core_enabled)
+ * \param sch The schedule
+ * \param inst The instruction to be parsed
+ * \return Whether ths parsing is successful
+ */
+bool ParseTensorCoreAnn(const Schedule& sch, const Instruction& inst) {
+  static InstructionKind inst_kind_annotate = InstructionKind::Get("Annotate");
+  if (!inst->kind.same_as(inst_kind_annotate)) {
+    return false;
+  }
+  ICHECK_EQ(inst->inputs.size(), 2);
+  ICHECK_EQ(inst->attrs.size(), 1);
+  String ann_key = Downcast<String>(inst->attrs[0]);
+  if (ann_key != attr::meta_schedule_tensor_core_enabled) {
+    return false;
+  }
+  return true;
+}
+
 }  // namespace tir
 
 namespace meta_schedule {
@@ -97,6 +117,8 @@ bool RewriteCooperativeFetchNode::Apply(const tir::Schedule& sch) {
     } else if (Optional<Integer> new_thread_extent =
                    tir::ParseThreadBinding(sch, inst, "threadIdx.y")) {
       thread_extent_y = new_thread_extent.value()->value;
+    } else if (tir::ParseTensorCoreAnn(sch, inst)) {
+      thread_extent_x = 32;
     } else if (Optional<tir::BlockRV> block_rv = tir::ParseAnnotate(sch, inst, &vector_lane)) {
       ICHECK_NE(thread_extent_x, -1);
       if (vector_lane > 1) {
@@ -117,6 +139,7 @@ bool RewriteCooperativeFetchNode::Apply(const tir::Schedule& sch) {
             sch->Vectorize(split[3]);
             sch->Bind(split[2], "threadIdx.x");
             sch->Bind(split[1], "threadIdx.y");
+            sch->StorageAlign(block, 0, -2, 32, 8);
           }
         });
       } else {
@@ -132,6 +155,7 @@ bool RewriteCooperativeFetchNode::Apply(const tir::Schedule& sch) {
                                                               Integer(thread_extent_x)});
                 sch->Bind(split[2], "threadIdx.x");
                 sch->Bind(split[1], "threadIdx.y");
+                sch->StorageAlign(block, 0, -2, 32, 8);
               }
             });
       }

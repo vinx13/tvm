@@ -304,6 +304,7 @@ Sequential PassListForPerStoreFeature() {
       tir::transform::LowerCrossThreadReduction(),
       tir::transform::LowerInitBlock(),
       tir::transform::PlanAndUpdateBufferAllocationLocation(),
+      tir::transform::ApplyBlockBoundPredicate(),
       tir::transform::ConvertBlocksToOpaque(),
       tir::transform::UnifyThreadBinding(),
       tir::transform::CompactBufferAllocation(),
@@ -453,6 +454,7 @@ struct Feature {
       kPosMiddleReduce = 5,   // The annotated iterator is a middle reduce iterator
       kPosOuterReduce = 6,    // The annotated iterator is the outermost reduce iterator
       kPosMixed = 7,          // The annotated iterator is a mixed space and reduce iterator
+      kEnd = 8,
     };
     int64_t num = 0;           // The number of iterators with the annotation
     int64_t prod = 0;          // The product of the lengths of iterators with the annotation
