@@ -21,6 +21,7 @@ from tvm.meta_schedule.schedule_rule import (
     AutoInline,
     CrossThreadReduction,
     MultiLevelTiling,
+    MultiLevelTilingMemHammer,
     ParallelizeVectorizeUnroll,
     RandomComputeLocation,
     ReuseType,
@@ -148,6 +149,28 @@ def multi_level_tiling(target: Target) -> ScheduleRule:
     raise NotImplementedError(f"{target.kind.name} is not supported")
 
 
+def multi_level_tiling_memhammer(target: Target) -> ScheduleRule:
+    """Default schedule rules for multi-level tiling and reuse for MemHammer"""
+    if target.kind.name == "cuda":
+        return MultiLevelTilingMemHammer(
+            structure="SSSRRSRS",
+            tile_binds=["blockIdx.x", "vthread.x", "threadIdx.x"],
+            max_innermost_factor=64,
+            vector_load_max_len=4,
+            reuse_read=ReuseType(
+                req="must",
+                levels=[4],
+                scope="shared",
+            ),
+            reuse_write=ReuseType(
+                req="must",
+                levels=[3],
+                scope="local",
+            ),
+        )
+    raise NotImplementedError(f"{target.kind.name} is not supported")
+
+
 def random_compute_location(target: Target) -> ScheduleRule:
     """Default schedule rules for with random-compute-location"""
     if target.kind.name == "llvm":
@@ -177,6 +200,28 @@ def multi_level_tiling_tensor_core(target: Target) -> ScheduleRule:
         )
     raise NotImplementedError(f"{target.kind.name} is not supported")
 
+def multi_level_tiling_memhammer_tensor_core(target: Target) -> ScheduleRule:
+    """Default schedule rules for multi-level tiling with tensor core and reuse for MemHammer"""
+    if target.kind.name == "cuda":
+        return MultiLevelTilingMemHammer(
+            structure="SSSRRSRS",
+            tile_binds=["blockIdx.x", "blockIdx.y", "threadIdx.y"],
+            use_tensor_core=True,
+            add_local_stage=True,
+            max_innermost_factor=64,
+            vector_load_max_len=4,
+            reuse_read=ReuseType(
+                req="must",
+                levels=[4],
+                scope="shared",
+            ),
+            reuse_write=ReuseType(
+                req="no",
+                levels=[3],
+                scope="local",
+            ),
+        )
+    raise NotImplementedError(f"{target.kind.name} is not supported")
 
 def parallel_vectorize_unroll(target: Target) -> ScheduleRule:
     """Default schedule rules for with parallel-vectorize-unroll"""

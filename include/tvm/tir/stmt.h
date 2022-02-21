@@ -1530,6 +1530,15 @@ constexpr const int meta_schedule_cache_type_read = 0;
 /*! \sa meta_schedule_cache_type */
 constexpr const int meta_schedule_cache_type_write = 1;
 
+/*! \brief Mark warp execution on block */
+constexpr const char* warp_execution = "warp_execution";
+
+/*! \brief Mark local stage constraint on data copy */
+constexpr const char* local_stage = "local_stage";
+
+/*! \brief Mark vectorization length constraint on block */
+constexpr const char* vector_bytes = "vector_bytes";
+
 /*! \brief Mark the scope of the software pipeline */
 constexpr const char* software_pipeline_scope = "software_pipeline_scope";
 
