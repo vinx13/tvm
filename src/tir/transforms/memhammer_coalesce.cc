@@ -96,13 +96,17 @@ Stmt SplitBindVectorize(const Stmt& stmt, const ConstraintSet& constraints) {
   factors.push_back(vector_len);
   // generate outer loop
   ICHECK_EQ(loop_extent % (tot_threads * vector_len), 0);
-  factors[0] = loop_extent / (tot_threads * vector_len);
+  factors[0] = (loop_extent+tot_threads*vector_len-1) / (tot_threads * vector_len);
   // create new loop vars
   int n = factors.size();
   std::vector<Var> new_loop_vars;
   new_loop_vars.reserve(n);
+  arith::Analyzer analyzer;
   for (int i = 0; i < n; i++) {
-    new_loop_vars.push_back(loop->loop_var.copy_with_suffix("_" + std::to_string(i)));
+    const PrimExpr& factor = factors[i];
+    Var var = loop->loop_var.copy_with_suffix("_" + std::to_string(i));
+    analyzer.Bind(var, Range::FromMinExtent(0, factor));
+    new_loop_vars.push_back(var);
   }
   // substitute fused loop var with new loop vars
   PrimExpr substitute_value = 0;
@@ -118,6 +122,10 @@ Stmt SplitBindVectorize(const Stmt& stmt, const ConstraintSet& constraints) {
       return NullOpt;
     }
   });
+  PrimExpr predicate = substitute_value < loop->extent;
+  if (!analyzer.CanProve(predicate)) {
+    body = IfThenElse(predicate, body);
+  }
   body = For(new_loop_vars.back(), 0, vector_len, ForKind::kVectorized, std::move(body));
   for (int i = n - 2; i >= 1; i--) {
     body = For(new_loop_vars[i], 0, factors[i], ForKind::kThreadBinding, std::move(body),

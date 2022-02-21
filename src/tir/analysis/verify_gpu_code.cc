@@ -32,6 +32,7 @@
 
 #include "../../runtime/thread_storage_scope.h"
 #include "../transforms/ir_utils.h"
+#include "../../runtime/thread_storage_scope.h"
 
 namespace tvm {
 namespace tir {
