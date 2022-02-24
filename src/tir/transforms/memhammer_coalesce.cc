@@ -95,7 +95,6 @@ Stmt SplitBindVectorize(const Stmt& stmt, const ConstraintSet& constraints) {
   // generate vectorized loop
   factors.push_back(vector_len);
   // generate outer loop
-  ICHECK_EQ(loop_extent % (tot_threads * vector_len), 0);
   factors[0] = (loop_extent+tot_threads*vector_len-1) / (tot_threads * vector_len);
   // create new loop vars
   int n = factors.size();
