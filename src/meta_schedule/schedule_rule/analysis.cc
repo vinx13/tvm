@@ -38,7 +38,7 @@ std::vector<int> GetReadBufferNDims(const StmtSRef& block_sref) {
 Optional<LoopRV> TilingwithTensorIntrin(const Schedule& sch, const BlockRV& block_rv,
                                         const String& intrin_name) {
   Optional<tir::TensorizeInfo> opt_tensorize_info = GetTensorizeLoopMapping(
-      sch->state(), sch->GetSRef(block_rv), tir::TensorIntrin::Get(intrin_name)->description);
+      sch->state(), sch->GetSRef(block_rv), tir::TensorIntrin::Get(intrin_name)->desc);
   if (!opt_tensorize_info) return NullOpt;
   const tir::TensorizeInfoNode* info = opt_tensorize_info.value().get();
   // Construct a mapping from tir loops back to LoopRVs
