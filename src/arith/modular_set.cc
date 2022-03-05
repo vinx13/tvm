@@ -196,6 +196,14 @@ class ModularSetAnalyzer::Impl : public ExprFunctor<ModularSetAnalyzer::Entry(co
     return Everything();
   }
 
+  Entry VisitExpr_(const FloorModNode* op) final {
+    Entry b = VisitExpr(op->b);
+    if (b.is_const()) {
+      return ModByConst(op->a, b.base, true);
+    }
+    return Everything();
+  }
+
   Entry VisitExpr_(const MinNode* op) final {
     Entry a = VisitExpr(op->a);
     Entry b = VisitExpr(op->b);
@@ -212,6 +220,26 @@ class ModularSetAnalyzer::Impl : public ExprFunctor<ModularSetAnalyzer::Entry(co
     Entry a = VisitExpr(op->true_value);
     Entry b = VisitExpr(op->false_value);
     return Union(a, b);
+  }
+  Entry ModByConst(const PrimExpr& lhs, int64_t val, bool round_down) {
+    Entry a = VisitExpr(lhs);
+    ICHECK_NE(val, 0);
+    if (a.coeff % val == 0) {
+      // TODO: handle round down
+      return Entry(std::abs(val), a.base % val);
+    } else if (val % a.coeff == 0) {
+      return a;
+    }
+    return Everything();
+  }
+  
+
+  Entry VisitExpr_(const ModNode* op) final {
+    Entry b = VisitExpr(op->b);
+    if (b.is_const()) {
+      return ModByConst(op->a, b.base, false);
+    }
+    return Everything();
   }
 
   Entry ModByConst(const PrimExpr& lhs, int64_t val, bool round_down) {

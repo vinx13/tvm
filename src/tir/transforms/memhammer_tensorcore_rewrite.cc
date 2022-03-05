@@ -112,6 +112,13 @@ Stmt RewriteWmmaLoad(Stmt stmt) {
   // TODO: the assumption that the RHS of BufferStore is BufferLoad may not be accurate
   const BufferStoreNode* buf_store = TVM_TYPE_AS(buf_store, body, BufferStoreNode);
   const BufferLoadNode* buf_load = TVM_TYPE_AS(buf_load, buf_store->value, BufferLoadNode);
+  String layout;
+  if (UsesVar(buf_store->indices[buf_store->indices.size() - 1],
+              [&](const VarNode* var) { return var == loops[n - 2]->loop_var.get(); })){
+    layout= "col_major";
+  } else {
+    layout = "row_major";
+  }
   Buffer src_buffer = buf_load->buffer;
   Buffer tgt_buffer = buf_store->buffer;
 
@@ -169,7 +176,7 @@ Stmt RewriteWmmaLoad(Stmt stmt) {
                           /*4:*/ 1,
                       }),
                   /*6:*/ new_src_buffer->strides[new_src_buffer->strides.size() - 2],
-                  /*7:*/ StringImm("row_major"),
+                  /*7:*/ StringImm(layout),
               })),
           /*init=*/NullOpt,
           /*alloc_buffers=*/{},
