@@ -96,6 +96,9 @@ class IndexPatternFinder : public ExprVisitor {
       Array<PrimExpr> indices_dim;
       IndexPatternFinder extractor(var_range, &indices_dim);
       extractor(expr);
+      if (!extractor.success_) {
+        return {};
+      }
       Array<PrimExpr> access_shape = extractor.access_shape_;
       PrimExpr product_shape = 1;
       for (PrimExpr e : access_shape) {
@@ -112,8 +115,10 @@ class IndexPatternFinder : public ExprVisitor {
   }
 
  private:
-  inline int gcd(int a, int b) { return b > 0 ? gcd(b, a % b) : a; }
   void VisitExpr_(const VarNode* op) final {
+    if (!success_) {
+      return;
+    }
     if (Optional<Range> range = var_range_.Get(GetRef<Var>(op))) {
       PrimExpr index = GetRef<Var>(op);
       int64_t max = range.value()->extent.as<IntImmNode>()->value;
@@ -126,39 +131,36 @@ class IndexPatternFinder : public ExprVisitor {
             index = index * Integer(o.operand);
             break;
           case Operator::OpKind::FloorDiv:
-            max = (max + o.operand - 1) / o.operand;
+            if (max % o.operand != 0 && o.operand % max!=0) {
+              success_=false;
+              return;
+            }
+            max = max / o.operand;
             if (extent > max) {
-              extent = max;
+              extent = std::max(1l, max);
             }
             index = floordiv(index, Integer(o.operand));
             break;
           case Operator::OpKind::FloorMod:
-            if (max % extent == 0) {
-              int64_t step = max / extent;
-              int coef = gcd(step, o.operand);
-              int new_operand = o.operand / coef;
-              if (extent > new_operand) {
-                extent = new_operand;
-              }
-            } else {
-              if (extent > o.operand) {
-                extent = o.operand;
-              }
+            int step = max / extent;
+            if (step % o.operand != 0 && o.operand % step != 0) {
+              success_ = false;
+              return;
             }
-            max = std::min(max, o.operand);
+            if (step % o.operand == 0) {
+              extent = 1;
+              max= 0;
+            } else{
+              extent = std::max(1l, std::min(extent, o.operand/step));
+              max = extent*step;
+            }
             index = floormod(index, Integer(o.operand));
         }
       }
-      ICHECK(extent >= 1);
       if (extent > 1) {
-        if (max % extent == 0) {
-          access_shape_.push_back(Integer(extent));
-          resulting_index_->push_back(floordiv(index, max / extent));
-        } else {
-          // todo: enable further careful analysis
-          access_shape_.push_back(Integer(max));
-          resulting_index_->push_back(index);
-        }
+        ICHECK(max%extent==0);
+        access_shape_.push_back(Integer(extent));
+        resulting_index_->push_back(floordiv(index, max / extent));
       }
     }
   }
@@ -188,6 +190,7 @@ class IndexPatternFinder : public ExprVisitor {
   Array<PrimExpr> access_shape_;
   Array<PrimExpr>* resulting_index_;
   std::vector<Operator> operator_stack;
+  bool success_ =true;
 };
 
 /*!
@@ -246,32 +249,48 @@ std::pair<Stmt, SeqStmt> InsertCacheStage(Stmt stmt, bool is_write_cache, String
       }
     }
   }
+  
 
   const BufferStoreNode* buf_store = TVM_TYPE_AS(buf_store, body, BufferStoreNode);
+  Array<PrimExpr> cache_indices;
   Array<PrimExpr> new_shape;
-  for (const ForNode* loop : relaxed_thread_loops) {
-    new_shape.push_back(loop->extent);
+  bool use_rank_promotion =false;
+  if (const BufferLoadNode* buf_load = buf_store->value.as<BufferLoadNode>()) {
+      Array<PrimExpr> indices = is_write_cache ? buf_store->indices : buf_load->indices;
+    new_shape =
+        IndexPatternFinder::getRankPromotedShape(indices, var_range, &cache_indices);
+    if (!new_shape.empty()) {
+      use_rank_promotion = true;
+    }
   }
-  for (const ForNode* loop : loops_under_compute_location) {
-    new_shape.push_back(loop->extent);
-  }
-
   Array<Var> new_loop_vars;
   Map<Var, PrimExpr> subst_map;
-  Array<PrimExpr> cache_indices;
-  for (int i = 0; i < static_cast<int>(relaxed_thread_loops.size()); i++) {
-    const ForNode* loop = relaxed_thread_loops[i];
-    Var new_loop_var = loop->loop_var.copy_with_suffix("_cache");
-    new_loop_vars.push_back(new_loop_var);
-    subst_map.Set(loop->loop_var, new_loop_var);
-    cache_indices.push_back(loop->loop_var);
+  if (!use_rank_promotion) {
+    cache_indices.clear();
+    for (const ForNode* loop : relaxed_thread_loops) {
+      new_shape.push_back(loop->extent);
+    }
+    for (const ForNode* loop : loops_under_compute_location) {
+      new_shape.push_back(loop->extent);
+    }
   }
   for (int i = 0; i < static_cast<int>(loops_under_compute_location.size()); i++) {
     const ForNode* loop = loops_under_compute_location[i];
     Var new_loop_var = loop->loop_var.copy_with_suffix("_cache");
     new_loop_vars.push_back(new_loop_var);
     subst_map.Set(loop->loop_var, new_loop_var);
-    cache_indices.push_back(loop->loop_var);
+    if(!use_rank_promotion) {
+      cache_indices.push_back(loop->loop_var);
+    }
+  }
+  for (int i = 0; i < static_cast<int>(relaxed_thread_loops.size()); i++) {
+    const ForNode* loop = relaxed_thread_loops[i];
+    Var new_loop_var = loop->loop_var.copy_with_suffix("_cache");
+    new_loop_vars.push_back(new_loop_var);
+    subst_map.Set(loop->loop_var, new_loop_var);
+    if(!use_rank_promotion) {
+      cache_indices.push_back(loop->loop_var);
+    }
   }
   Array<PrimExpr> subst_indices;
   Array<PrimExpr> subst_cache_indices;
@@ -301,21 +320,22 @@ std::pair<Stmt, SeqStmt> InsertCacheStage(Stmt stmt, bool is_write_cache, String
     PrimExpr subst_predicate = Substitute(predicate.value(), subst_map);
     generate_body = IfThenElse(subst_predicate, generate_body);
   }
+
+  for (int i = static_cast<int>(loops_under_compute_location.size()) - 1; i >= 0; i--) {
+    const ForNode* orig_loop = loops_under_compute_location[i];
+    ObjectPtr<ForNode> new_loop = make_object<ForNode>(*orig_loop);
+    new_loop->loop_var = new_loop_vars[i];
+    new_loop->body = generate_body;
+    generate_body = For(new_loop);
+  }
   for (int i = static_cast<int>(relaxed_thread_loops.size()) - 1; i >= 0; i--) {
     const ForNode* orig_loop = relaxed_thread_loops[i];
     ObjectPtr<ForNode> new_loop = make_object<ForNode>(*orig_loop);
-    new_loop->loop_var = new_loop_vars[i];
+    new_loop->loop_var = new_loop_vars[i+loops_under_compute_location.size()];
     new_loop->body = generate_body;
     new_loop->kind = ForKind::kSerial;
     new_loop->thread_binding = NullOpt;
     new_loop->annotations = {};
-    generate_body = For(new_loop);
-  }
-  for (int i = static_cast<int>(loops_under_compute_location.size()) - 1; i >= 0; i--) {
-    const ForNode* orig_loop = loops_under_compute_location[i];
-    ObjectPtr<ForNode> new_loop = make_object<ForNode>(*orig_loop);
-    new_loop->loop_var = new_loop_vars[i+relaxed_thread_loops.size()];
-    new_loop->body = generate_body;
     generate_body = For(new_loop);
   }
   Stmt rewrite_body =
