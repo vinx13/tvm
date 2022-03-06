@@ -16,6 +16,7 @@
 # under the License.
 # pylint: disable=missing-module-docstring,missing-function-docstring,missing-class-docstring
 
+from tvm import te, topi, tir
 from tvm.meta_schedule.space_generator.post_order_apply import PostOrderApply
 from tvm.meta_schedule.testing import te_workload
 from tvm.meta_schedule.testing.schedule_rule import (
@@ -449,6 +450,63 @@ def test_cuda_tensor_core_matmul_relu():
     check_trace(spaces, expected)
 
 
+def conv2d_nhwc_fp16(  # pylint: disable=invalid-name,missing-docstring
+    N: int,
+    H: int,
+    W: int,
+    CI: int,
+    CO: int,
+    kernel_size: int,
+    stride: int = 1,
+    padding: int = 0,
+    dilation: int = 1,
+    groups: int = 1,
+):
+    inputs = te.placeholder((N, H, W, CI), name="inputs", dtype="float16")
+    weight = te.placeholder((kernel_size, kernel_size, CI // groups, CO), name="weight", dtype="float16")
+    batch_size, in_h, in_w, _ = inputs.shape
+    k_h, k_w, channel_per_group, out_channel = weight.shape
+    out_channel_per_group = out_channel // groups
+
+    out_h = (in_h + 2 * padding - dilation * (k_h - 1) - 1) // stride + 1
+    out_w = (in_w + 2 * padding - dilation * (k_w - 1) - 1) // stride + 1
+    rh = te.reduce_axis((0, k_h), name="rh")
+    rw = te.reduce_axis((0, k_w), name="rw")
+    rc = te.reduce_axis((0, channel_per_group), name="rc")
+
+    padded = topi.nn.pad(inputs, [0, padding, padding, 0])
+    output = te.compute(
+        (batch_size, out_h, out_w, out_channel),
+        lambda n, h, w, co: te.sum(
+            (
+                tir.Cast(value=padded[
+                    n,
+                    h * stride + rh * dilation,
+                    w * stride + rw * dilation,
+                    co // out_channel_per_group * channel_per_group + rc,
+                ], dtype="float32")
+                * tir.Cast(value=weight[rh, rw, rc, co], dtype="float32")
+            ),
+            axis=[rh, rw, rc],
+        ),
+        name="conv2d_nhwc",
+    )
+    return (inputs, weight, output)
+
+
+def test_cuda_tensor_core_conv2d():
+    target = Target("cuda", host="llvm")
+    ctx = _create_context(
+        create_prim_func(
+           conv2d_nhwc_fp16(1, 224, 224, 3, 64, 7, 2, 3)
+        ),
+        target=target,
+        rule=multi_level_tiling_tensor_core(target=target),
+    )
+    spaces = ctx.space_generator.generate_design_space(mod=ctx.mod)
+    assert len(spaces) == 1
+
+
 if __name__ == "__main__":
     test_cpu_matmul()
     test_cpu_matmul_relu()
@@ -456,4 +514,5 @@ if __name__ == "__main__":
     test_cuda_matmul_relu()
     test_cuda_sum_with_trivial_block_iter()
     test_cuda_tensor_core_matmul()
-    test_cuda_tensor_core_matmul_relu()
+    # test_cuda_tensor_core_matmul_relu()
+    test_cuda_tensor_core_conv2d()

@@ -34,6 +34,8 @@
 #include <unordered_map>
 #include <utility>
 
+#include "../../arith/ir_mutator_with_analyzer.h"
+#include "../../arith/ir_visitor_with_analyzer.h"
 #include "../../arith/pattern_match.h"
 #include "../../node/attr_registry.h"
 #include "../../printer/text_printer.h"

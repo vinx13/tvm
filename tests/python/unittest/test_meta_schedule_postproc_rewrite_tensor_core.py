@@ -268,6 +268,7 @@ def test_rewrite_tensor_core():
     sch = tir.Schedule(mod, debug_mask="all")
     sch.enter_postproc()
     assert ctx.postprocs[0].apply(sch)
+    print(sch.mod.script())
     tvm.ir.assert_structural_equal(sch.mod, After0)
 
 

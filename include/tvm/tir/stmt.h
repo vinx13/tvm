@@ -57,6 +57,7 @@ class StmtNode : public Object {
 class Stmt : public ObjectRef {
  public:
   TVM_DEFINE_OBJECT_REF_METHODS(Stmt, ObjectRef, StmtNode);
+  TVM_DEFINE_OBJECT_REF_COW_METHOD(StmtNode);
 };
 
 /*!

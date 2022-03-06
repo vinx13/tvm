@@ -509,6 +509,16 @@ BlockRV ConcreteScheduleNode::CacheWrite(const BlockRV& block_rv, int write_buff
   return CreateRV<BlockRV>(result);
 }
 
+BlockRV ConcreteScheduleNode::ReIndex(const BlockRV& block_rv, int buffer_index,
+                                      bool is_write_index) {
+  StmtSRef result{nullptr};
+  TVM_TIR_SCHEDULE_BEGIN();
+  result = tir::ReIndex(state_, this->GetSRef(block_rv), buffer_index, is_write_index);
+  TVM_TIR_SCHEDULE_END("reindex", this->error_render_level_);
+  this->state_->DebugVerify();
+  return CreateRV<BlockRV>(result);
+}
+
 /******** Schedule: Data movement ********/
 
 BlockRV ConcreteScheduleNode::ReadAt(const LoopRV& loop_rv, const BlockRV& block_rv,
@@ -710,6 +720,14 @@ void ConcreteScheduleNode::TransformLayout(const BlockRV& block_rv, int buffer_i
                                            const IndexMap& index_map) {
   TVM_TIR_SCHEDULE_BEGIN();
   tir::TransformLayout(state_, this->GetSRef(block_rv), buffer_index, buffer_index_type, index_map);
+  this->state_->DebugVerify();
+  TVM_TIR_SCHEDULE_END("transform_layout", this->error_render_level_);
+}
+
+void ConcreteScheduleNode::TransformBlockLayout(const BlockRV& block_rv,
+                                                const IndexMap& index_map) {
+  TVM_TIR_SCHEDULE_BEGIN();
+  tir::TransformBlockLayout(state_, this->GetSRef(block_rv), index_map);
   this->state_->DebugVerify();
   TVM_TIR_SCHEDULE_END("transform_layout", this->error_render_level_);
 }

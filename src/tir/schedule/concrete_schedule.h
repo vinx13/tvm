@@ -109,6 +109,7 @@ class ConcreteScheduleNode : public ScheduleNode {
                     const String& storage_scope) override;
   BlockRV CacheWrite(const BlockRV& block_rv, int write_buffer_index,
                      const String& storage_scope) override;
+  BlockRV ReIndex(const BlockRV& block_rv, int buffer_index, bool is_write_index) override;
   /******** Schedule: Data movement ********/
   BlockRV ReadAt(const LoopRV& loop_rv, const BlockRV& block_rv, int read_buffer_index,
                  const String& storage_scope) override;
@@ -139,6 +140,7 @@ class ConcreteScheduleNode : public ScheduleNode {
   /******** Schedule: Layout transformation ********/
   void TransformLayout(const BlockRV& block_rv, int buffer_index, BufferIndexType buffer_index_type,
                        const IndexMap& index_map) override;
+  void TransformBlockLayout(const BlockRV& block_rv, const IndexMap& index_map) override;
   /******** Schedule: Misc ********/
   void EnterPostproc() override {}
 

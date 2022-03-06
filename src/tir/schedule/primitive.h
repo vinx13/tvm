@@ -253,7 +253,17 @@ TVM_DLL StmtSRef CacheRead(ScheduleState self, const StmtSRef& block_sref, int r
  */
 TVM_DLL StmtSRef CacheWrite(ScheduleState self, const StmtSRef& block_sref, int write_buffer_index,
                             const String& storage_scope);
-
+/*!
+ * \brief Create a block that read/write a buffer region into a read/write cache.
+ * The key feature is that the layout of the cache will be the same as by the iterators
+ * of the block that reads/writes the buffer. It requires
+ * 1) There is only one buffer/load store of this buffer in the block
+ * \param block_rv The block operates on the target buffer.
+ * \param buffer_index The index of the bufefr in block's read/write region
+ * \param is_write_index Whether the buffer_index is the index of the block's write region.
+ */
+TVM_DLL StmtSRef ReIndex(ScheduleState self, const StmtSRef& block_sref, int buffer_index,
+                         bool is_write_index);
 /******** Schedule: Data movement ********/
 
 TVM_DLL StmtSRef ReadAt(ScheduleState self, const StmtSRef& loop_sref, const StmtSRef& block_sref,
@@ -432,6 +442,17 @@ TVM_DLL void Annotate(ScheduleState self, const StmtSRef& sref, const String& an
  */
 TVM_DLL void TransformLayout(ScheduleState self, const StmtSRef& block_sref, int buffer_index,
                              bool is_write_index, const IndexMap& index_map);
+
+/*!
+ * \brief Apply a transformation represented by IndexMap to block
+ * \details The block signatures and the block body is transformed by the given index_map.
+ * The index_map is required to be affine since we need its inverse mapping
+ * \param self The state of the schedule
+ * \param block_sref The block sref that refers to the block to be transformed
+ * \param affine_index_map The transformation to apply.
+ */
+TVM_DLL void TransformBlockLayout(ScheduleState self, const StmtSRef& block_sref,
+                                  const IndexMap& index_map);
 
 /*!
  * \brief Unannotate a block/loop's annotation with key ann_key
