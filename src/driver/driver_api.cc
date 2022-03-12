@@ -268,6 +268,7 @@ Array<tvm::transform::Pass> CreatePassList(bool disable_loop_partition) {
   pass_list.push_back(tir::transform::BF16Legalize());
   pass_list.push_back(tir::transform::NarrowDataType(32));
   pass_list.push_back(tir::transform::Simplify());
+  pass_list.push_back(tir::transform::Simplify());
 
   // Add user-defined phase-1 passes
   pass_list.insert(pass_list.end(), user_lower_phase1.begin(), user_lower_phase1.end());
