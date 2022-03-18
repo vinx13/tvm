@@ -84,10 +84,11 @@ class TensorizeComparator : public ExprComparator, public StmtComparator {
  protected:
   bool DefEqual(const Var& lhs, const Var& rhs);
   virtual bool CompareBuffer(const Buffer& lhs, const Buffer& rhs);
-  bool CompareBufferRegion(const BufferRegion& lhs, const BufferRegion& rhs);
+  virtual bool CompareBufferRegion(const BufferRegion& lhs, const BufferRegion& rhs);
   bool CompareAnnotation(const std::pair<String, ObjectRef>& lhs,
                          const std::pair<String, ObjectRef>& rhs);
   bool CompareAnnotationMap(const Map<String, ObjectRef>& lhs, const Map<String, ObjectRef>& rhs);
+
   template <typename T>
   bool CompareBufferAccess(const T* lhs, const T* rhs);
   template <typename T, typename F>

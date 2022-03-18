@@ -92,7 +92,7 @@ bool TensorizeComparator::VisitStmt_(const ForNode* op, const Stmt& other) {
     return false;
   }
   if (op->kind != rhs->kind) return false;
-  if (!CompareAnnotationMap(op->annotations, rhs->annotations)) return false;
+  // if (!CompareAnnotationMap(op->annotations, rhs->annotations)) return false;
   return VisitStmt(op->body, rhs->body);
 }
 

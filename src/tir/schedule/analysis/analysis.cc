@@ -929,6 +929,24 @@ class AutoTensorizeComparator : public tir::TensorizeComparator {
     return equal;
   }
 
+  bool VisitStmt_(const BlockNode* op, const Stmt& rhs) override {
+    if (!CompareArray(op->iter_vars, Downcast<Block>(rhs)->iter_vars,
+                      &AutoTensorizeComparator::CompareIterVar)) {
+      return false;
+    }
+    return VisitStmt(op->body, Downcast<Block>(rhs)->body);
+  }
+
+  bool VisitStmt_(const BufferStoreNode* op, const Stmt& other) override {
+    const auto* rhs = other.as<BufferStoreNode>();
+    return CompareBufferAccess(op, rhs) && VisitExpr(op->value, rhs->value);
+  }
+
+  bool VisitExpr_(const BufferLoadNode* op, const PrimExpr& other) override {
+    const auto* rhs = other.as<BufferLoadNode>();
+    return CompareBufferAccess(op, rhs);
+  }
+
   bool CompareBuffer(const tir::Buffer& lhs, const tir::Buffer& rhs) override {
     if (lhs.same_as(rhs)) return true;
     auto it = rhs_buffer_map_.find(rhs);
@@ -943,6 +961,39 @@ class AutoTensorizeComparator : public tir::TensorizeComparator {
       }
     }
     return equal;
+  }
+
+  bool CompareBufferRegion(const BufferRegion& lhs, const BufferRegion& rhs) override {
+    if (!CompareBuffer(lhs->buffer, rhs->buffer)) {
+      return false;
+    }
+    int offset = static_cast<int>(lhs->region.size()) - static_cast<int>(rhs->region.size());
+    if (offset < 0) {
+      return false;
+    }
+    for (int i = 0; i < rhs->region.size(); i++) {
+      if (!CompareRange(lhs->region[i + offset], rhs->region[i])) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  template <typename T>
+  bool CompareBufferAccess(const T* lhs, const T* rhs) {
+    if (!CompareBuffer(lhs->buffer, rhs->buffer)) {
+      return false;
+    }
+    int offset = static_cast<int>(rhs->indices.size()) - static_cast<int>(lhs->indices.size());
+    if (offset < 0) {
+      return false;
+    }
+    for (int i = 0; i < rhs->indices.size(); ++i) {
+      if (!VisitExpr(lhs->indices[i + offset], rhs->indices[i])) {
+        return false;
+      }
+    }
+    return true;
   }
 };
 
@@ -979,7 +1030,7 @@ Optional<TensorizeInfo> GetTensorizeLoopMapping(const tir::ScheduleState& self,
       return true;
     };
     const auto* desc_body =
-        Downcast<tir::BlockRealize>(desc_func->body)->block->body.as<tir::BlockRealizeNode>();
+        Downcast<tir::BlockRealize>(desc_func->body).as<tir::BlockRealizeNode>();
     ICHECK(desc_body);
     tir::PostOrderVisit(desc_body->block->body, f_visit);
     std::reverse(desc_loops.begin(), desc_loops.end());
