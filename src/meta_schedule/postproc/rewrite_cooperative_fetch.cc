@@ -107,7 +107,7 @@ class RewriteCooperativeFetchNode : public PostprocNode {
 
 bool RewriteCooperativeFetchNode::Apply(const tir::Schedule& sch) {
   tir::Trace trace = sch->trace().value();
-  int thread_extent_x = -1;
+  int thread_extent_x = 1;
   int thread_extent_y = -1;
   int vector_lane = -1;
   std::vector<std::function<void()>> tasks;
