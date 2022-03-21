@@ -63,7 +63,6 @@ class GPUCodeVerifier : public StmtExprVisitor {
   void VisitStmt_(const AllocateNode* op) final {
     StmtVisitor::VisitStmt_(op);
     auto scope = GetPtrStorageScope(op->buffer_var);
-    runtime::StorageScope storage_scope = runtime::StorageScope::Create(scope);
     // visit an allocation of a buffer in shared memory, record its size
     if (storage_scope.rank == runtime::StorageRank::kLocal) {
       size_t size = static_cast<size_t>(op->ConstantAllocationSize());

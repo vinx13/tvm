@@ -111,7 +111,9 @@ class MultiLevelTilingNode : public ScheduleRuleNode {
 
   // Entry of the mega rule; Inherited from ScheduleRuleNode
   Array<Schedule> Apply(const Schedule& sch, const BlockRV& block_rv) final {
+    LOG(INFO) <<"MLT";
     if (!NeedsMultiLevelTiling(sch->state(), sch->GetSRef(block_rv))) {
+        LOG(INFO) << "FAIL";
       return {sch};
     }
     sch->Annotate(block_rv, tir::attr::meta_schedule_tiling_structure, structure);
@@ -124,6 +126,7 @@ class MultiLevelTilingNode : public ScheduleRuleNode {
     states = SubRule(std::move(states), [&](State state) { return FuseWriteReuse(state); });
     Array<Schedule> results;
     for (auto&& state : states) {
+        LOG(INFO) <<"ADDSTATE";
       results.push_back(std::move(state.sch));
     }
     return results;
@@ -202,46 +205,35 @@ inline std::vector<State> MultiLevelTilingNode::AddWriteReuse(State state) const
     if (state.tensor_core_is_used) state = TensorCoreStore(state);
     return {std::move(state)};
   }
-  std::vector<int> levels = config.levels;
-  ReuseType req = config.req;
-  if (Optional<Array<Integer>> ann = tir::GetAnn<Array<Integer>>(
-          state.sch->GetSRef(state.block_rv), "meta_schedule.write_cache_level")) {
-    req = ReuseType::kMustReuse;
-    levels = std::vector<int>(ann.value().begin(), ann.value().end());
-  }
-  std::vector<State> results;
-  if (req == ReuseType::kMayReuse) {
-    // Case 1. If the write cache is already there, we don't need to add another.
+  // Case 1. If the write cache is already there, we don't need to add another.
+  if (config.req == ReuseType::kMayReuse) {
     Array<BlockRV> consumer_rvs = state.sch->GetConsumers(state.block_rv);
     if (consumer_rvs.size() == 1 && IsWriteCache(state.sch->GetSRef(consumer_rvs[0]))) {
-      for (int level : levels) {
-        State new_state = state;
-        new_state.sch = state.sch->Copy();
-        new_state.sch->Seed(state.sch->ForkSeed());
-        const LoopRV& loop_rv = new_state.tiles[level - 1].back();
-        new_state.sch->ReverseComputeAt(consumer_rvs[0], loop_rv, true);
-        results.push_back(std::move(new_state));
-      }
-      results.push_back(state);
-      return results;
-    } else {
-      // Case 2. No write cache is added
-      State new_state(/*sch=*/state.sch->Copy(), /*block_rv=*/state.block_rv);
-      new_state.sch->Seed(state.sch->ForkSeed());
-      results.emplace_back(std::move(new_state));
+      state.write_cache = consumer_rvs[0];
+      state.write_cache_is_added = false;
+      if (state.tensor_core_is_used) state = TensorCoreStore(state);
+      return {std::move(state)};
     }
   }
-
+  std::vector<State> results;
+  results.reserve(2);
+  // Case 2. No write cache is added
+  if (config.req == ReuseType::kMayReuse) {
+    State new_state(/*sch=*/state.sch->Copy(), /*block_rv=*/state.block_rv,
+                    /*write_cache=*/NullOpt,
+                    /*write_cache_is_added=*/false);
+    new_state.sch->Seed(state.sch->ForkSeed());
+    if (new_state.tensor_core_is_used) new_state = TensorCoreStore(new_state);
+    results.emplace_back(std::move(new_state));
+  }
   // Case 3. Add one write cache
   BlockRV write_cache = state.sch->CacheWrite(/*block_rv=*/state.block_rv, /*read_buffer_index=*/0,
                                               /*storage_scope=*/config.scope);
-  for (int level : levels) {
-    State new_state = state;
-    new_state.sch = state.sch->Copy();
-    new_state.sch->Seed(state.sch->ForkSeed());
-    const LoopRV& loop_rv = new_state.tiles[level - 1].back();
-    new_state.sch->ReverseComputeAt(write_cache, loop_rv, true);
-    results.push_back(std::move(new_state));
+  state.write_cache = write_cache;
+  {
+    tir::Annotate(state.sch->state(), state.sch->GetSRef(write_cache),  //
+                  tir::attr::meta_schedule_cache_type,                  //
+                  Integer(tir::attr::meta_schedule_cache_type_write));
   }
   state.write_cache_is_added = true;
   if (state.tensor_core_is_used) state = TensorCoreStore(state);
