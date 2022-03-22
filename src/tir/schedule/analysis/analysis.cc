@@ -879,10 +879,10 @@ class AutoTensorizeComparator : public tir::TensorizeComparator {
   }
 
   bool VisitStmt_(const BlockNode* op, const Stmt& rhs) override {
-    if (!CompareArray(op->iter_vars, Downcast<Block>(rhs)->iter_vars,
-                      &AutoTensorizeComparator::CompareIterVar)) {
-      return false;
-    }
+    // if (!CompareArray(op->iter_vars, Downcast<Block>(rhs)->iter_vars,
+    //                   &AutoTensorizeComparator::CompareIterVar)) {
+    //   return false;
+    // }
     return VisitStmt(op->body, Downcast<Block>(rhs)->body);
   }
 
@@ -933,7 +933,7 @@ class AutoTensorizeComparator : public tir::TensorizeComparator {
     if (!CompareBuffer(lhs->buffer, rhs->buffer)) {
       return false;
     }
-    int offset = static_cast<int>(rhs->indices.size()) - static_cast<int>(lhs->indices.size());
+    int offset = static_cast<int>(lhs->indices.size()) - static_cast<int>(rhs->indices.size());
     if (offset < 0) {
       return false;
     }
