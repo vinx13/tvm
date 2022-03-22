@@ -94,8 +94,7 @@ int FindDecomposePoint(const StmtSRef& block_sref) {
   int n = loop_srefs.size();
   for (int i = 0; i < n; ++i) {
     const ForNode* loop = TVM_SREF_TO_FOR(loop, loop_srefs[i]);
-    if (loop->annotations.count("software_pipeline_stage") && GetLoopIterType(loop_srefs[i]) !=
-                                               IterVarType::kDataPar) {
+    if (GetLoopIterType(loop_srefs[i]) != IterVarType::kDataPar) {
       return i;
     }
   }
@@ -126,12 +125,14 @@ bool RewriteReductionBlockNode::Apply(const tir::Schedule& sch) {
   for (;;) {
     std::vector<std::pair<tir::StmtSRef, String>> results =
         tir::ReductionBlockFinder::Find(sch->state());
+    // LOG(INFO) << "Results " << results.size();
     int rewritten = 0;
     for (const auto& kv : results) {
       const tir::StmtSRef& block_sref = kv.first;
       const String& global_var_name = kv.second;
       int decompose_point = tir::FindDecomposePoint(block_sref);
       if (decompose_point == -1) {
+        LOG(INFO) << "Can't find decompose point";
         continue;
       }
       tir::BlockRV block_rv = GetRVFromSRef(sch, block_sref, global_var_name);
@@ -139,7 +140,9 @@ bool RewriteReductionBlockNode::Apply(const tir::Schedule& sch) {
       tir::BlockRV init_block_rv = sch->DecomposeReduction(block_rv, loop_rvs[decompose_point]);
       // If the block is the isolation block of tensor core,
       // we mark the init block for later postprocessor to handle the tensorization step
+      // LOG(INFO) << GetRef<tir::Stmt>(block_sref->stmt);
       if (HasAnn(block_sref, tir::attr::meta_schedule_auto_tensorize, String("wmma_fill"))) {
+          // LOG(INFO) << "HasAnn";
         sch->Unannotate(init_block_rv, tir::attr::meta_schedule_auto_tensorize);
         sch->Unannotate(block_rv, tir::attr::meta_schedule_auto_tensorize);
         Array<tir::BlockRV> init_inner_block_rv = sch->GetChildBlocks(init_block_rv);
