@@ -937,9 +937,21 @@ class AutoTensorizeComparator : public tir::TensorizeComparator {
     if (offset < 0) {
       return false;
     }
+    // for (int i = 0; i < rhs->indices.size(); ++i) {
+    //   if (!VisitExpr(lhs->indices[i + offset], rhs->indices[i])) {
+    //     return false;
+    //   }
+    // }
     for (int i = 0; i < rhs->indices.size(); ++i) {
-      if (!VisitExpr(lhs->indices[i + offset], rhs->indices[i])) {
-        return false;
+      auto rhs_var = Downcast<Var>(rhs->indices[i]);
+      auto lhs_expr = lhs->indices[i + offset];
+      auto it = equal_map_.find(rhs_var);
+      if (it != equal_map_.end()) {
+        if (!VisitExpr(lhs_expr, Downcast<PrimExpr>((*it).second))) {
+          return false;
+        }
+      } else {
+        equal_map_.emplace(rhs_var, lhs_expr);
       }
     }
     return true;
@@ -988,6 +1000,7 @@ Optional<TensorizeInfo> GetTensorizeLoopMapping(const tir::ScheduleState& self,
   // Step 2. Check if `desc_block` matches `block`
   // Ignore the scope of buffers when comparing, since we can do cache_read/write
   if (!AutoTensorizeComparator(self->mod).VisitStmt(block, GetRef<tir::BlockRealize>(desc_block))) {
+    LOG(INFO) << "Mismatch " << block << "\n" << GetRef<tir::BlockRealize>(desc_block);
     return NullOpt;
   }
   // Step 3. Extract the loops on top of the block. It is a mirror step of Step 1
