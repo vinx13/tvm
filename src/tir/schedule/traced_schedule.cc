@@ -464,6 +464,7 @@ void TracedScheduleNode::TransformLayout(const BlockRV& block_rv, int buffer_ind
       /*inst=*/Instruction(/*kind=*/kind,
                            /*inputs=*/{block_rv},
                            /*attrs=*/{Integer(buffer_index), Integer(buffer_index_type), index_map},
+                           /*outputs=*/{}));
 }
 
 void TracedScheduleNode::EnterPostproc() {
