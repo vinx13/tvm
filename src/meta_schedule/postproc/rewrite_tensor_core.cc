@@ -17,6 +17,7 @@
  * under the License.
  */
 #include "../utils.h"
+#include "../schedule_rule/analysis.h"
 
 namespace tvm {
 namespace meta_schedule {

@@ -547,8 +547,8 @@ class ScheduleNode : public runtime::Object {
    * \param is_write_index Whether the buffer_index is the index of the block's write region.
    * \param index_map The transformation to apply.
    */
-  virtual void TransformLayout(const BlockRV& block_rv, int buffer_index, bool is_write_index,
-                               const IndexMap& index_map) = 0;
+  virtual void TransformLayout(const BlockRV& block_rv, int buffer_index,
+                               BufferIndexType buffer_index_type, const IndexMap& index_map) = 0;
 
   /******** Schedule: Misc ********/
   /*! \brief A no-op that marks the start of postprocessing phase of scheduling */
