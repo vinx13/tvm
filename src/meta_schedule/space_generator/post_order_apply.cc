@@ -31,6 +31,7 @@ class BlockCollector : public tir::StmtVisitor {
  private:
   /*! \brief Entry point */
   Array<tir::BlockRV> Run() {
+    std::vector<tir::BlockRV> results;
     for (const auto& kv : sch_->mod()->functions) {
       const GlobalVar& gv = kv.first;         // `gv->name_hint` is the name of the function
       const BaseFunc& base_func = kv.second;  // this can be PrimFunc or relay::Function
@@ -39,12 +40,12 @@ class BlockCollector : public tir::StmtVisitor {
         block_names_.clear();
         blocks_to_collect_.clear();
         VisitStmt(func->body);
-        for (const String& block_name : blocks_to_collect_) {
-          results_.push_back(sch_->GetBlock(block_name, func_name_));
+        for (const String& name : blocks_to_collect_) {
+          results.push_back(sch_->GetBlock(name, func_name_));
         }
       }
     }
-    return results_;
+    return results;
   }
   /*! \brief Constructor */
   explicit BlockCollector(const tir::Schedule& sch) : sch_(sch) {}
@@ -64,8 +65,6 @@ class BlockCollector : public tir::StmtVisitor {
   std::unordered_set<String> block_names_;
   /* \brief The list of blocks to collect in order */
   Array<String> blocks_to_collect_;
-  /*! \brief Function name & blocks of collection */
-  Array<tir::BlockRV> results_;
   /*! \brief Name of the current PrimFunc */
   String func_name_;
 };
@@ -86,76 +85,39 @@ class PostOrderApplyNode : public SpaceGeneratorNode {
     // `sch_rules_` is not visited
   }
 
-  void InitializeWithTuneContext(const TuneContext& tune_context) final {
-    this->rand_state_ = ForkSeed(&tune_context->rand_state);
-    CHECK(tune_context->sch_rules.defined())
+  void InitializeWithTuneContext(const TuneContext& context) final {
+    this->rand_state_ = ForkSeed(&context->rand_state);
+    CHECK(context->sch_rules.defined())
         << "ValueError: Schedules rules not given in PostOrderApply!";
-    this->sch_rules_ = tune_context->sch_rules;
+    this->sch_rules_ = context->sch_rules;
   }
 
   Array<tir::Schedule> GenerateDesignSpace(const IRModule& mod_) final {
     using ScheduleAndUnvisitedBlocks = std::pair<tir::Schedule, Array<tir::BlockRV>>;
-    tir::Schedule sch = tir::Schedule::Traced(        //
-        /*mod=*/mod_,                                 //
-        /*rand_state=*/ForkSeed(&this->rand_state_),  //
-        /*debug_mode=*/0,  // tir::kVerifySRefTree | tir::kVerifyCachedFlags
+    tir::Schedule sch = tir::Schedule::Traced(
+        /*mod=*/mod_,
+        /*rand_state=*/ForkSeed(&this->rand_state_),
+        /*debug_mode=*/0,
         /*error_render_level=*/tir::ScheduleErrorRenderLevel::kDetail);
 
     std::vector<ScheduleAndUnvisitedBlocks> stack;
-    Array<tir::Schedule> result;
-    Array<tir::BlockRV> all_blocks = BlockCollector::Collect(sch), func_blocks, non_func_blocks;
-    for (const tir::BlockRV& block_rv : all_blocks) {
-      if (Optional<String> custom_sch_rule_name_opt =
-              tir::GetAnn<String>(sch->GetSRef(block_rv), "schedule_rule")) {
-        if (custom_sch_rule_name_opt.value() != "None") {
-          func_blocks.push_back(block_rv);
-        }
-      } else {
-        non_func_blocks.push_back(block_rv);
-      }
-    }
-
-    // only do this once for schedule rules on block annotations
-    stack.emplace_back(sch, func_blocks);
-    while (!stack.empty()) {
-      // get the stack.top()
-      tir::Schedule sch;
-      Array<tir::BlockRV> blocks;
-      std::tie(sch, blocks) = stack.back();
-      stack.pop_back();
-      // if all blocks are visited
-      if (blocks.empty()) {
-        result.push_back(sch);
-        continue;
-      }
-      // otherwise, get the last block that is not visited
-      tir::BlockRV block_rv = blocks.back();
-      blocks.pop_back();
-      if (sch->HasBlock(block_rv)) {
-        // pick out the blocks with annotation for customized search space
-        Optional<String> custom_sch_rule_name_opt =
-            tir::GetAnn<String>(sch->GetSRef(block_rv), "schedule_rule");
-        ICHECK(custom_sch_rule_name_opt.defined() && custom_sch_rule_name_opt.value() != "None");
-        String custom_sch_rule_name = custom_sch_rule_name_opt.value();
-        const auto* custom_sch_rule_func = runtime::Registry::Get(custom_sch_rule_name);
-        CHECK(custom_sch_rule_func) << "The given custom schedule function is not defined!";
-        Array<tir::Schedule> applied = (*custom_sch_rule_func)(sch, block_rv);
-        for (const tir::Schedule& sch : applied) {
-          stack.emplace_back(sch, blocks);
-        }
-      } else {
-        stack.emplace_back(sch, blocks);
-      }
-    }
-
+    Array<tir::Schedule> result{sch};
     // Enumerate the schedule rules first because you can
     // always concat multiple schedule rules as one
-    for (ScheduleRule sch_rule : sch_rules_) {
-      for (const tir::Schedule& sch : result) {
-        stack.emplace_back(sch, non_func_blocks);
+    Array<tir::BlockRV> all_blocks = BlockCollector::Collect(sch);
+    Array<Optional<ScheduleRule>> rules{NullOpt};
+    rules.insert(rules.end(), sch_rules_.begin(), sch_rules_.end());
+    for (Optional<ScheduleRule> sch_rule : rules) {
+      if (sch_rule.defined()) {
+        for (const tir::Schedule& sch : result) {
+          stack.emplace_back(sch, all_blocks);
+        }
+      } else {
+        for (const tir::Schedule& sch : result) {
+          stack.emplace_back(sch, Array<tir::BlockRV>{all_blocks.rbegin(), all_blocks.rend()});
+        }
       }
       result.clear();
-
       while (!stack.empty()) {
         // get the stack.top()
         tir::Schedule sch;
@@ -170,12 +132,24 @@ class PostOrderApplyNode : public SpaceGeneratorNode {
         // otherwise, get the last block that is not visited
         tir::BlockRV block_rv = blocks.back();
         blocks.pop_back();
-        if (sch->HasBlock(block_rv)) {
-          Array<tir::Schedule> applied = sch_rule->Apply(sch, /*block=*/block_rv);
-          for (const tir::Schedule& sch : applied) {
-            stack.emplace_back(sch, blocks);
-          }
+        if (!sch->HasBlock(block_rv)) {
+          stack.emplace_back(sch, blocks);
+          continue;
+        }
+        Optional<String> ann = tir::GetAnn<String>(sch->GetSRef(block_rv), "schedule_rule");
+        if (ann.defined() == sch_rule.defined() || (ann.defined() && ann.value() == "None")) {
+          stack.emplace_back(sch, blocks);
+          continue;
+        }
+        Array<tir::Schedule> applied{nullptr};
+        if (sch_rule.defined()) {
+          applied = sch_rule.value()->Apply(sch, /*block=*/block_rv);
         } else {
+          const runtime::PackedFunc* f = runtime::Registry::Get(ann.value());
+          CHECK(f) << "ValueError: Custom schedule rule not found: " << ann.value();
+          applied = (*f)(sch, block_rv);
+        }
+        for (const tir::Schedule& sch : applied) {
           stack.emplace_back(sch, blocks);
         }
       }
