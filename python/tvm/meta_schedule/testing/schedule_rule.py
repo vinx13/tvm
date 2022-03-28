@@ -193,7 +193,7 @@ def multi_level_tiling_tensor_core(target: Target) -> ScheduleRule:
                 scope="shared",
             ),
             reuse_write=ReuseType(
-                req="must",
+                req="no",
                 levels=[3],
                 scope="local",
             ),

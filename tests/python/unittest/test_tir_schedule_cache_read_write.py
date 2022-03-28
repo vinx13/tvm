@@ -223,6 +223,22 @@ def func_with_block_predicate() -> None:
 
 
 @T.prim_func
+def GMM(A: T.Buffer[(512, 512), "float16"], B: T.Buffer[(512, 512), "float16"], C: T.Buffer[(512, 512), "float32"]) -> None:
+    # function attr dict
+    T.func_attr({"global_symbol": "main", "tir.noalias": True})
+    # body
+    # with T.block("root")
+    for i0, i1, i2 in T.grid(512, 512, 512):
+        with T.block("C"):
+            i, j, k = T.axis.remap("SSR", [i0, i1, i2])
+            T.reads(C[i, j], A[i, k], B[k, j])
+            T.writes(C[i, j])
+            with T.init():
+                C[i, j] = T.float32(0)
+            C[i, j] = C[i, j] + T.cast(A[i, k], "float32") * T.cast(B[k, j], "float32")
+
+
+@T.prim_func
 def Conv2D(var_inputs: T.handle, var_weight: T.handle, var_conv2d_nhwc: T.handle) -> None:
     inputs = T.match_buffer(var_inputs, [1, 224, 224, 3], align=128, offset_factor=1)
     weight = T.match_buffer(var_weight, [7, 7, 3, 64], align=128, offset_factor=1)
@@ -947,20 +963,22 @@ def test_cache_write_fail_invalid_storage_scope():
 def test_reindex_read():
     sch = tir.Schedule(Conv2D, debug_mask="all")
     block = sch.get_block("conv2d_nhwc")
-    print(sch.mod.script())
     sch.reindex(block, 1, False)
     print(sch.mod.script())
 
 
 def test_reindex_write():
-    pass
+    sch = tir.Schedule(GMM, debug_mask="all")
+    block = sch.get_block("C")
+    sch.reindex(block, 0, True)
+    print(sch.mod.script())
 
 
 def test_reindex_fail():
     pass
 
 
-
 if __name__ == "__main__":
     # sys.exit(pytest.main([__file__] + sys.argv[1:]))
     test_reindex_read()
+    test_reindex_write()

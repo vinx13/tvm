@@ -346,47 +346,6 @@ bool HasBeenMultiLevelTiled(const StmtSRef& block_sref);
 std::pair<Array<StmtSRef>, std::vector<int>> CollectComputeLocation(const ScheduleState& self,
                                                                     const StmtSRef& block_sref);
 
-/******** Tensorization ********/
-
-/*! \brief Necessary information used for tensorization */
-class TensorizeInfoNode : public Object {
- public:
-  /*! \brief Maps block loops to desc loops */
-  Map<tir::StmtSRef, tir::For> loop_map;
-  /*! \brief Maps loops in desc to its index, outer to inner */
-  Map<tir::For, Integer> desc_loop_indexer;
-
-  void VisitAttrs(tvm::AttrVisitor* v) {
-    v->Visit("loop_map", &loop_map);
-    v->Visit("desc_loop_indexer", &desc_loop_indexer);
-  }
-
-  static constexpr const char* _type_key = "tir.analysis.TensorizeInfo";
-  TVM_DECLARE_FINAL_OBJECT_INFO(TensorizeInfoNode, Object);
-};
-
-/*!
- * \brief Managed reference to TensorizeInfoNode
- * \sa TensorizeInfoNode
- */
-class TensorizeInfo : public ObjectRef {
- public:
-  TVM_DEFINE_NOTNULLABLE_OBJECT_REF_METHODS(TensorizeInfo, ObjectRef, TensorizeInfoNode);
-};
-
-/*!
- * \brief Check if the given block can be tensorized, and in the meantime gather the necessary
- * information for tensorization
- * \param self The schedule state
- * \param block_sref The block to be analyzed
- * \param desc_func The target function for tensorization
- * \return The necessary information used for tensorization, or NullOpt if the block cannot be
- * tensorized
- */
-TVM_DLL Optional<TensorizeInfo> GetTensorizeLoopMapping(const tir::ScheduleState& self,
-                                                        const tir::StmtSRef& block_sref,
-                                                        const tir::PrimFunc& desc_func);
-
 /******** Producer-consumer relation ********/
 
 /*!
@@ -803,6 +762,34 @@ class TensorizeInfo : public ObjectRef {
 Optional<TensorizeInfo> GetTensorizeLoopMapping(const tir::ScheduleState& self,
                                                 const tir::StmtSRef& block_sref,
                                                 const tir::PrimFunc& desc_func);
+
+class LayoutInfoNode : public Object {
+ public:
+  IndexMap mapping;
+  Map<Buffer, Buffer> lhs_buffer_map;
+  Map<Buffer, Array<PrimExpr>> lhs_indices_map, rhs_indices_map;
+  Array<IterVar> lhs_iters, rhs_iters;
+
+  void VisitAttrs(AttrVisitor* v) {
+    v->Visit("mapping", &mapping);
+    v->Visit("lhs_indices_map", &lhs_indices_map);
+    v->Visit("rhs_indices_map", &rhs_indices_map);
+    v->Visit("lhs_iters", &lhs_iters);
+    v->Visit("rhs_iters", &rhs_iters);
+  }
+
+  static constexpr const char* _type_key = "tir.analysis.LayoutInfo";
+  TVM_DECLARE_FINAL_OBJECT_INFO(LayoutInfoNode, Object);
+};
+
+class LayoutInfo : public ObjectRef {
+ public:
+  TVM_DEFINE_NOTNULLABLE_OBJECT_REF_METHODS(LayoutInfo, ObjectRef, LayoutInfoNode);
+};
+
+Optional<LayoutInfo> GetTensorizeLayoutInfo(const tir::ScheduleState& self,
+                                            const tir::StmtSRef& block_sref,
+                                            const tir::PrimFunc& desc_func);
 
 }  // namespace tir
 }  // namespace tvm

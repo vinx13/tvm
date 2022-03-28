@@ -1052,7 +1052,7 @@ StmtSRef ReIndex(ScheduleState self, const StmtSRef& block_sref, int buffer_inde
     ICHECK(outer->body.get() == inner);
     loop = loop->parent;
   }
-  info.loc_pos = loop->seq_index;
+  info.loc_pos = loop->seq_index == -1 ? 0 : loop->seq_index;
   if (is_write_index) {
     info.loc_pos++;
   }
@@ -1146,10 +1146,10 @@ struct ReIndexTraits : public UnpackedInstTraits<ReIndexTraits> {
 
   static String UnpackedAsPython(Array<String> outputs, String block, Integer buffer_index,
                                  Bool is_write_index) {
-    PythonAPICall py("cache_read");
+    PythonAPICall py("reindex");
     py.Input("block", block);
     py.Input("buffer_index", buffer_index);
-    py.Input("is_write_index", is_write_index);
+    py.Input("is_write_index", is_write_index.operator bool());
     py.SingleOutput(outputs);
     return py.Str();
   }
