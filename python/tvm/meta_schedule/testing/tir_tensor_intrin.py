@@ -95,51 +95,86 @@ def dot_product_impl(a: T.handle, b: T.handle, c: T.handle) -> None:
         )
 
 
+# @T.prim_func
+# def wmma_sync_desc(a: T.handle, b: T.handle, c: T.handle) -> None:
+#     A = T.match_buffer(a, (16, 16), "float16", align=128, offset_factor=1, scope="wmma.matrix_a")
+#     B = T.match_buffer(b, (16, 16), "float16", align=128, offset_factor=1, scope="wmma.matrix_b")
+#     C = T.match_buffer(c, (16, 16), "float32", align=128, offset_factor=1, scope="wmma.accumulator")
+
+#     with T.block("root"):
+#         for i, j, k in T.grid(16, 16, 16):
+#             with T.block("update"):
+#                 vii, vjj, vkk = T.axis.remap("SSR", [i, j, k])
+#                 C[vii, vjj] = C[vii, vjj] + T.cast(A[vii, vkk], "float32") * T.cast(
+#                     B[vkk, vjj], "float32"
+#                 )
+
+
+# @T.prim_func
+# def wmma_sync_impl(a: T.handle, b: T.handle, c: T.handle) -> None:
+#     A = T.match_buffer(a, (16, 16), "float16", align=128, offset_factor=16, scope="wmma.matrix_a")
+#     B = T.match_buffer(b, (16, 16), "float16", align=128, offset_factor=16, scope="wmma.matrix_b")
+#     C = T.match_buffer(
+#         c, (16, 16), "float32", align=128, offset_factor=16, scope="wmma.accumulator"
+#     )
+
+#     with T.block("root"):
+#         T.reads(
+#             [
+#                 C[0:16, 0:16],
+#                 A[0:16, 0:16],
+#                 B[0:16, 0:16],
+#             ]
+#         )
+#         T.writes(C[0:16, 0:16])
+#         T.evaluate(
+#             T.tvm_mma_sync(
+#                 C.data,
+#                 C.elem_offset // 256 + T.floordiv(T.floormod(C.elem_offset, 256), 16),
+#                 A.data,
+#                 A.elem_offset // 256 + T.floordiv(T.floormod(A.elem_offset, 256), 16),
+#                 B.data,
+#                 B.elem_offset // 256 + T.floordiv(T.floormod(B.elem_offset, 256), 16),
+#                 C.data,
+#                 C.elem_offset // 256 + T.floordiv(T.floormod(C.elem_offset, 256), 16),
+#                 dtype="handle",
+#             )
+#         )
+
 @T.prim_func
 def wmma_sync_desc(a: T.handle, b: T.handle, c: T.handle) -> None:
-    A = T.match_buffer(a, (16, 16), "float16", align=128, offset_factor=1, scope="wmma.matrix_a")
-    B = T.match_buffer(b, (16, 16), "float16", align=128, offset_factor=1, scope="wmma.matrix_b")
-    C = T.match_buffer(c, (16, 16), "float32", align=128, offset_factor=1, scope="wmma.accumulator")
+    A = T.match_buffer(a, (16, 16), "float16", align=128, offset_factor=16,
+                       scope="wmma.matrix_a")
+    B = T.match_buffer(b, (16, 16), "float16", align=128, offset_factor=16,
+                       scope="wmma.matrix_b")
+    C = T.match_buffer(c, (16, 16), "float32", align=128, offset_factor=16,
+                       scope="wmma.accumulator")
 
     with T.block("root"):
+        T.reads(C[0 : 16, 0 : 16], A[0 : 16, 0 : 16], B[0: 16, 0 : 16])
+        T.writes(C[0 : 16, 0 : 16])
         for i, j, k in T.grid(16, 16, 16):
-            with T.block("update"):
+            with T.block(""):
                 vii, vjj, vkk = T.axis.remap("SSR", [i, j, k])
-                C[vii, vjj] = C[vii, vjj] + T.cast(A[vii, vkk], "float32") * T.cast(
-                    B[vkk, vjj], "float32"
-                )
+                C[vii, vjj] = C[vii, vjj] + T.cast(A[vii, vkk], 'float32') * T.cast(B[vjj, vkk], 'float32')
 
 
 @T.prim_func
 def wmma_sync_impl(a: T.handle, b: T.handle, c: T.handle) -> None:
-    A = T.match_buffer(a, (16, 16), "float16", align=128, offset_factor=16, scope="wmma.matrix_a")
-    B = T.match_buffer(b, (16, 16), "float16", align=128, offset_factor=16, scope="wmma.matrix_b")
-    C = T.match_buffer(
-        c, (16, 16), "float32", align=128, offset_factor=16, scope="wmma.accumulator"
-    )
+    A = T.match_buffer(a, (16, 16), "float16", align=128, offset_factor=16,
+                       scope="wmma.matrix_a")
+    B = T.match_buffer(b, (16, 16), "float16", align=128, offset_factor=16,
+                       scope="wmma.matrix_b")
+    C = T.match_buffer(c, (16, 16), "float32", align=128, offset_factor=16,
+                       scope="wmma.accumulator")
 
     with T.block("root"):
-        T.reads(
-            [
-                C[0:16, 0:16],
-                A[0:16, 0:16],
-                B[0:16, 0:16],
-            ]
-        )
-        T.writes(C[0:16, 0:16])
-        T.evaluate(
-            T.tvm_mma_sync(
-                C.data,
-                C.elem_offset // 256 + T.floordiv(T.floormod(C.elem_offset, 256), 16),
-                A.data,
-                A.elem_offset // 256 + T.floordiv(T.floormod(A.elem_offset, 256), 16),
-                B.data,
-                B.elem_offset // 256 + T.floordiv(T.floormod(B.elem_offset, 256), 16),
-                C.data,
-                C.elem_offset // 256 + T.floordiv(T.floormod(C.elem_offset, 256), 16),
-                dtype="handle",
-            )
-        )
+        T.reads(C[0 : 16, 0 : 16], A[0 : 16, 0 : 16], B[0: 16, 0 : 16])
+        T.writes(C[0 : 16, 0 : 16])
+        T.evaluate(T.tvm_mma_sync(C.data, C.elem_offset // 256 + T.floordiv(T.floormod(C.elem_offset, 256), 16),
+                                  A.data, A.elem_offset // 256,
+                                  B.data, B.elem_offset // 256,
+                                  C.data, C.elem_offset // 256 + T.floordiv(T.floormod(C.elem_offset, 256), 16), dtype='handle'))
 
 
 @T.prim_func

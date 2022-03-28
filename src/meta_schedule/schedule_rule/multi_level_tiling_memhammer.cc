@@ -19,7 +19,8 @@
 #include <unordered_map>
 
 #include "../utils.h"
-#include "analysis.h"
+#include "./analysis.h"
+#include "./multi_level_tiling.h"
 
 namespace tvm {
 namespace meta_schedule {
@@ -260,7 +261,7 @@ inline std::vector<State> MultiLevelTilingMemHammerNode::TileLoopNest(State stat
     // Do the split
     int n_tiles = idx->size();
     LoopRV loop = loops[i];
-    Array<ExprRV> factors = sch->SamplePerfectTile(
+    Array<tir::ExprRV> factors = sch->SamplePerfectTile(
         /*loop=*/loop,
         /*n=*/n_tiles,
         /*max_innermost_factor=*/max_innermost_factor);

@@ -268,13 +268,14 @@ s.annotate(cache_write,"vector_bytes", 16)
 s.compute_inline(s.get_block('im2col_data'))
 s.compute_inline(s.get_block('im2col_weight'))
 
-
 init_block = s.decompose_reduction(gemm, k0)
 init_inner = s.get_child_blocks(init_block)[0]
 s.tensorize(s.get_loops(init_inner)[-2], 'wmma.fill')
 s.tensorize(gemm, 'wmma.mma_sync')
 root_block = s.get_block("root")
 s.annotate(root_block, "warp_execution", True)
+
+print(s.mod['main'].script())
 
 dev = tvm.device("cuda", 0)
 
@@ -286,12 +287,12 @@ a_tvm = tvm.nd.array(a_np.astype('float16'), device=dev)
 b_tvm = tvm.nd.array(b_np.astype('float16'), device=dev)
 c_tvm = tvm.nd.empty(c_np.shape, device=dev)
 
-print(s.mod['main'].script())
-print(tvm.lower(s.mod['main'], simple_mode=True))
+# print(s.mod['main'].script())
+# print(tvm.lower(s.mod['main'], simple_mode=True))
 
 with tvm.target.cuda():
     f = tvm.build(s.mod['main'])
-    print(f.imported_modules[0].get_source())
+    # print(f.imported_modules[0].get_source())
 
     f(a_tvm, b_tvm, c_tvm)
 

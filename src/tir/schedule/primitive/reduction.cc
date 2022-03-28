@@ -577,14 +577,11 @@ class BaseBlockCreator {
     for (int i = 0; i < n_block_iters_; ++i) {
       CreateNormalIters(i);
     }
-    bool has_reduce_iter = false;
-    for (const IterVar& iter_var : iter_vars_) {
-      if (iter_var->iter_type == IterVarType::kCommReduce) {
-        has_reduce_iter = true;
-        break;
-      }
+    if (!additional_iter_.defined()) {
+      ICHECK(arith::Analyzer().CanProveEqual(rf_loop_->extent, Integer(1)));
+      CreateAdditionalIter();
     }
-    CreateReductionUpdate(has_reduce_iter);
+    CreateReductionUpdate();
     CreateReadWriteRegions();
 
     String new_block_name = old_block_realize_->block->name_hint;
@@ -593,17 +590,15 @@ class BaseBlockCreator {
       new_block_name = new_block_name + "_rf";
       predicate = old_block_realize_->predicate;
     }
-    Optional<Stmt> init_block =
-        has_reduce_iter ? BufferStore(new_reduction_update_->buffer, reducer_->identity_element[0],
-                                      new_reduction_update_->indices)
-                        : Optional<Stmt>(NullOpt);
     new_block_ = Block(
         /*iter_vars=*/iter_vars_,
         /*reads=*/read_regions_,
         /*writes=*/write_regions_,
         /*name_hint=*/new_block_name,
         /*body=*/new_reduction_update_,
-        /*init=*/init_block,
+        /*init=*/
+        BufferStore(new_reduction_update_->buffer, reducer_->identity_element[0],
+                    new_reduction_update_->indices),
         /*alloc_buffers=*/{},
         /*match_buffers=*/{},
         /*annotations=*/old_block_realize_->block->annotations);
@@ -613,7 +608,7 @@ class BaseBlockCreator {
  private:
   virtual void CreateAdditionalIter() = 0;
   virtual void CreateNormalIters(int idx) = 0;
-  virtual void CreateReductionUpdate(bool has_reduce_iter) = 0;
+  virtual void CreateReductionUpdate() = 0;
   virtual void CreateReadWriteRegions() = 0;
 
  public:
@@ -739,17 +734,21 @@ class RFactorBlockCreator : public BaseBlockCreator {
     var_map_.Set(old_iter->var, Substitute(old_binding, loop_var2block_binding_));
   }
 
-  void CreateReductionUpdate(bool has_reduce_iter) final {
+  void CreateAdditionalIter() final {
+    additional_iter_ = IterVarFromLoop(rf_loop_, "v" + rf_loop_->loop_var->name_hint, kDataPar);
+    iter_vars_.insert(iter_vars_.end(), additional_iter_);
+    iter_values_.insert(iter_values_.end(), rf_loop_->loop_var);
+    loop_var2block_binding_[rf_loop_->loop_var.get()] = additional_iter_;
+  }
+
+  void CreateReductionUpdate() final {
     rf_buf_access_indices_ = old_reduction_update_->indices;
     rf_buf_access_indices_.insert(rf_buf_access_indices_.begin() + factor_axis_,
                                   additional_iter_->var);
-    PrimExpr rhs{nullptr};
-    if (has_reduce_iter) {
-      rhs = (*reducer_.get())({BufferLoad(rf_buffer_, rf_buf_access_indices_)}, {combiner_rhs_})[0];
-    } else {
-      rhs = combiner_rhs_;
-    }
-    new_reduction_update_ = BufferStore(rf_buffer_, rhs, rf_buf_access_indices_);
+    new_reduction_update_ = BufferStore(
+        rf_buffer_,
+        (*reducer_.get())({BufferLoad(rf_buffer_, rf_buf_access_indices_)}, {combiner_rhs_})[0],
+        rf_buf_access_indices_);
     new_reduction_update_ = Downcast<BufferStore>(Substitute(new_reduction_update_, var_map_));
   }
 
@@ -841,7 +840,7 @@ class WriteBackBlockCreator : public BaseBlockCreator {
     }
   }
 
-  void CreateReductionUpdate(bool has_reduce_iter) final {
+  void CreateReductionUpdate() final {
     wb_lhs_ = Downcast<BufferLoad>(Substitute(combiner_lhs_, var_map_));
     wb_rhs_ =
         Downcast<BufferLoad>(Substitute(BufferLoad(rf_buffer_, rf_buf_access_indices_), var_map_));

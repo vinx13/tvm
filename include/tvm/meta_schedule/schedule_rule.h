@@ -138,6 +138,7 @@ class ScheduleRule : public runtime::ObjectRef {
    * - NullOpt on CPU
    * - [blockIdx.x, vthread.x, threadIdx.x] on GPU
    * \param use_tensor_core Whether to apply tensor core wmma intrinsic for the computation
+   * \param add_local_stage Whether to add local stage when loading from global to shared
    * \param max_innermost_factor The maximum size of the innermost factor. NullOpt means no limit
    * \param vector_load_lens The length of vector lane in vectorized cooperative fetching.
    * NullOpt means disable vectorization
@@ -148,6 +149,7 @@ class ScheduleRule : public runtime::ObjectRef {
   TVM_DLL static ScheduleRule MultiLevelTiling(String structure,                             //
                                                Optional<Array<String>> tile_binds,           //
                                                bool use_tensor_core,                         //
+                                               bool add_local_stage,                         //
                                                Optional<Integer> max_innermost_factor,       //
                                                Optional<Array<Integer>> vector_load_lens,    //
                                                Optional<Map<String, ObjectRef>> reuse_read,  //
