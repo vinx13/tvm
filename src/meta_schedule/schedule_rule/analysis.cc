@@ -174,21 +174,3 @@ void FallbackRule(const For& loop, Array<Integer>* stage, Array<Integer>* order)
 }  // namespace tir
 }  // namespace tvm
 
-namespace tvm {
-namespace meta_schedule {
-
-ReuseType Str2ReuseType(const String& str) {
-  if (str == "no") {
-    return ReuseType::kNoReuse;
-  } else if (str == "may") {
-    return ReuseType::kMayReuse;
-  } else if (str == "must") {
-    return ReuseType::kMustReuse;
-  } else {
-    LOG(FATAL) << "ValueError: Unknown ReuseType: " << str;
-    throw;
-  }
-}
-
-}  // namespace meta_schedule
-}  // namespace tvm

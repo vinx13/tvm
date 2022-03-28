@@ -975,8 +975,7 @@ class AutoTensorizeExtractor : public TensorizeComparator {
   bool CompareArray(const Array<T>& lhs, const Array<T>& rhs, F cmp);
 
  public:
-  std::vector<IterVar> lhs_spatial_, rhs_spatial_;
-  std::vector<IterVar> lhs_reduce_, rhs_reduce_;
+  std::vector<IterVar> lhs_iters_, rhs_iters_;
   std::unordered_map<Buffer, Array<PrimExpr>, ObjectPtrHash, ObjectPtrEqual>
       lhs_buffer_indices_map_;
   std::unordered_map<Buffer, Array<PrimExpr>, ObjectPtrHash, ObjectPtrEqual>
@@ -1011,22 +1010,20 @@ bool AutoTensorizeExtractor::VisitStmt_(const BlockNode* op, const Stmt& other) 
       inner_iter_dom_map_.Set(block_iter->var, arith::IntSet::FromRange(block_iter->dom));
     }
   } else {
-    auto iter_collect = [&](const BlockNode* op, std::vector<IterVar>& spatial,
-                            std::vector<IterVar>& reduce) -> bool {
+    auto iter_collect = [&](const BlockNode* op, std::vector<IterVar>& iters) -> bool {
       for (const auto& iter : op->iter_vars) {
         analyzer_.Bind(iter->var, iter->dom);
-        if (iter->iter_type == IterVarType::kDataPar) {
-          spatial.push_back(iter);
-        } else if (iter->iter_type == IterVarType::kCommReduce) {
-          reduce.push_back(iter);
+        if (iter->iter_type == IterVarType::kDataPar ||
+            iter->iter_type == IterVarType::kCommReduce) {
+          iters.push_back(iter);
         } else {
           return false;
         }
       }
       return true;
     };
-    if (!iter_collect(op, lhs_spatial_, lhs_reduce_)) return false;
-    if (!iter_collect(rhs, rhs_spatial_, rhs_reduce_)) return false;
+    if (!iter_collect(op, lhs_iters_)) return false;
+    if (!iter_collect(rhs, rhs_iters_)) return false;
   }
   is_scope_block = false;
   return VisitStmt(op->body, rhs->body);
@@ -1164,24 +1161,55 @@ class MappingProposer {
         lhs_feasible_vars_[lhs_var].insert(it.first);
       }
     }
+    for (const auto& iter : extractor_->lhs_iters_) {
+      lhs_representers.push_back(iter->var.copy_with_suffix("_l"));
+    }
+    for (const auto& it : extractor_->rhs_buffer_map_) {
+      lhs_buffer_map_[it.second] = it.first;
+    }
   }
 
-  void ProposeAllFuseMapping() {}
+  void ProposeAllFuseMapping() {
+    std::unordered_map<Var, PrimExpr, ObjectPtrHash, ObjectPtrEqual> fused_iter, extent_map;
+    for (const auto& iter : extractor_->rhs_iters_) {
+      fused_iter[iter->var] = 0;
+    }
+    for (const auto& iter : extractor_->lhs_iters_) {
+      extent_map[iter->var] = iter->dom->extent;
+    }
+    std::vector<PrimExpr> tgt_iters;
+    for (size_t i = 0; i < extractor_->lhs_iters_.size(); ++i) {
+      const VarSet& feasible = lhs_feasible_vars_[extractor_->lhs_iters_[i]->var];
+      if (feasible.empty()) {
+        tgt_iters.push_back(lhs_representers[i]);
+      } else if (feasible.size() == 1) {
+        Var rhs_var = *feasible.begin();
+        fused_iter[rhs_var] =
+            fused_iter[rhs_var] * extent_map[extractor_->lhs_iters_[i]->var] + lhs_representers[i];
+      } else {
+        // give up this proposal
+        return;
+      }
+    }
+    arith::Analyzer analyzer;
+    for (const auto& iter : extractor_->rhs_iters_) {
+      tgt_iters.push_back(analyzer.Simplify(fused_iter[iter->var]));
+    }
+    mappings_.emplace_back(lhs_representers, tgt_iters);
+  }
 
+ public:
+  std::vector<Var> lhs_representers;
+  std::unordered_map<Buffer, Buffer, ObjectHash, ObjectEqual> lhs_buffer_map_;
   std::unordered_map<Var, VarSet, ObjectPtrHash, ObjectPtrEqual> rhs_feasible_vars_;
   std::unordered_map<Var, VarSet, ObjectPtrHash, ObjectPtrEqual> lhs_feasible_vars_;
   std::vector<IndexMap> mappings_;
   AutoTensorizeExtractor* extractor_;
 };
 
-Optional<TensorizeInfo> GetTensorizeLoopMapping(const tir::ScheduleState& self,
-                                                const tir::StmtSRef& block_sref,
-                                                const tir::PrimFunc& desc_func) {
-  // Try to do tiling automatically if possible
-  // Now the heuristic is that if block's block var binding is constant + loop var,
-  // in other words, with tir.block(..., vi=Ci+i, vj=Cj+j, vk=Ck+k), then we split and reorder
-  // i, j, k according to the loops outside desc_block
-  // Collect the loops outside block
+Optional<LayoutInfo> GetTensorizeLayoutInfo(const tir::ScheduleState& self,
+                                            const tir::StmtSRef& block_sref,
+                                            const tir::PrimFunc& desc_func) {
   arith::Analyzer analyzer;
   const tir::BlockRealize& block = tir::GetBlockRealize(self, block_sref);
   // Step 1. Analyze desc_func, extract its block, loops and loop vars
@@ -1221,106 +1249,22 @@ Optional<TensorizeInfo> GetTensorizeLoopMapping(const tir::ScheduleState& self,
   if (!extractor.VisitStmt(block->block, desc_block->block)) {
     return NullOpt;
   }
-  LOG(INFO) << Map<Buffer, Buffer>(extractor.rhs_buffer_map_);
-  LOG(INFO) << Map<Buffer, Array<PrimExpr>>(extractor.lhs_buffer_indices_map_);
-  LOG(INFO) << Map<Buffer, Array<PrimExpr>>(extractor.rhs_buffer_indices_map_);
-  LOG(INFO) << Array<IterVar>(extractor.lhs_spatial_) << " "
-            << Array<IterVar>(extractor.lhs_reduce_);
-  LOG(INFO) << Array<IterVar>(extractor.rhs_spatial_) << " "
-            << Array<IterVar>(extractor.rhs_reduce_);
   proposer.Propose();
-  // Step 3. Extract the loops on top of the block. It is a mirror step of Step 1
-  std::vector<const tir::ForNode*> block_loops;
-  std::unordered_set<const tir::VarNode*> block_loop_vars;
-  {
-    for (const tir::StmtSRefNode* loop_sref = block_sref->parent;; loop_sref = loop_sref->parent) {
-      const auto* loop = loop_sref->StmtAs<tir::ForNode>();
-      if (loop == nullptr || loop->body->IsInstance<tir::SeqStmtNode>()) {
-        break;
-      }
-      block_loops.push_back(loop);
-      block_loop_vars.insert(loop->loop_var.get());
-      if (!analyzer.CanProve(loop->min == 0)) {
-        return NullOpt;
-      }
-    }
-    std::reverse(block_loops.begin(), block_loops.end());
-  }
-  // Step 4. Map from block loops to desc block loops
-  ObjectPtr<TensorizeInfoNode> ret = make_object<TensorizeInfoNode>();
-  int n_block_vars = block->iter_values.size();
-  int n_desc_vars = desc_block->iter_values.size();
-  int offset = n_block_vars - n_desc_vars;
-  if (offset < 0) {
+  if (proposer.mappings_.empty()) {
     return NullOpt;
   }
-  // We align the block and desc block's bindings from the right side
-  // block     (v0=..., v1=..., v2=...)
-  //                    ^ i_block
-  // desc_block(        v1=..., v2=...)
-  //                    ^ i_desc
-  for (int i_desc = 0, i_block = offset; i_desc < n_desc_vars; ++i_desc, ++i_block) {
-    // For each block var binding, we find
-    const PrimExpr& block_bind = block->iter_values[i_block];
-    const PrimExpr& desc_bind = desc_block->iter_values[i_desc];
-    // Step 4.1. Find the corresponding loop of the i-th block var of block
-    const tir::ForNode* block_loop = nullptr;
-    for (int i = 0, n = block_loops.size(); i < n; ++i) {
-      // Check if block_bind = block_loops[i]->loop_var + stuff-irrelevant-of-loop-vars
-      PrimExpr r = analyzer.Simplify(block_bind - block_loops[i]->loop_var);
-      if (!UsesVar(r,
-                   [&block_loop_vars](const VarNode* var) { return block_loop_vars.count(var); })) {
-        block_loop = block_loops[i];
-        break;
-      }
-    }
-    if (block_loop == nullptr) {
-      return NullOpt;
-    }
-    // Step 4.2. Find the corresponding loop of the i-th block var of desc
-    const tir::ForNode* desc_loop = nullptr;
-    for (int i = 0, n = desc_loops.size(); i < n; ++i) {
-      // Check if desc_bind = loops[i]->loop_var + stuff-irrelevant-of-loop-vars
-      PrimExpr r = analyzer.Simplify(desc_bind - desc_loops[i]->loop_var);
-      if (!UsesVar(r,
-                   [&desc_loop_vars](const VarNode* var) { return desc_loop_vars.count(var); })) {
-        desc_loop = desc_loops[i];
-        break;
-      }
-    }
-    if (block_loop == nullptr) {
-      return NullOpt;
-    }
-    // Step 4.3. Check divisibility of loop extents
-    PrimExpr block_extent = analyzer.Simplify(block_loop->extent);
-    PrimExpr desc_extent = analyzer.Simplify(desc_loop->extent);
-    if (const auto* int_block_extent = block_extent.as<IntImmNode>()) {
-      if (const auto* int_desc_extent = desc_extent.as<IntImmNode>()) {
-        if (int_block_extent->value % int_desc_extent->value != 0) {
-          return NullOpt;
-        }
-      } else {
-        return NullOpt;
-      }
-    } else {
-      return NullOpt;
-    }
-    // Step 4.4. Maps the result of Step 4.1 to Step 4.2
-    const tir::StmtSRef& block_loop_sref = self->stmt2ref[block_loop];
-    auto it = ret->loop_map.find(block_loop_sref);
-    if (it == ret->loop_map.end()) {
-      ret->loop_map.Set(block_loop_sref, GetRef<tir::For>(desc_loop));
-    } else if ((*it).second.get() != desc_loop) {
-      return NullOpt;
-    }
-  }
-  for (int i = 0, n = desc_loops.size(); i < n; ++i) {
-    ret->desc_loop_indexer.Set(GetRef<tir::For>(desc_loops[i]), Integer(i));
-  }
-  return TensorizeInfo(ret);
+  ObjectPtr<LayoutInfoNode> ret = make_object<LayoutInfoNode>();
+  // Only using 1 layout now
+  ret->mapping = std::move(proposer.mappings_[0]);
+  ret->lhs_buffer_map = std::move(proposer.lhs_buffer_map_);
+  ret->lhs_indices_map = std::move(extractor.lhs_buffer_indices_map_);
+  ret->rhs_indices_map = std::move(extractor.rhs_buffer_indices_map_);
+  ret->lhs_iters = std::move(extractor.lhs_iters_);
+  ret->rhs_iters = std::move(extractor.rhs_iters_);
+  return LayoutInfo(ret);
 }
 
-TVM_REGISTER_NODE_TYPE(TensorizeInfoNode);
+TVM_REGISTER_NODE_TYPE(LayoutInfoNode);
 
 /******** Producer-consumer relation ********/
 
