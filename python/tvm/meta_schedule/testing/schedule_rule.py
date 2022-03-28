@@ -195,7 +195,7 @@ def multi_level_tiling_tensor_core(target: Target) -> ScheduleRule:
             reuse_write=ReuseType(
                 req="must",
                 levels=[3],
-                scope="local",
+                scope="shared",
             ),
         )
     raise NotImplementedError(f"{target.kind.name} is not supported")

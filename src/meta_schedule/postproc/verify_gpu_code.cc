@@ -64,6 +64,9 @@ class ThreadExtentChecker : private StmtVisitor {
   }
 
   void VisitStmt_(const BlockNode* block) {
+    if (block->annotations.count(attr::meta_schedule_tensor_core_enabled)) {
+      thread_extent_product *= 32;
+    }
     if (Optional<Integer> low_inclusive =
             GetAnn<Integer>(block, attr::meta_schedule_thread_extent_low_inclusive)) {
       if (Optional<Integer> high_inclusive =
