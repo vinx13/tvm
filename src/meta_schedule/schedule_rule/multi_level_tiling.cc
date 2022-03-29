@@ -279,6 +279,9 @@ inline std::vector<State> MultiLevelTilingNode::SeekForTensorCore(State state) c
   // Annotate the root block to notify the following postprocessors
   state.sch->Annotate(GetRootBlockRV(state.sch, state.block_rv),
                       tir::attr::meta_schedule_tensor_core_enabled, String("1"));
+  // Annotate the root block to represent the constraint that the extent of threadIdx.x should be 32
+  state.sch->Annotate(GetRootBlockRV(state.sch, state.block_rv), tir::attr::warp_execution,
+                      Integer(1));
   result.push_back(state);
   return result;
 }
@@ -468,7 +471,7 @@ inline std::vector<State> MultiLevelTilingNode::AddReadReuse(State state) const 
     Array<Integer> order;
     if (tir::IsCacheReadSharedPattern(loop)) {
       stage = {0, 0, 0, 0, 0, 1, 1};
-      order = {0, 3, 1, 4, 5, 2, 6};
+      order = {0, 1, 3, 4, 5, 2, 6};
     } else {
       tir::FallbackRule(loop, &stage, &order);
     }
