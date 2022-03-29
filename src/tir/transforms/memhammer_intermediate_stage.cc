@@ -139,6 +139,10 @@ class IndexPatternFinder : public ExprVisitor {
             if (extent > max) {
               extent = std::max(1l, max);
             }
+            if (max % extent != 0) {
+              success_=false;
+              return;
+            }
             index = floordiv(index, Integer(o.operand));
             break;
           case Operator::OpKind::FloorMod:
@@ -274,8 +278,9 @@ std::pair<Stmt, SeqStmt> InsertCacheStage(Stmt stmt, bool is_write_cache, String
       new_shape.push_back(loop->extent);
     }
   }
-  for (int i = 0; i < static_cast<int>(loops_under_compute_location.size()); i++) {
-    const ForNode* loop = loops_under_compute_location[i];
+  
+  for (int i = 0; i < static_cast<int>(relaxed_thread_loops.size()); i++) {
+    const ForNode* loop = relaxed_thread_loops[i];
     Var new_loop_var = loop->loop_var.copy_with_suffix("_cache");
     new_loop_vars.push_back(new_loop_var);
     subst_map.Set(loop->loop_var, new_loop_var);
@@ -283,8 +288,8 @@ std::pair<Stmt, SeqStmt> InsertCacheStage(Stmt stmt, bool is_write_cache, String
       cache_indices.push_back(loop->loop_var);
     }
   }
-  for (int i = 0; i < static_cast<int>(relaxed_thread_loops.size()); i++) {
-    const ForNode* loop = relaxed_thread_loops[i];
+  for (int i = 0; i < static_cast<int>(loops_under_compute_location.size()); i++) {
+    const ForNode* loop = loops_under_compute_location[i];
     Var new_loop_var = loop->loop_var.copy_with_suffix("_cache");
     new_loop_vars.push_back(new_loop_var);
     subst_map.Set(loop->loop_var, new_loop_var);
@@ -320,18 +325,18 @@ std::pair<Stmt, SeqStmt> InsertCacheStage(Stmt stmt, bool is_write_cache, String
     PrimExpr subst_predicate = Substitute(predicate.value(), subst_map);
     generate_body = IfThenElse(subst_predicate, generate_body);
   }
-
+  
   for (int i = static_cast<int>(loops_under_compute_location.size()) - 1; i >= 0; i--) {
     const ForNode* orig_loop = loops_under_compute_location[i];
     ObjectPtr<ForNode> new_loop = make_object<ForNode>(*orig_loop);
-    new_loop->loop_var = new_loop_vars[i];
+    new_loop->loop_var = new_loop_vars[i+relaxed_thread_loops.size()];
     new_loop->body = generate_body;
     generate_body = For(new_loop);
   }
   for (int i = static_cast<int>(relaxed_thread_loops.size()) - 1; i >= 0; i--) {
     const ForNode* orig_loop = relaxed_thread_loops[i];
     ObjectPtr<ForNode> new_loop = make_object<ForNode>(*orig_loop);
-    new_loop->loop_var = new_loop_vars[i+loops_under_compute_location.size()];
+    new_loop->loop_var = new_loop_vars[i];
     new_loop->body = generate_body;
     new_loop->kind = ForKind::kSerial;
     new_loop->thread_binding = NullOpt;
