@@ -121,6 +121,10 @@ bool RewriteCooperativeFetchNode::Apply(const tir::Schedule& sch) {
       thread_extent_y = new_thread_extent.value()->value;
       continue;
     }
+    if (tir::ParseTensorCoreAnn(sch, inst)) {
+      thread_extent_x = 32;
+      continue;
+    }
     Optional<tir::BlockRV> opt_block_rv = tir::ParseAnnotate(sch, inst, &vector_lane);
     if (!opt_block_rv.defined()) {
       continue;
@@ -166,6 +170,7 @@ bool RewriteCooperativeFetchNode::Apply(const tir::Schedule& sch) {
           sch->Bind(split[1], "threadIdx.x");
         }
       }
+      sch->StorageAlign(block, 0, -2, 32, 8);
     };
     tasks.push_back(task);
   }
