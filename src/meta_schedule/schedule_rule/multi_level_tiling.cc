@@ -66,18 +66,18 @@ class MultiLevelTilingNode : public ScheduleRuleNode {
     }
 
     state.tensor_core_reindex_store = state.sch->ReIndex(block_rv, 0, true);
-    state.tensor_core_reindex_A = state.sch->ReIndex(block_rv, 1, false);
-    state.tensor_core_reindex_B = state.sch->ReIndex(block_rv, 2, false);
+    state.tensor_core_reindex_A = state.sch->ReIndex(block_rv, 0, false);
+    state.tensor_core_reindex_B = state.sch->ReIndex(block_rv, 1, false);
     state.sch->TransformBlockLayout(state.tensor_core_reindex_store.value(), info->mapping);
     state.sch->TransformBlockLayout(state.tensor_core_reindex_A.value(), info->mapping);
     state.sch->TransformBlockLayout(state.tensor_core_reindex_B.value(), info->mapping);
     state.sch->TransformBlockLayout(state.block_rv, info->mapping);
 
-    size_t offset = info->mapping->tgt_iters.size() - info->rhs_iters.size();
+    size_t offset = info->mapping->final_indices.size() - info->rhs_iters.size();
     std::unordered_map<tir::Var, PrimExpr, ObjectPtrHash, ObjectPtrEqual> tgt_iter_map;
 
-    for (size_t i = offset; i < info->mapping->tgt_iters.size(); ++i) {
-      tgt_iter_map[info->rhs_iters[i - offset]->var] = info->mapping->tgt_iters[i];
+    for (size_t i = offset; i < info->mapping->final_indices.size(); ++i) {
+      tgt_iter_map[info->rhs_iters[i - offset]->var] = info->mapping->final_indices[i];
     }
 
     for (const auto& it : buffers) {
@@ -98,8 +98,8 @@ class MultiLevelTilingNode : public ScheduleRuleNode {
       }
       for (size_t i = 0; i < offset; ++i) {
         if (covered.count(info->lhs_iters[i]->var)) {
-          covered.insert(info->mapping->src_iters[i]);
-          new_tgt_iters.push_back(info->mapping->tgt_iters[i]);
+          covered.insert(info->mapping->initial_indices[i]);
+          new_tgt_iters.push_back(info->mapping->final_indices[i]);
         }
       }
       for (size_t i = 0; i < info->rhs_indices_map[rhs_buffer].size(); ++i) {
@@ -109,12 +109,13 @@ class MultiLevelTilingNode : public ScheduleRuleNode {
         tir::PreOrderVisit(new_tgt_iters.back(), collect);
       }
       // new representers
-      for (const auto& representer : info->mapping->src_iters) {
+      for (const auto& representer : info->mapping->initial_indices) {
         if (covered.count(representer)) {
           new_representers.push_back(representer);
         }
       }
-      state.sch->TransformLayout(state.block_rv, it.second.first, it.second.second,
+      state.sch->TransformLayout(state.block_rv, it.second.first,
+                                 it.second.second ? tir::BufferIndexType::kWrite : tir::BufferIndexType::kRead,
                                  tir::IndexMap(new_representers, new_tgt_iters));
     }
 
@@ -126,9 +127,9 @@ class MultiLevelTilingNode : public ScheduleRuleNode {
     const Array<LoopRV>& r_tiles = state.tiles[r_indices_[r_indices_.size() - 2]];
     ICHECK(!r_tiles.empty()) << "ValueError: Cannot find the suitable reduction loop in the block";
     state.tensor_core_load_A =
-        state.sch->ReadAt(r_tiles.back(), state.block_rv, 1, "wmma.matrix_a");
+        state.sch->ReadAt(r_tiles.back(), state.block_rv, 0, "wmma.matrix_a");
     state.tensor_core_load_B =
-        state.sch->ReadAt(r_tiles.back(), state.block_rv, 2, "wmma.matrix_b");
+        state.sch->ReadAt(r_tiles.back(), state.block_rv, 1, "wmma.matrix_b");
     state.sch->ComputeInline(state.tensor_core_reindex_A.value());
     state.sch->ComputeInline(state.tensor_core_reindex_B.value());
     tir::For loop = state.sch->Get(r_tiles.back());
@@ -292,16 +293,8 @@ inline std::vector<State> MultiLevelTilingNode::AddWriteReuse(State state) const
     if (state.tensor_core_is_used) state = TensorCoreStore(state);
     return {std::move(state)};
   }
-  std::vector<int> levels = config.levels;
-  ReuseType req = config.req;
-  if (Optional<Array<Integer>> ann = tir::GetAnn<Array<Integer>>(
-          state.sch->GetSRef(state.block_rv), "meta_schedule.write_cache_level")) {
-    req = ReuseType::kMustReuse;
-    levels = std::vector<int>(ann.value().begin(), ann.value().end());
-  }
-  std::vector<State> results;
-  if (req == ReuseType::kMayReuse) {
-    // Case 1. If the write cache is already there, we don't need to add another.
+  // Case 1. If the write cache is already there, we don't need to add another.
+  if (config.req == ReuseType::kMayReuse) {
     Array<BlockRV> consumer_rvs = state.sch->GetConsumers(state.block_rv);
     if (consumer_rvs.size() == 1 && IsWriteCache(state.sch->GetSRef(consumer_rvs[0]))) {
       state.write_cache = consumer_rvs[0];
