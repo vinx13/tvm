@@ -66,7 +66,7 @@ class GPUCodeVerifier : public StmtExprVisitor {
     if (scope == "local") {
       size_t size = static_cast<size_t>(op->ConstantAllocationSize());
       local_memory_per_block_ += size * op->dtype.bytes() * op->dtype.lanes();
-    } else if (scope == "shared") {
+    } else if (scope == "shared" || scope == "shared.dyn") {
       size_t size = static_cast<size_t>(op->ConstantAllocationSize());
       shared_memory_per_block_ += size * op->dtype.bytes() * op->dtype.lanes();
     }
