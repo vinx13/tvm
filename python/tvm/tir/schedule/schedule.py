@@ -1859,7 +1859,7 @@ class Schedule(Object):
         return _ffi_api.ScheduleBlockize(self, loop)  # type: ignore # pylint: disable=no-member
 
     @type_checked
-    def tensorize(self, block_or_loop: Union[BlockRV, LoopRV], tensor_intrin: str) -> None:
+    def tensorize(self, block_or_loop: Union[BlockRV, LoopRV], intrin: str) -> None:
         """Tensorize the computation enclosed by loop with the tensor intrinsic.
 
         Parameters
@@ -2010,7 +2010,7 @@ class Schedule(Object):
                         )
         """
         _ffi_api.ScheduleTensorize(  # type: ignore # pylint: disable=no-member
-            self, block_or_loop, tensor_intrin
+            self, block_or_loop, intrin
         )
 
     ########## Schedule: Annotation ##########
