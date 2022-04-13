@@ -675,7 +675,7 @@ class PipelineInjector : private StmtExprMutator {
                                      /*order=*/static_cast<int>(pipeline_orders[i]->value)};
       pipeline_info.emplace(original_order[i], stage_order);
     }
-    ValidatePipelineBody(pipeline_info, original_order);
+    // ValidatePipelineBody(pipeline_info, original_order);
 
     // Step 4: Rewrite the pipeline body.
     Stmt pipeline =
