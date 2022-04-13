@@ -201,7 +201,6 @@ Stmt RewriteWmmaLoad(Stmt stmt) {
  */
 Stmt RewriteWmmaStore(Stmt stmt) {
   using arith::IntSet;
-  const DataType dtype = DataType::Float(32);
   const DataType int32 = DataType::Int(32);
 
   Stmt body = stmt;
@@ -220,6 +219,8 @@ Stmt RewriteWmmaStore(Stmt stmt) {
   const BufferStoreNode* buf_store = TVM_TYPE_AS(buf_store, body, BufferStoreNode);
   const BufferLoadNode* buf_load = TVM_TYPE_AS(buf_load, buf_store->value, BufferLoadNode);
   Buffer src_buffer = buf_load->buffer;
+  DataType dtype = src_buffer->dtype;  // TODO: assert fp16 or fp32
+
   Buffer tgt_buffer = buf_store->buffer;
 
   Buffer new_src_buffer(/*data=*/Var("src", PointerType(PrimType(dtype), src_buffer.scope())),
