@@ -114,9 +114,11 @@ class MultiLevelTilingNode : public ScheduleRuleNode {
           new_representers.push_back(representer);
         }
       }
+      LOG(INFO) << "TransformaLayout " << it.second.first << it.first << " " << rhs_buffer;
       state.sch->TransformLayout(state.block_rv, it.second.first,
-                                 it.second.second ? tir::BufferIndexType::kWrite : tir::BufferIndexType::kRead,
+                                 it.second.second ? tir::BufferIndexType::kRead : tir::BufferIndexType::kWrite,
                                  tir::IndexMap(new_representers, new_tgt_iters));
+      LOG(INFO) << "OK";
     }
 
     Array<LoopRV> loops = state.sch->GetLoops(state.block_rv);
