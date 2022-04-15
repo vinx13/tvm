@@ -74,8 +74,32 @@ bool RewriteTensorCoreNode::Apply(const tir::Schedule& sch) {
     String intrin_name = std::get<2>(task);
     sch->Unannotate(block_rv, tir::attr::meta_schedule_auto_tensorize);
     Optional<LoopRV> tiled_loop_rv = TilingwithTensorIntrin(sch, block_rv, intrin_name);
-    if (!tiled_loop_rv.defined()) continue;
+    if (!tiled_loop_rv.defined()) {
+      LOG(FATAL) << intrin_name << "\n";
+    }
     sch->Tensorize(tiled_loop_rv.value(), intrin_name);
+  }
+  /// Rewrite cache write
+  for (const auto& kv : sch->mod()->functions) {
+    GlobalVar g_var = kv.first;
+    BaseFunc base_func = kv.second;
+    if (const tir::PrimFuncNode* prim_func = base_func.as<tir::PrimFuncNode>()) {
+      tir::PreOrderVisit(prim_func->body, [&](const ObjectRef& obj) {
+        if (auto* block = obj.as<tir::BlockNode>()) {
+          tir::StmtSRef sref = sch->GetSRef(block);
+          if (Optional<Integer> cache_type = tir::GetAnn<Integer>(sref, tir::attr::meta_schedule_cache_type)) {
+            if (cache_type.value() == tir::attr::meta_schedule_cache_type_write) {
+              BlockRV block_rv = sch->GetBlock(block->name_hint, g_var->name_hint);
+              Array<LoopRV> loops = sch->GetLoops(block_rv);
+              auto fused = sch->Fuse({loops[loops.size()-2], loops[loops.size()-1]});
+              Array<LoopRV> splits = sch->Split(fused, Array<Optional<PrimExpr>>{NullValue<Integer>(), Integer{32}});
+              sch->Bind(splits.back(), "threadIdx.x");
+            }
+          }
+        }
+        return true;
+      });
+    }
   }
   return true;
 }
