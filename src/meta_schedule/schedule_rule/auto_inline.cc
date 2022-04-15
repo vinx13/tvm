@@ -131,7 +131,8 @@ inline InlineType AutoInlineNode::CheckInline(const tir::Schedule& sch,
   }
   if (into_producer) {
     Array<tir::StmtSRef> producer_srefs = GetProducers(state, block_sref);
-    if (producer_srefs.size() == 1 &&
+    if(
+        producer_srefs.size() > 0 && 
         tir::IsCompleteBlock(sch->state(), producer_srefs[0], scope_block) &&
         CanReverseComputeInline(state, block_sref)) {
       return InlineType::kInlineIntoProducer;
