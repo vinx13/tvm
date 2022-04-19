@@ -48,8 +48,8 @@ class MultiLevelTilingNode : public ScheduleRuleNode {
 
   State TensorCoreLoad(State state) const {
     // Add the cache read stage for Tensor Core
-    state.tensor_core_load_A = state.sch->CacheRead(state.block_rv, 1, "wmma.matrix_a");
-    state.tensor_core_load_B = state.sch->CacheRead(state.block_rv, 2, "wmma.matrix_b");
+    state.tensor_core_load_A = state.sch->CacheRead(state.block_rv, 0, "wmma.matrix_a");
+    state.tensor_core_load_B = state.sch->CacheRead(state.block_rv, 1, "wmma.matrix_b");
     const Array<LoopRV>& r_tiles = state.tiles[r_indices_.back()];
     // Insert cache_read block to the proper place
     ICHECK(!r_tiles.empty()) << "ValueError: Cannot find any reduction loop in the block";
@@ -111,9 +111,7 @@ class MultiLevelTilingNode : public ScheduleRuleNode {
 
   // Entry of the mega rule; Inherited from ScheduleRuleNode
   Array<Schedule> Apply(const Schedule& sch, const BlockRV& block_rv) final {
-    LOG(INFO) <<"MLT";
     if (!NeedsMultiLevelTiling(sch->state(), sch->GetSRef(block_rv))) {
-        LOG(INFO) << "FAIL";
       return {sch};
     }
     sch->Annotate(block_rv, tir::attr::meta_schedule_tiling_structure, structure);
@@ -126,7 +124,6 @@ class MultiLevelTilingNode : public ScheduleRuleNode {
     states = SubRule(std::move(states), [&](State state) { return FuseWriteReuse(state); });
     Array<Schedule> results;
     for (auto&& state : states) {
-        LOG(INFO) <<"ADDSTATE";
       results.push_back(std::move(state.sch));
     }
     return results;
@@ -231,7 +228,7 @@ inline std::vector<State> MultiLevelTilingNode::AddWriteReuse(State state) const
                                               /*storage_scope=*/config.scope);
   state.write_cache = write_cache;
   {
-    tir::Annotate(state.sch->state(), state.sch->GetSRef(write_cache),  //
+    state.sch->Annotate(write_cache,  //
                   tir::attr::meta_schedule_cache_type,                  //
                   Integer(tir::attr::meta_schedule_cache_type_write));
   }

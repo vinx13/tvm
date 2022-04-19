@@ -42,9 +42,9 @@ class MultiLevelTilingMemHammerNode : public ScheduleRuleNode {
     const Array<LoopRV>& r_tiles = state.tiles[r_indices_[r_indices_.size() - 2]];
     ICHECK(!r_tiles.empty()) << "ValueError: Cannot find the suitable reduction loop in the block";
     state.tensor_core_load_A =
-        state.sch->ReadAt(r_tiles.back(), state.block_rv, 1, "wmma.matrix_a");
+        state.sch->ReadAt(r_tiles.back(), state.block_rv, 0, "wmma.matrix_a");
     state.tensor_core_load_B =
-        state.sch->ReadAt(r_tiles.back(), state.block_rv, 2, "wmma.matrix_b");
+        state.sch->ReadAt(r_tiles.back(), state.block_rv, 1, "wmma.matrix_b");
     tir::For loop = state.sch->Get(r_tiles.back());
     const tir::SeqStmtNode* pipeline_body_seq = loop->body.as<tir::SeqStmtNode>();
     ICHECK(pipeline_body_seq);
