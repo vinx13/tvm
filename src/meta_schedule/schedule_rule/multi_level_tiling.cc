@@ -16,13 +16,7 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-#include "./multi_level_tiling.h"
-
-#include <tvm/meta_schedule/schedule_rule.h>
-
-#include <algorithm>
-#include <utility>
-#include <vector>
+#include <unordered_map>
 
 #include "../utils.h"
 #include "analysis.h"
@@ -238,7 +232,7 @@ inline std::vector<State> MultiLevelTilingNode::AddWriteReuse(State state) const
   return results;
 }
 
-std::vector<State> MultiLevelTilingNode::TileLoopNest(State state) const {
+inline std::vector<State> MultiLevelTilingNode::TileLoopNest(State state) const {
   Schedule& sch = state.sch;
   const BlockRV& block_rv = state.block_rv;
   // Step 1. Assuming trivial binding, pair the loops and their iter-var-types
@@ -267,12 +261,12 @@ std::vector<State> MultiLevelTilingNode::TileLoopNest(State state) const {
     }
     // Do the split
     int n_tiles = idx->size();
-    Array<tir::ExprRV> factors = sch->SamplePerfectTile(
+    Array<ExprRV> factors = sch->SamplePerfectTile(
         /*loop=*/loop,
         /*n=*/n_tiles,
         /*max_innermost_factor=*/max_innermost_factor);
-    Array<tir::LoopRV> splits = sch->Split(/*loop=*/loop,
-                                           /*factors=*/{factors.begin(), factors.end()});
+    Array<LoopRV> splits = sch->Split(/*loop=*/loop,
+                                      /*factors=*/{factors.begin(), factors.end()});
     // Put every tile to its slot
     for (int j = 0; j < n_tiles; ++j) {
       tiles[idx->at(j)].push_back(splits[j]);
@@ -302,7 +296,7 @@ std::vector<State> MultiLevelTilingNode::TileLoopNest(State state) const {
   return {state};
 }
 
-std::vector<State> MultiLevelTilingNode::AddReadReuse(State state) const {
+inline std::vector<State> MultiLevelTilingNode::AddReadReuse(State state) const {
   const ReuseConfig& config = this->reuse_read_;
   if (config.req == ReuseType::kNoReuse) {
     if (state.tensor_core_is_used) state = TensorCoreLoad(state);
@@ -340,7 +334,7 @@ std::vector<State> MultiLevelTilingNode::AddReadReuse(State state) const {
       if (!vector_load_lens.empty()) {
         int n = vector_load_lens.size();
         double prob = 1.0 / n;
-        tir::ExprRV vector_load_len =
+        ExprRV vector_load_len =
             sch->SampleCategorical(support::AsArray<int, Integer>(vector_load_lens),
                                    Array<FloatImm>(n, FloatImm(DataType::Float(64), prob)));
         sch->Annotate(cache_read_block, tir::attr::meta_schedule_cooperative_fetch,
