@@ -500,7 +500,7 @@ class LoopPropertyError : public ScheduleError {
           throw LoopPropertyError(self->mod, loop, kDataParIterTouchRFactorLoop);
         }
         continue;
-              } else if (reduction_touched) {
+      } else if (reduction_touched) {
         if (!meet_reduction_loop) {
           CheckGetSingleChildBlockRealizeOnSRefTree(self, self->stmt2ref.at(loop.get()));
           meet_reduction_loop = true;
@@ -574,14 +574,18 @@ class BaseBlockCreator {
   }
 
   void CreateBlock() {
+    CreateAdditionalIter();
     for (int i = 0; i < n_block_iters_; ++i) {
       CreateNormalIters(i);
     }
-    if (!additional_iter_.defined()) {
-      ICHECK(arith::Analyzer().CanProveEqual(rf_loop_->extent, Integer(1)));
-      CreateAdditionalIter();
+    bool has_reduce_iter = false;
+    for (const IterVar& iter_var : iter_vars_) {
+      if (iter_var->iter_type == IterVarType::kCommReduce) {
+        has_reduce_iter = true;
+        break;
+      }
     }
-    CreateReductionUpdate();
+    CreateReductionUpdate(has_reduce_iter);
     CreateReadWriteRegions();
 
     String new_block_name = old_block_realize_->block->name_hint;
@@ -590,15 +594,17 @@ class BaseBlockCreator {
       new_block_name = new_block_name + "_rf";
       predicate = old_block_realize_->predicate;
     }
+    Optional<Stmt> init_block =
+        has_reduce_iter ? BufferStore(new_reduction_update_->buffer, reducer_->identity_element[0],
+                                      new_reduction_update_->indices)
+                        : Optional<Stmt>(NullOpt);
     new_block_ = Block(
         /*iter_vars=*/iter_vars_,
         /*reads=*/read_regions_,
         /*writes=*/write_regions_,
         /*name_hint=*/new_block_name,
         /*body=*/new_reduction_update_,
-        /*init=*/
-        BufferStore(new_reduction_update_->buffer, reducer_->identity_element[0],
-                    new_reduction_update_->indices),
+        /*init=*/init_block,
         /*alloc_buffers=*/{},
         /*match_buffers=*/{},
         /*annotations=*/old_block_realize_->block->annotations);
@@ -608,7 +614,7 @@ class BaseBlockCreator {
  private:
   virtual void CreateAdditionalIter() = 0;
   virtual void CreateNormalIters(int idx) = 0;
-  virtual void CreateReductionUpdate() = 0;
+  virtual void CreateReductionUpdate(bool has_reduce_iter) = 0;
   virtual void CreateReadWriteRegions() = 0;
 
  public:
@@ -618,8 +624,6 @@ class BaseBlockCreator {
   BlockRealize new_block_realize_;
   /*! \brief The indices used to access the intermediate rfactor buffer */
   Array<PrimExpr> rf_buf_access_indices_;
-  /*! \brief The additional block iter of the new created block for the rfactor loop. */
-  IterVar additional_iter_;
 
  protected:
   /*! \brief The old block-realize */
@@ -691,6 +695,15 @@ class RFactorBlockCreator : public BaseBlockCreator {
         combiner_rhs_(std::move(combiner_rhs)) {}
 
  private:
+  void CreateAdditionalIter() final {
+    // Create a new data parallel block iter for the rfactor loop.
+    additional_iter_ =
+        IterVarFromLoop(rf_loop_, "v" + rf_loop_->loop_var->name_hint, IterVarType::kDataPar);
+    loop_var2block_binding_[rf_loop_->loop_var.get()] = additional_iter_->var;
+    iter_vars_.push_back(additional_iter_);
+    iter_values_.push_back(rf_loop_->loop_var);
+  }
+
   void CreateNormalIters(int idx) final {
     IterVar old_iter = old_block_realize_->block->iter_vars[idx];
     PrimExpr old_binding = old_block_realize_->iter_values[idx];
@@ -716,39 +729,31 @@ class RFactorBlockCreator : public BaseBlockCreator {
       }
       const For& loop = it->second;
       if (loop_var2block_binding_.find(var.get()) == loop_var2block_binding_.end()) {
-        // - We haven't created the new block iter for `var`. So here we create it, append it
-        //   and its binding to `rf_block_iter_vars` and `rf_block_iter_values` respectively.
-        // - If the loop is the rfactor loop, envoke `CreateAdditionalIter()`.
-        if (loop.same_as(rf_loop_)) {
-          CreateAdditionalIter();
-          continue;
-        }
-        IterVar new_iter_var = IterVarFromLoop(loop, "v" + loop->loop_var->name_hint, kCommReduce);
+        // We haven't created the new block iter for `var`. So here we create it, append it
+        // and its binding to `rf_block_iter_vars` and `rf_block_iter_values` respectively.
+        IterVar new_iter_var =
+            IterVarFromLoop(loop, "v" + loop->loop_var->name_hint, IterVarType::kCommReduce);
         loop_var2block_binding_[var.get()] = new_iter_var->var;
         iter_vars_.push_back(new_iter_var);
         iter_values_.push_back(var);
       }
     }
     // Substitute the original binding with new block iters. Store the result expression
-    // in `var_map_` for future substitution.
+    // in `rf_var_map` for future substitution.
     var_map_.Set(old_iter->var, Substitute(old_binding, loop_var2block_binding_));
   }
 
-  void CreateAdditionalIter() final {
-    additional_iter_ = IterVarFromLoop(rf_loop_, "v" + rf_loop_->loop_var->name_hint, kDataPar);
-    iter_vars_.insert(iter_vars_.end(), additional_iter_);
-    iter_values_.insert(iter_values_.end(), rf_loop_->loop_var);
-    loop_var2block_binding_[rf_loop_->loop_var.get()] = additional_iter_;
-  }
-
-  void CreateReductionUpdate() final {
+  void CreateReductionUpdate(bool has_reduce_iter) final {
     rf_buf_access_indices_ = old_reduction_update_->indices;
     rf_buf_access_indices_.insert(rf_buf_access_indices_.begin() + factor_axis_,
                                   additional_iter_->var);
-    new_reduction_update_ = BufferStore(
-        rf_buffer_,
-        (*reducer_.get())({BufferLoad(rf_buffer_, rf_buf_access_indices_)}, {combiner_rhs_})[0],
-        rf_buf_access_indices_);
+    PrimExpr rhs{nullptr};
+    if (has_reduce_iter) {
+      rhs = (*reducer_.get())({BufferLoad(rf_buffer_, rf_buf_access_indices_)}, {combiner_rhs_})[0];
+    } else {
+      rhs = combiner_rhs_;
+    }
+    new_reduction_update_ = BufferStore(rf_buffer_, rhs, rf_buf_access_indices_);
     new_reduction_update_ = Downcast<BufferStore>(Substitute(new_reduction_update_, var_map_));
   }
 
@@ -774,6 +779,10 @@ class RFactorBlockCreator : public BaseBlockCreator {
     }
     return new_regions;
   }
+
+ public:
+  /*! \brief The generated additional block iter in rfactor block for the rfactor loop */
+  IterVar additional_iter_;
 
  private:
   /*!
@@ -815,11 +824,14 @@ class WriteBackBlockCreator : public BaseBlockCreator {
 
  private:
   void CreateAdditionalIter() final {
-    additional_iter_ = IterVarFromLoop(rf_loop_, "v" + rf_loop_->loop_var->name_hint, kCommReduce);
-    iter_vars_.insert(iter_vars_.end(), additional_iter_);
-    iter_values_.insert(iter_values_.end(), rf_loop_->loop_var);
-    var_map_.Set(rf_additional_iter_->var, additional_iter_->var);
+    // Create a new reduction block iter for the rfactor loop.
+    IterVar wb_new_block_iter =
+        IterVarFromLoop(rf_loop_, "v" + rf_loop_->loop_var->name_hint, kCommReduce);
+    iter_vars_.push_back(wb_new_block_iter);
+    iter_values_.push_back(rf_loop_->loop_var);
+    var_map_.Set(rf_additional_iter_->var, wb_new_block_iter->var);
   }
+
   void CreateNormalIters(int idx) final {
     IterVar old_block_iter = old_block_realize_->block->iter_vars[idx];
     if (old_block_iter->iter_type == IterVarType::kDataPar) {
@@ -827,20 +839,10 @@ class WriteBackBlockCreator : public BaseBlockCreator {
                               kDataPar);
       iter_values_.push_back(old_block_realize_->iter_values[idx]);
       var_map_.Set(old_block_iter->var, iter_vars_.back());
-      return;
-    }
-
-    ICHECK(old_block_iter->iter_type == IterVarType::kCommReduce);
-    // If the old block iter touches the reduction loop and we have not created a new reduction
-    // block iter for the rfactor loop, create one now.
-    if (!additional_iter_.defined() &&
-        UsesVar(old_block_realize_->iter_values[idx],
-                [v = rf_loop_->loop_var.get()](const VarNode* var) { return var == v; })) {
-      CreateAdditionalIter();
     }
   }
 
-  void CreateReductionUpdate() final {
+  void CreateReductionUpdate(bool has_reduce_iter) final {
     wb_lhs_ = Downcast<BufferLoad>(Substitute(combiner_lhs_, var_map_));
     wb_rhs_ =
         Downcast<BufferLoad>(Substitute(BufferLoad(rf_buffer_, rf_buf_access_indices_), var_map_));
