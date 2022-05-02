@@ -1022,8 +1022,12 @@ bool AutoTensorizeExtractor::VisitStmt_(const BlockNode* op, const Stmt& other) 
       }
       return true;
     };
-    if (!iter_collect(op, lhs_iters_)) return false;
-    if (!iter_collect(rhs, rhs_iters_)) return false;
+    if (!iter_collect(op, lhs_iters_)) {
+      return false;
+    }
+    if (!iter_collect(rhs, rhs_iters_)) {
+      return false;
+    }
   }
   is_scope_block = false;
   return VisitStmt(op->body, rhs->body);
@@ -1127,11 +1131,19 @@ class MappingProposer {
     }
   }
 
+  void SetSubtraction(VarSet* var_set, const VarSet& other) {
+    for (const Var& var : other) {
+      var_set->erase(var);
+    }
+  }
+
   void CollectFeasibleSet() {
+    std::unordered_map<Buffer, VarSet, ObjectPtrHash, ObjectPtrEqual> 
+      lhs_buffer_var_map, rhs_buffer_var_map;
     for (const auto& it : extractor_->rhs_buffer_indices_map_) {
+      VarSet lhs_vars, rhs_vars;
       auto lhs_buffer_it = extractor_->rhs_buffer_map_.find(it.first);
       ICHECK(lhs_buffer_it != extractor_->rhs_buffer_map_.end());
-      VarSet lhs_vars;
       for (const PrimExpr& index : extractor_->lhs_buffer_indices_map_[lhs_buffer_it->second]) {
         PreOrderVisit(index, [&](const ObjectRef& obj) -> bool {
           if (const VarNode* var = obj.as<VarNode>()) {
@@ -1143,6 +1155,7 @@ class MappingProposer {
       for (const PrimExpr& rhs_index : it.second) {
         if (const VarNode* var_ptr = rhs_index.as<VarNode>()) {
           Var var = GetRef<Var>(var_ptr);
+          rhs_vars.insert(var);
           if (rhs_feasible_vars_.find(var) == rhs_feasible_vars_.end()) {
             rhs_feasible_vars_[var] = lhs_vars;
           } else {
@@ -1150,6 +1163,19 @@ class MappingProposer {
           }
         } else {
           LOG(FATAL);
+        }
+      }
+      lhs_buffer_var_map[lhs_buffer_it->second] = std::move(lhs_vars);
+      rhs_buffer_var_map[lhs_buffer_it->second] = std::move(rhs_vars);
+    }
+    for (const auto& it : extractor_->rhs_buffer_indices_map_) {
+      auto lhs_buffer_it = extractor_->rhs_buffer_map_.find(it.first);
+      ICHECK(lhs_buffer_it != extractor_->rhs_buffer_map_.end());
+      const VarSet& lhs_vars = lhs_buffer_var_map[lhs_buffer_it->second];
+      const VarSet& rhs_vars = rhs_buffer_var_map[lhs_buffer_it->second];
+      for (const IterVar& iter : extractor_->rhs_iters_) {
+        if (rhs_vars.find(iter->var) == rhs_vars.end()) {
+          SetSubtraction(&rhs_feasible_vars_[iter->var], lhs_vars);
         }
       }
     }
