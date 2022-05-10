@@ -94,7 +94,7 @@ int FindDecomposePoint(const StmtSRef& block_sref) {
   int n = loop_srefs.size();
   for (int i = 0; i < n; ++i) {
     const ForNode* loop = TVM_SREF_TO_FOR(loop, loop_srefs[i]);
-    if (loop->annotations.count("software_pipeline_stage") && GetLoopIterType(loop_srefs[i]) !=
+    if (loop->annotations.count("software_pipeline_stage") || GetLoopIterType(loop_srefs[i]) !=
                                                IterVarType::kDataPar) {
       return i;
     }
