@@ -650,7 +650,8 @@ class ReverseComputeInliner : public BaseInliner {
   arith::Analyzer analyzer;
 };
 
-std::function<void()> ComputeInlineImpl(ScheduleState self, const StmtSRef& producer_block_sref) {
+void ComputeInlineImpl(ScheduleState self, const StmtSRef& producer_block_sref,
+                       bool check_only = false) {
   const BlockNode* _producer_block = TVM_SREF_TO_BLOCK(_producer_block, producer_block_sref);
   Block producer_block = GetRef<Block>(_producer_block);
   HasInitBlock::Check(self->mod, producer_block);
@@ -675,24 +676,27 @@ std::function<void()> ComputeInlineImpl(ScheduleState self, const StmtSRef& prod
     throw OpaqueAccessError(self->mod, scope_root_sref);
   }
   // Step 6. Do the real mutation on the AST and the sref tree in the schedule state
-  return [=]() -> void { self->Replace(scope_root_sref, tgt_stmt, inliner.block_reuse); };
+  if (check_only) {
+    return;
+  }
+  self->Replace(scope_root_sref, tgt_stmt, inliner.block_reuse);
 }
 
 void ComputeInline(ScheduleState self, const StmtSRef& producer_block_sref) {
-  ComputeInlineImpl(self, producer_block_sref)();
+  ComputeInlineImpl(self, producer_block_sref);
 }
 
 bool CanComputeInline(const ScheduleState& self, const StmtSRef& producer_block_sref) {
   try {
-    ComputeInlineImpl(self, producer_block_sref);
+    ComputeInlineImpl(self, producer_block_sref, true);
   } catch (const tvm::runtime::Error& e) {
     return false;
   }
   return true;
 }
 
-std::function<void()> ReverseComputeInlineImpl(ScheduleState self,
-                                               const StmtSRef& consumer_block_sref) {
+void ReverseComputeInlineImpl(ScheduleState self, const StmtSRef& consumer_block_sref,
+                              bool check_only = false) {
   const BlockNode* _consumer_block = TVM_SREF_TO_BLOCK(_consumer_block, consumer_block_sref);
   Block consumer_block = GetRef<Block>(_consumer_block);
   HasInitBlock::Check(self->mod, consumer_block);
@@ -719,12 +723,15 @@ std::function<void()> ReverseComputeInlineImpl(ScheduleState self,
     throw OpaqueAccessError(self->mod, scope_root_sref);
   }
   // Step 7. Do the real mutation on the AST and the sref tree in the schedule state
-  return [=]() -> void { self->Replace(scope_root_sref, tgt_stmt, inliner.block_reuse); };
+  if (check_only) {
+    return;
+  }
+  self->Replace(scope_root_sref, tgt_stmt, inliner.block_reuse);
 }
 
 bool CanReverseComputeInline(const ScheduleState& self, const StmtSRef& block_sref) {
   try {
-    ReverseComputeInlineImpl(self, block_sref);
+    ReverseComputeInlineImpl(self, block_sref, true);
   } catch (const tvm::runtime::Error& e) {
     return false;
   }
@@ -732,7 +739,7 @@ bool CanReverseComputeInline(const ScheduleState& self, const StmtSRef& block_sr
 }
 
 void ReverseComputeInline(ScheduleState self, const StmtSRef& consumer_block_sref) {
-  ReverseComputeInlineImpl(self, consumer_block_sref)();
+  ReverseComputeInlineImpl(self, consumer_block_sref);
 }
 
 /******** InstructionKind Registration ********/
