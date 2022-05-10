@@ -24,12 +24,12 @@ namespace tir {
 static const char kErrBodyInline[] = R"(The body of the inlined block should be in form of
     'A[i, j, k, ...] = f(i, j, k, ...)',
 where the indices on the left are distinct atomic variables,
-and there should not no variables other than the index variables)";
+and there should be no variables other than the index variables)";
 
 static const char kErrBodyReverseInline[] = R"(The body of the inlined block should be in form of
     `B[...] = g(i, j, k, A[i, j, k, ...] ...)`,
 where A is the only buffer the block consumes, whose indices are distinct atomic variables,
-and there should not no variables other than the index variables)";
+and there should be no variables other than the index variables)";
 
 class HasInitBlock : public ScheduleError {
  public:
@@ -170,8 +170,14 @@ class NonSingleProducerError : public ScheduleError {
         Array<Dependency> consumers = scope->GetDepsBySrc(producer_block_sref);
         if (consumers.size() == 1) {
           return;
+        } else {
+          //LOG(INFO) << consumers.size();
         }
+      } else {
+          //LOG(INFO) << "NotComplete";
       }
+    } else {
+      //LOG(INFO) << producers.size();
     }
     const BlockNode* block = TVM_SREF_TO_BLOCK(block, consumer_block_sref);
     throw NonSingleProducerError(self->mod, GetRef<Block>(block));
@@ -272,14 +278,17 @@ class BaseInliner : public StmtExprMutator {
     }
     std::vector<const VarNode*> result;
     result.reserve(n);
+    Array<Var> arr;
     for (const PrimExpr& i : indices) {
       if (const auto* var = i.as<VarNode>()) {
         result.push_back(var);
+        arr.push_back(GetRef<Var>(var));
       } else {
         // Failure: indexing expression is not a variable
         return false;
       }
     }
+    //LOG(INFO) << "Index vars " << arr;
     using DistinctSet = std::unordered_set<const VarNode*>;
     int n_distinct = DistinctSet(result.begin(), result.end()).size();
     if (n != n_distinct) {
@@ -300,6 +309,7 @@ class BaseInliner : public StmtExprMutator {
    * \param indices The expressions that the corresponding index variables are replaced to
    */
   void SetIndexSubstitution(const Array<PrimExpr>& indices) {
+    //LOG(INFO) << "SetSubst " << indices;
     ICHECK_EQ(indices.size(), idx_vars_.size());
     int n = idx_vars_.size();
     idx_sub_.reserve(n);
@@ -507,7 +517,7 @@ class ReverseComputeInliner : public BaseInliner {
    private:
     PrimExpr VisitExpr_(const VarNode* var) final {
       auto it = self_->idx_sub_.find(var);
-      ICHECK(it != self_->idx_sub_.end());
+      ICHECK(it != self_->idx_sub_.end()) << " not found " << var->name_hint;
       return (*it).second;
     }
 
@@ -522,31 +532,44 @@ class ReverseComputeInliner : public BaseInliner {
  public:
   explicit ReverseComputeInliner(const Buffer& inlined_buffer, const Block& consumer_block,
                                  const StmtSRef& scope_root_sref)
-      : BaseInliner(inlined_buffer, consumer_block, scope_root_sref) {}
+      : BaseInliner(inlined_buffer, consumer_block, scope_root_sref), consumer_block_(consumer_block) {}
 
   bool BodyPatternAllowInline(const Block& consumer_block) {
+    // LOG(INFO) << "RV consumer_block: " << consumer_block;
     if (inlined_store_ == nullptr) {
+      //LOG(INFO) << "A";
       // Failure: block body is not BufferStore
       return false;
     }
     std::vector<const BufferLoadNode*> loads = ExtractBufferLoad(inlined_buffer_, inlined_store_);
     if (loads.size() == 0) {
+      //LOG(INFO) << "B";
       // Failure: no BufferLoad from the `inlined_buffer_`
       return false;
     }
     int n_vars = GetNumUndefinedNonpointerVars(GetRef<Stmt>(inlined_store_));
+
+    //LOG(INFO) << "C " << n_vars;
+    //LOG(INFO) << "Store: " << GetRef<Stmt>(inlined_store_);
     for (const BufferLoadNode* load : loads) {
-      if (!UpdateAndCheckIndexVars(load->indices, n_vars)) {
-        // Failure: incorrect of inconsistent index vars
-        return false;
+      //LOG(INFO) << "Load: " << GetRef<BufferLoad>(load);
+      if (indices_.empty()) {
+        indices_ = load->indices;
       }
+      // if (!UpdateAndCheckIndexVars(load->indices, n_vars)) {
+      //   // Failure: incorrect of inconsistent index vars
+      //   return false;
+      // }
     }
     return true;
   }
 
  private:
+   Block consumer_block_;
   using BaseInliner::VisitExpr_;
   using BaseInliner::VisitStmt_;
+
+  Array<PrimExpr> indices_;
 
   Stmt VisitStmt_(const BufferStoreNode* _store) final {
     BufferStore store = Downcast<BufferStore>(StmtExprMutator::VisitStmt_(_store));
@@ -556,8 +579,27 @@ class ReverseComputeInliner : public BaseInliner {
     return ReplaceInlinedBuffer(std::move(store));
   }
 
+  void CreateReverseMapping(const Array<PrimExpr> producer_indices) {
+    Map<Var, Range> iters;
+    for (const auto& iter_var : consumer_block_->iter_vars) {
+      iters.Set(iter_var->var, iter_var->dom);
+      if (is_const_int(iter_var->dom->extent, 1) && is_const_int(iter_var->dom->min)) {
+        idx_sub_[iter_var->var.get()] = iter_var->dom->min;
+      }
+    }
+    arith::Analyzer analyzer;
+    auto iter_map = arith::DetectIterMap(indices_, iters, true, true, &analyzer, true);
+    // LOG(INFO) << "DetectIterMap " << indices_ << "\n" << iter_map;
+    auto reverse = arith::InverseAffineIterMap(iter_map, producer_indices);
+    for (const auto& p : reverse) {
+      // LOG(INFO) << "Map " << p.first->name_hint << p.second;
+      idx_sub_[p.first.get()] = p.second;
+    }
+  }
+
   Stmt ReplaceInlinedBuffer(BufferStore producer) {
-    SetIndexSubstitution(producer->indices);
+    CreateReverseMapping(producer->indices);
+    // SetIndexSubstitution(producer->indices);
     producer_rhs_ = producer->value;
     return Substituter(this)(GetRef<BufferStore>(inlined_store_));
   }

@@ -48,6 +48,7 @@
 #include "../op_common.h"
 #include "../type_relations.h"
 
+#define FUSE_RESHAPE 1
 namespace tvm {
 namespace relay {
 using tir::IntImmNode;
@@ -601,7 +602,11 @@ RELAY_REGISTER_OP("transpose")
     .add_type_rel("Transpose", TransposeRel)
     .set_attr<FTVMCompute>("FTVMCompute", TransposeCompute)
     .set_attr<FInferCorrectLayout>("FInferCorrectLayout", TransposeInferCorrectLayout)
+#if FUSE_RESHAPE
+    .set_attr<TOpPattern>("TOpPattern", kElemWise);
+#else
     .set_attr<TOpPattern>("TOpPattern", kInjective);
+#endif
 
 /* relay.reshape */
 TVM_REGISTER_NODE_TYPE(ReshapeAttrs);
@@ -983,7 +988,11 @@ Example::
     .set_support_level(3)
     .add_type_rel("Reshape", ReshapeRel)
     .set_attr<FTVMCompute>("FTVMCompute", ReshapeCompute)
+#if FUSE_RESHAPE
+    .set_attr<TOpPattern>("TOpPattern", kElemWise)
+#else
     .set_attr<TOpPattern>("TOpPattern", kInjective)
+#endif
     .set_attr<TReshapeOp>("TReshapeOp", true);
 
 /*!
