@@ -201,7 +201,6 @@ Stmt RewriteWmmaLoad(Stmt stmt) {
  */
 Stmt RewriteWmmaStore(Stmt stmt) {
   using arith::IntSet;
-  const DataType dtype = DataType::Float(32);
   const DataType int32 = DataType::Int(32);
 
   Stmt body = stmt;
@@ -230,6 +229,8 @@ Stmt RewriteWmmaStore(Stmt stmt) {
   });
   Buffer src_buffer = buf_load->buffer;
   Buffer tgt_buffer = buf_store->buffer;
+
+  const DataType dtype = src_buffer->dtype;
 
   Buffer new_src_buffer(/*data=*/Var("src", PointerType(PrimType(dtype), src_buffer.scope())),
                         /*dtype=*/dtype,
