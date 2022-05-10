@@ -29,6 +29,7 @@
 #include "../schedule/utils.h"
 #include "./ir_utils.h"
 #include "./memhammer_rewrite_rule.h"
+#include "tvm/tir/stmt.h"
 
 namespace tvm {
 namespace tir {
@@ -662,11 +663,24 @@ class AutoCopyMutator : public StmtExprMutator {
       return std::move(block);
     }
     ICHECK_EQ(block->writes.size(), 1);
+    ICHECK_GE(block->reads.size(), 1);
 
-    int data_bits = block->reads[0]->buffer->dtype.bits();
+    BufferRegion target_read = block->reads[0];
+    if (block->reads.size() > 1) {
+      bool found = false;
+      for (size_t i = 0; i < block->reads.size(); i++) {
+        if (block->reads[i]->buffer.scope() == "wmma.accumulator") {
+          found = true;
+          target_read = block->reads[i];
+        }
+      }
+      ICHECK(found) << "Multiple buffer read";
+    }
+
+    int data_bits = target_read->buffer->dtype.bits();
     ConstraintSet constraints(this->thread_extent_,  //
                               this->outer_loops_,    //
-                              block->reads[0],       //
+                              target_read,           //
                               block->writes[0],      //
                               data_bits,             //
                               block->annotations);
