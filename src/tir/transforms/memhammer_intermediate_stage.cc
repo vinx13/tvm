@@ -298,10 +298,12 @@ std::pair<Stmt, SeqStmt> InsertCacheStage(Stmt stmt, bool is_write_cache, String
   Array<PrimExpr> cache_indices;
   Array<PrimExpr> new_shape;
   bool use_rank_promotion = false;
-  if (is_write_cache || buf_store->value.as<BufferLoadNode>()) {
+  if (!is_write_cache && buf_store->value.as<BufferLoadNode>()) {
     Array<PrimExpr> indices =
         is_write_cache ? buf_store->indices : buf_store->value.as<BufferLoadNode>()->indices;
     new_shape = IndexPatternFinder::getRankPromotedShape(indices, var_range, &cache_indices);
+    // write cache disabled for now 
+    // rank promotion for write cache cannot guarantee the shape fits wmma.accumulator 
     if (!new_shape.empty()) {
       use_rank_promotion = true;
     }
@@ -347,7 +349,14 @@ std::pair<Stmt, SeqStmt> InsertCacheStage(Stmt stmt, bool is_write_cache, String
     subst_cache_indices.push_back(Substitute(e, subst_map));
   }
 
-  Buffer new_buffer = WithScope(buf_store->buffer, storage_scope);
+  Buffer new_buffer;
+  if (is_write_cache) {
+    // this is needed for global <- cast(load(wmma))
+    // shared stage should have the same dtype as wmma
+    new_buffer = WithScope(target_buffer_load->buffer, storage_scope);
+  } else {
+    new_buffer = WithScope(buf_store->buffer, storage_scope);
+  }
   BufferNode* buffer_ptr = new_buffer.CopyOnWrite();
   buffer_ptr->shape = new_shape;
   *alloc_buffer = new_buffer;
