@@ -1283,7 +1283,6 @@ Optional<LayoutInfo> GetTensorizeLayoutInfo(const tir::ScheduleState& self,
   // Only using 1 layout now
   ret->mapping = std::move(proposer.mappings_[0]);
   ret->lhs_buffer_map = std::move(proposer.lhs_buffer_map_);
-  ret->lhs_indices_map = std::move(extractor.lhs_buffer_indices_map_);
   ret->rhs_indices_map = std::move(extractor.rhs_buffer_indices_map_);
   ret->lhs_iters = std::move(extractor.lhs_iters_);
   ret->rhs_iters = std::move(extractor.rhs_iters_);

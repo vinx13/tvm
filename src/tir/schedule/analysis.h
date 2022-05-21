@@ -767,12 +767,11 @@ class LayoutInfoNode : public Object {
  public:
   IndexMap mapping;
   Map<Buffer, Buffer> lhs_buffer_map;
-  Map<Buffer, Array<PrimExpr>> lhs_indices_map, rhs_indices_map;
+  Map<Buffer, Array<PrimExpr>> rhs_indices_map;
   Array<IterVar> lhs_iters, rhs_iters;
 
   void VisitAttrs(AttrVisitor* v) {
     v->Visit("mapping", &mapping);
-    v->Visit("lhs_indices_map", &lhs_indices_map);
     v->Visit("rhs_indices_map", &rhs_indices_map);
     v->Visit("lhs_iters", &lhs_iters);
     v->Visit("rhs_iters", &rhs_iters);

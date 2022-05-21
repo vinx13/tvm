@@ -547,7 +547,7 @@ class ReverseComputeInliner : public BaseInliner {
       // Failure: no BufferLoad from the `inlined_buffer_`
       return false;
     }
-    int n_vars = GetNumUndefinedNonpointerVars(GetRef<Stmt>(inlined_store_));
+    // int n_vars = GetNumUndefinedNonpointerVars(GetRef<Stmt>(inlined_store_));
 
     //LOG(INFO) << "C " << n_vars;
     //LOG(INFO) << "Store: " << GetRef<Stmt>(inlined_store_);
