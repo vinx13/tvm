@@ -20,8 +20,8 @@ import sys
 import pytest
 import tvm.testing
 from tvm.ir import assert_structural_equal
+from tvm.script import from_source
 from tvm.script import tir as T
-from tvm.script.parser import from_source
 from tvm.testing import check_error
 
 
@@ -164,15 +164,24 @@ def test_match_buffer_1d():
 
 
 # match buffer failed case
-def test_match_buffer_no_kwargs_failed():
-    with pytest.raises(ValueError) as e:
+def test_match_buffer_without_dtype():
+    @T.prim_func
+    def no_dtype(
+        a: T.Buffer[(128, 128, 128, 128)],
+        b: T.Buffer[(128, 128, 128, 128)],
+    ) -> None:
+        pass
 
-        @T.prim_func
-        def elementwise_buffer_no_kwargs_failed(
-            a: T.Buffer[(128, 128, 128, 128)],
-            b: T.Buffer[(128, 128, 128, 128)],
-        ) -> None:
-            pass
+    a0, a1, a2, a3 = no_dtype.buffer_map[no_dtype.params[0]].shape
+    b0, b1, b2, b3 = no_dtype.buffer_map[no_dtype.params[1]].shape
+    assert a0 == 128
+    assert a1 == 128
+    assert a2 == 128
+    assert a3 == 128
+    assert b0 == 128
+    assert b1 == 128
+    assert b2 == 128
+    assert b3 == 128
 
 
 # dynamic shape gemm
@@ -274,8 +283,8 @@ def test_letstmt_bind_with_constant():
 
     @T.prim_func
     def constant_binds_wrapped():
-        x = T.int32(1)
-        y = T.float32(42.0)
+        x = T.inline(T.int32(1))
+        y = T.inline(T.float32(42.0))
         T.evaluate(T.cast(x, "float32") + y)
 
     assert_structural_equal(constant_binds, constant_binds_wrapped)
@@ -298,9 +307,9 @@ def test_func_call():
             for i, j, k in T.grid(16, 16, 16):
                 with T.block("C"):
                     i, j, k = T.axis.remap("SSR", [i, j, k])
-                    thread_id_C, local_id_C = shared_16x16_to_ldmatrix_32x8_layout(i, j)
-                    thread_id_A, local_id_A = shared_16x16_to_ldmatrix_32x8_layout(i, k)
-                    thread_id_B, local_id_B = shared_16x16_to_ldmatrix_32x8_layout(k, j)
+                    thread_id_C, local_id_C = T.inline(shared_16x16_to_ldmatrix_32x8_layout(i, j))
+                    thread_id_A, local_id_A = T.inline(shared_16x16_to_ldmatrix_32x8_layout(i, k))
+                    thread_id_B, local_id_B = T.inline(shared_16x16_to_ldmatrix_32x8_layout(k, j))
 
                     T.reads(
                         C[thread_id_C, local_id_C],

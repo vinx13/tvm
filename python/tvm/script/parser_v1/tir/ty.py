@@ -23,6 +23,7 @@ a wrapper for uniform Type system in IR
 from numbers import Integral
 
 import tvm
+
 from .special_stmt import SpecialStmt, convert_to_int
 
 

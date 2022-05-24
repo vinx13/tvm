@@ -17,8 +17,9 @@
 # pylint: disable=invalid-name,missing-function-docstring
 """Intrinsics for ARM tensorization."""
 from tvm.script import tir as T
-from .. import TensorIntrin
 
+from .. import TensorIntrin
+from .dot_product_common import DP4A_INTRIN  # pylint: disable=unused-import
 
 # TODO(masahi): Parametrize the TVMScript description of dot product by
 # shape and dtype, and share the common description with x86.

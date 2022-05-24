@@ -17,27 +17,21 @@
 """TVM Script Parser Special Stmt Classes"""
 # pylint: disable=unused-argument, no-self-argument, inconsistent-return-statements
 # pylint: disable=relative-beyond-top-level
-from typing import Callable, List, Optional, Tuple, Any, Mapping, Union
+from typing import Any, Callable, List, Mapping, Optional, Tuple, Union
 
 import synr
-from synr import ast
-from tvm.ir.expr import PrimExpr, Range
-
 import tvm.tir
+from synr import ast
+from tvm.ir import Span
+from tvm.ir.expr import PrimExpr, Range
 from tvm.runtime import Object, String
 from tvm.target import Target
-from tvm.ir import Span
 from tvm.tir import IntImm, IterVar, Var
-
-from .node import BufferSlice
 
 from ..context_maintainer import BlockInfo, ContextMaintainer
 from ..registry import register
-from ..utils import (
-    get_param_list,
-    tvm_span_from_synr,
-    call_with_error_reporting,
-)
+from ..utils import call_with_error_reporting, get_param_list, tvm_span_from_synr
+from .node import BufferSlice
 
 
 def convert_to_int(

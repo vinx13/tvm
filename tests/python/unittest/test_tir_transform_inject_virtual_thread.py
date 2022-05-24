@@ -15,8 +15,8 @@
 # specific language governing permissions and limitations
 # under the License.
 import tvm
+import tvm.testing
 from tvm import te
-
 from tvm.script import tir as T
 
 vthread_name = tvm.testing.parameter("vthread", "cthread")
@@ -153,10 +153,10 @@ def test_vthread_simplified():
         B = T.allocate([16], "int32", "shared")
         # The indices for B should each be a single Ramp node, and
         # should not be the sum of a Ramp and Broadcast node.
-        B[0 * 4 : 0 * 4 + 4] = T.broadcast(0, 4)
-        B[1 * 4 : 1 * 4 + 4] = T.broadcast(1, 4)
-        B[2 * 4 : 2 * 4 + 4] = T.broadcast(2, 4)
-        B[3 * 4 : 3 * 4 + 4] = T.broadcast(3, 4)
+        B[T.int32(0) * 4 : T.int32(0) * 4 + 4] = T.broadcast(0, 4)
+        B[T.int32(1) * 4 : T.int32(1) * 4 + 4] = T.broadcast(1, 4)
+        B[T.int32(2) * 4 : T.int32(2) * 4 + 4] = T.broadcast(2, 4)
+        B[T.int32(3) * 4 : T.int32(3) * 4 + 4] = T.broadcast(3, 4)
 
     before_mod = tvm.IRModule.from_expr(before_func)
     after_mod = tvm.tir.transform.InjectVirtualThread()(before_mod)
@@ -178,10 +178,10 @@ def test_vthread_vectorized():
     @T.prim_func
     def expected_func():
         B = T.allocate([4], "int32x4", "shared")
-        B[0 * 4 / 4] = T.broadcast(0, 4)
-        B[1 * 4 / 4] = T.broadcast(1, 4)
-        B[2 * 4 / 4] = T.broadcast(2, 4)
-        B[3 * 4 / 4] = T.broadcast(3, 4)
+        B[T.int32(0) * 4 / 4] = T.broadcast(0, 4)
+        B[T.int32(1) * 4 / 4] = T.broadcast(1, 4)
+        B[T.int32(2) * 4 / 4] = T.broadcast(2, 4)
+        B[T.int32(3) * 4 / 4] = T.broadcast(3, 4)
 
     before_mod = tvm.IRModule.from_expr(before_func)
     intermediate_mod = tvm.tir.transform.InjectVirtualThread()(before_mod)

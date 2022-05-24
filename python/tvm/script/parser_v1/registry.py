@@ -17,7 +17,7 @@
 """TVM Script Parser Function Registry """
 # pylint: disable=inconsistent-return-statements, relative-beyond-top-level, import-outside-toplevel
 import types
-from typing import Union, Callable, Dict, Optional, Any
+from typing import Any, Callable, Dict, Optional, Union
 
 
 class Registry(object):

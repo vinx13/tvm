@@ -16,16 +16,16 @@
 # under the License.
 """TVM Script Context Maintainer for TIR"""
 
-from typing import List, Mapping, Union, Optional, Dict, Callable
+from typing import Callable, Dict, List, Mapping, Optional, Union
+
 import synr
-
-
 import tvm
 from tvm.ir import Span
 from tvm.ir.expr import Range
-from tvm.tir import Var, Buffer, PrimExpr, Stmt, MatchBufferRegion
 from tvm.runtime import Object
+from tvm.tir import Buffer, MatchBufferRegion, PrimExpr, Stmt, Var
 from tvm.tir.expr import IterVar
+
 from .tir.node import BufferSlice
 
 

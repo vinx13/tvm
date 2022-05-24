@@ -16,13 +16,12 @@
 # under the License.
 """Helper functions in TVM Script Parser"""
 
-from typing import Callable, List, Any, Optional, Tuple
-
 import inspect
-import synr
+from typing import Any, Callable, List, Optional, Tuple
 
-from tvm.ir import Span, SourceName
+import synr
 from tvm.error import DiagnosticError
+from tvm.ir import SourceName, Span
 
 
 def get_param_list(

@@ -764,15 +764,31 @@ struct PackedFuncValueConverter<PrimExpr> {
       return PrimExpr(ObjectPtr<Object>(nullptr));
     }
     if (val.type_code() == kDLInt) {
-      return PrimExpr(val.operator int());
+      return IntImm(runtime::DataType::Int(32), val.operator int());
     }
     if (val.type_code() == kDLFloat) {
-      return PrimExpr(static_cast<float>(val.operator double()));
+      return FloatImm(runtime::DataType::Float(32), val.operator double());
     }
 
     return PrimExpr::FromObject_(val.AsObjectRef<ObjectRef>());
   }
 };
+
+// template <>
+// struct PackedFuncValueConverter<Array<PrimExpr>> {
+//   static Array<PrimExpr> From(const TVMPODValue_& val) {
+//     if (val.type_code() == kTVMNullptr) return Array<PrimExpr>(nullptr);
+//     Array<ObjectRef> vals = val.AsObjectRef<Array<ObjectRef>>();
+//     Array<PrimExpr> exprs;
+//     for (const ObjectRef& v : vals) {
+//       TVMValue value;
+//       value.v_handle = const_cast<void*>(static_cast<const void*>(v.get()));
+//       exprs.push_back(
+//           PackedFuncValueConverter<PrimExpr>::From(TVMArgValue(value, kTVMObjectHandle)));
+//     }
+//     return exprs;
+//   }
+// };
 
 template <>
 struct PackedFuncValueConverter<tvm::Integer> {

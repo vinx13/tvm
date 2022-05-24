@@ -71,7 +71,11 @@ DiagnosticBuilder Diagnostic::Help(Span span) {
 /* Diagnostic Renderer */
 TVM_REGISTER_NODE_TYPE(DiagnosticRendererNode);
 
-void DiagnosticRenderer::Render(const DiagnosticContext& ctx) { (*this)->renderer(ctx); }
+void DiagnosticRenderer::Render(const DiagnosticContext& ctx) {
+  if ((*this)->renderer != nullptr) {
+    (*this)->renderer(ctx);
+  }
+}
 
 TVM_DLL DiagnosticRenderer::DiagnosticRenderer(
     TypedPackedFunc<void(DiagnosticContext ctx)> renderer) {

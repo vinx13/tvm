@@ -15,11 +15,11 @@
 # specific language governing permissions and limitations
 # under the License.
 import tvm
-from tvm import tir
 import tvm.testing
-
+from tvm import tir
+from tvm.script import from_source
 from tvm.script import tir as T
-from tvm.tir.transform import HoistExpression, HoistedConditionals, HoistedLetBindings
+from tvm.tir.transform import HoistedConditionals, HoistedLetBindings, HoistExpression
 
 
 class BaseBeforeAfter:
@@ -27,7 +27,7 @@ class BaseBeforeAfter:
     hoisted_let_bindings = tvm.testing.parameter(HoistedLetBindings.All)
 
     def test_hoist(self, hoisted_conditionals, hoisted_let_bindings):
-        before = self.before
+        before = from_source(self.before)
         before_mod = tvm.IRModule.from_expr(before)
 
         config = {
@@ -41,7 +41,7 @@ class BaseBeforeAfter:
             after_mod = tvm.tir.transform.HoistExpression()(before_mod)
 
         after = after_mod["main"]
-        expected = self.expected
+        expected = from_source(self.expected)
 
         try:
             tvm.ir.assert_structural_equal(after, expected)

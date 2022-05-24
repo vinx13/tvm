@@ -15,15 +15,14 @@
 # specific language governing permissions and limitations
 # under the License.
 import pytest
-
 import tvm
-from tvm.script import tir as T
 import tvm.testing
+from tvm.script import tir as T
 
 
 def test_annotate_entry_func_single_primfunc():
     @tvm.script.ir_module
-    class MockModule:
+    class MockModule2:
         @T.prim_func
         def func1(A: T.Buffer[(16,), "float32"]):
             for i in T.serial(16):
@@ -31,7 +30,7 @@ def test_annotate_entry_func_single_primfunc():
                     if i == 5:
                         A[i] = 0.0
 
-    mod = MockModule
+    mod = MockModule2
     assert mod
     assert mod["func1"].attrs is None
     after = tvm.tir.transform.AnnotateEntryFunc()(mod)

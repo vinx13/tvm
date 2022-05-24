@@ -76,14 +76,6 @@ def test_missing_type_annotation():
     check_error(missing_type_annotation, 1)
 
 
-def invalid_expr_stmt() -> None:
-    T.max(1, 2)  # error
-
-
-def test_invalid_expr_stmt():
-    check_error(invalid_expr_stmt, 2)
-
-
 def invalid_for_function(a: T.handle) -> None:
     A = T.match_buffer(a, (16, 16), "float32")
 
@@ -113,14 +105,6 @@ def return_not_allowed(a: T.handle) -> None:
 
 def test_return_not_allowed():
     check_error(return_not_allowed, 2)
-
-
-def tir_assert(a: T.handle) -> None:
-    T.Assert(0, "")  # error
-
-
-def test_tir_assert():
-    check_error(tir_assert, 2)
 
 
 def no_body(a: T.handle) -> None:
@@ -250,19 +234,6 @@ def test_invalid_match_buffer_region():
     check_error(invalid_match_buffer_region, 5)
 
 
-def duplicate_buffer() -> None:
-    A = T.alloc_buffer((128, 128), "float32")
-    for i, j in T.grid(128, 128):
-        with T.block():
-            vi, vj = T.axis.remap("SS", [i, j])
-            A = T.alloc_buffer((128, 128), "float32")  # error
-            T.evaluate(1.0)
-
-
-def test_duplicate_buffer():
-    check_error(duplicate_buffer, 6)
-
-
 def duplicate_reads() -> None:
     A = T.alloc_buffer((128, 128), "float32")
     for i, j in T.grid(128, 128):
@@ -334,7 +305,7 @@ def opaque_access_during_complete(a: T.handle) -> None:  # error
 
 
 def test_opaque_access_during_complete():
-    check_error(opaque_access_during_complete, 1)
+    check_error(opaque_access_during_complete, 0)
 
 
 def convert_slice_to_bufferload() -> None:
@@ -606,15 +577,6 @@ def binop_bad_type(h: T.handle):
 
 def test_binop_bad_type():
     check_error(binop_bad_type, 3)
-
-
-def floor_dtype(h: T.handle):
-    h_ = T.match_buffer(h, [1])
-    h_[0] = T.floor(2)  # error floor requires a dtype
-
-
-def test_floor_dtype():
-    check_error(floor_dtype, 3)
 
 
 def non_integer_typed_block_iter():

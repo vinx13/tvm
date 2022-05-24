@@ -17,12 +17,13 @@
 # pylint: disable=redefined-builtin
 """TVM Script nodes."""
 
-from typing import Optional, Union, List, Callable
+from typing import Callable, List, Optional, Union
+
 import synr
 from tvm.arith import Analyzer
+from tvm.ir import Range, Span
 from tvm.runtime import ObjectGeneric, convert
-from tvm.tir import PrimExpr, Buffer, BufferLoad, IntImm, Ramp, BufferRegion
-from tvm.ir import Span, Range
+from tvm.tir import Buffer, BufferLoad, BufferRegion, IntImm, PrimExpr, Ramp
 
 
 class Slice:

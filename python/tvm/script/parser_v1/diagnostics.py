@@ -17,11 +17,11 @@
 """Bridge from synr's (the library used for parsing the python AST)
    DiagnosticContext to TVM's diagnostics
 """
-from synr import DiagnosticContext, ast
-
 import tvm
+from synr import DiagnosticContext, ast
+from tvm.ir.diagnostics import Diagnostic
 from tvm.ir.diagnostics import DiagnosticContext as TVMCtx
-from tvm.ir.diagnostics import get_renderer, DiagnosticLevel, Diagnostic
+from tvm.ir.diagnostics import DiagnosticLevel, get_renderer
 
 
 class TVMDiagnosticCtx(DiagnosticContext):

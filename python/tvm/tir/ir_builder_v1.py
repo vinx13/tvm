@@ -17,13 +17,13 @@
 """Developer API of IR node builder make function."""
 import tvm
 from tvm._ffi.base import string_types
-from tvm.runtime import ObjectGeneric, convert, const
 from tvm.ir import container as _container
+from tvm.runtime import ObjectGeneric, const, convert
 
-from . import stmt as _stmt
-from . import expr as _expr
 from . import buffer as _buffer
+from . import expr as _expr
 from . import op
+from . import stmt as _stmt
 
 
 class WithScope(object):
