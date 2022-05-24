@@ -313,10 +313,10 @@ class Target(Object):
         Target.canon_target. The final target_map keys will capture the target_host in
         canonical form. Also returns the target_host in canonical form."""
         if target_host is not None:
-            warnings.warn(
-                "target_host parameter is going to be deprecated. "
-                "Please pass in tvm.target.Target(target, host=target_host) instead."
-            )
+            # warnings.warn(
+            #     "target_host parameter is going to be deprecated. "
+            #     "Please pass in tvm.target.Target(target, host=target_host) instead."
+            # )
             target_host = Target.canon_target(target_host)
         new_target_map = {}
         for tgt, mod in target_map.items():

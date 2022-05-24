@@ -52,7 +52,7 @@ class TransformLayoutRewriter : private arith::IRMutatorWithAnalyzer {
         index_map_(index_map),
         buffer_data_to_buffer_{{new_buffer->data, new_buffer}} {}
 
-  void RewriteBufferAccess(Buffer* buffer, Array<PrimExpr>* indices, arith::Analyzer* analyzer) {
+  void RewriteBufferAccess(Buffer* buffer, Array<PrimExpr>* indices) {
     *buffer = new_buffer_;
     *indices = index_map_->MapIndices(*indices, analyzer_);
   }
@@ -65,7 +65,7 @@ class TransformLayoutRewriter : private arith::IRMutatorWithAnalyzer {
     BufferLoad buffer_load = Downcast<BufferLoad>(Parent::VisitExpr_(op));
     if (buffer_load->buffer.same_as(old_buffer_)) {
       auto* n = buffer_load.CopyOnWrite();
-      RewriteBufferAccess(&n->buffer, &n->indices, &analyzer_);
+      RewriteBufferAccess(&n->buffer, &n->indices);
     }
     return std::move(buffer_load);
   }
@@ -74,7 +74,7 @@ class TransformLayoutRewriter : private arith::IRMutatorWithAnalyzer {
     BufferStore buffer_store = Downcast<BufferStore>(Parent::VisitStmt_(op));
     if (buffer_store->buffer.same_as(old_buffer_)) {
       auto* n = buffer_store.CopyOnWrite();
-      RewriteBufferAccess(&n->buffer, &n->indices, &analyzer_);
+      RewriteBufferAccess(&n->buffer, &n->indices);
     }
     return std::move(buffer_store);
   }
@@ -92,14 +92,7 @@ class TransformLayoutRewriter : private arith::IRMutatorWithAnalyzer {
   }
 
   Stmt VisitStmt_(const BlockNode* op) final {
-<<<<<<< HEAD
     Block block = Downcast<Block>(Parent::VisitStmt_(op));
-=======
-    for (const IterVar& iter : op->iter_vars) {
-      analyzer_.Bind(iter->var, iter->dom);
-    }
-    Block block = Downcast<Block>(StmtExprMutator::VisitStmt_(op));
->>>>>>> 6ffa9aacf (Squashed commit: AutoTIR)
     auto infered_access_regions = GetBlockReadWriteRegion(block, buffer_data_to_buffer_);
     auto* n = block.CopyOnWrite();
     RewriteAccessRegion(&n->reads, infered_access_regions[0]);
@@ -113,7 +106,6 @@ class TransformLayoutRewriter : private arith::IRMutatorWithAnalyzer {
   const IndexMap& index_map_;
   Map<Var, Buffer> buffer_data_to_buffer_;
   Map<Block, Block> block_sref_reuse_;
-  arith::Analyzer analyzer_;
 };
 
 class BufferIsSubregionError : public ScheduleError {
@@ -200,86 +192,6 @@ void TransformLayout(ScheduleState self, const StmtSRef& block_sref, int buffer_
   self->Replace(scope_sref, new_scope_block, block_sref_reuse);
 }
 
-<<<<<<< HEAD
-class BufferAxisSeparatorMutator : private ReplaceBufferMutator {
- public:
-  static Block Mutate(const Block& scope_block, const Buffer& old_buffer, Buffer new_buffer,
-                      Map<Block, Block>* block_sref_reuse) {
-    BufferAxisSeparatorMutator mutator(old_buffer, std::move(new_buffer), block_sref_reuse);
-    return Downcast<Block>(mutator.VisitStmt(scope_block));
-  }
-
- private:
-  BufferAxisSeparatorMutator(const Buffer& old_buffer, Buffer new_buffer,
-                             Map<Block, Block>* block_sref_reuse)
-      : ReplaceBufferMutator(old_buffer, new_buffer, block_sref_reuse) {}
-
-  MatchBufferRegion VisitMatchBufferRegion(const MatchBufferRegion& match_buffer) final {
-    auto it = buffer_var_map_.find(match_buffer->source->buffer->data.get());
-    if (it != buffer_var_map_.end()) {
-      const Buffer& new_source_buffer = it->second;
-      Buffer new_target_buffer = match_buffer->buffer;
-      new_target_buffer.CopyOnWrite()->axis_separators = new_source_buffer->axis_separators;
-      if (new_target_buffer->shape.size() != new_source_buffer->shape.size()) {
-        LOG(WARNING)
-            << "Target buffer in match_buffer doesn't have the same dimensionality as its source "
-               "buffer. `axis_separators` for the target buffer might be incorrect.";
-      }
-      buffer_var_map_[new_target_buffer->data.get()] = new_target_buffer;
-      return MatchBufferRegion(new_target_buffer,
-                               BufferRegion(new_source_buffer, match_buffer->source->region));
-    }
-    return match_buffer;
-  }
-};
-
-void SetAxisSeparator(ScheduleState self, const StmtSRef& block_sref, int buffer_index,
-                      BufferIndexType buffer_index_type, const Array<IntImm>& axis_separators) {
-  const BlockNode* block_ptr = TVM_SREF_TO_BLOCK(block_ptr, block_sref);
-  Buffer old_buffer = GetNthAccessBuffer(self, GetRef<Block>(block_ptr), buffer_index,
-                                         buffer_index_type == BufferIndexType::kWrite);
-  Optional<StmtSRef> defining_site_sref;
-  bool is_alloc;
-  std::tie(defining_site_sref, is_alloc) = GetBufferDefiningSite(block_sref, old_buffer);
-  if (defining_site_sref.defined() && !is_alloc) {
-    throw BufferIsSubregionError(self->mod, old_buffer);
-  }
-
-  StmtSRef scope_sref = defining_site_sref.defined()
-                            ? defining_site_sref.value()
-                            : GetScopeRoot(self, block_sref, /*require_stage_pipeline=*/false);
-  const BlockNode* scope_block = TVM_SREF_TO_BLOCK(scope_block, scope_sref);
-
-  // Step 1: Check and update axis_separators of the buffer.
-  Buffer new_buffer = old_buffer;
-  new_buffer.CopyOnWrite()->axis_separators = axis_separators;
-
-  Map<Block, Block> block_sref_reuse;
-
-  // Step 2: Rewrite alloc_buffer of the block or buffer_map of the PrimFunc.
-  Block new_scope_block = BufferAxisSeparatorMutator::Mutate(GetRef<Block>(scope_block), old_buffer,
-                                                             new_buffer, &block_sref_reuse);
-  if (!defining_site_sref.defined()) {
-    // mutate buffer_map of the PrimFunc
-    GlobalVar g_var;
-    GetRootPrimFunc(self->mod, scope_block, &g_var);
-    IRModuleNode* new_mod = self->mod.CopyOnWrite();
-    MapNode* new_map = new_mod->functions.CopyOnWrite();
-    PrimFunc ref_new_func = Downcast<PrimFunc>(std::move(new_map->at(g_var)));
-    PrimFuncNode* new_func = ref_new_func.CopyOnWrite();
-    MapNode* new_buffer_map = new_func->buffer_map.CopyOnWrite();
-    for (auto it = new_buffer_map->begin(); it != new_buffer_map->end(); ++it) {
-      if ((*it).second.same_as(old_buffer)) {
-        (*it).second = new_buffer;
-      }
-    }
-    new_map->at(g_var) = std::move(ref_new_func);
-  }
-
-  // Step 4: Replace the scope block with the new block
-  self->Replace(scope_sref, new_scope_block, block_sref_reuse);
-}
-=======
 class BlockVarTypeDetector : public ExprVisitor {
  public:
   static IterVarType Detect(
@@ -415,8 +327,6 @@ void TransformBlockLayout(ScheduleState self, const StmtSRef& block_sref,
     new_block_iters.emplace_back(Range::FromMinExtent(0, new_range[i]),
                                  Downcast<Var>(new_block_vars[i]), new_block_var_types[i], "");
   }
-  // New binding values
-  DiagnosticContext diag_ctx(DiagnosticContext::Default(IRModule()));
   auto detect_res =
       arith::DetectIterMap(res, block_var_range_map, Bool(true), true, &analyzer);
   auto inverse_map = arith::InverseAffineIterMap(detect_res, new_block_vars);
@@ -449,7 +359,85 @@ void TransformBlockLayout(ScheduleState self, const StmtSRef& block_sref,
   self->Replace(GetRef<StmtSRef>(loop), body, {{GetRef<Block>(block_ptr), new_block}});
 }
 
->>>>>>> 6ffa9aacf (Squashed commit: AutoTIR)
+class BufferAxisSeparatorMutator : private ReplaceBufferMutator {
+ public:
+  static Block Mutate(const Block& scope_block, const Buffer& old_buffer, Buffer new_buffer,
+                      Map<Block, Block>* block_sref_reuse) {
+    BufferAxisSeparatorMutator mutator(old_buffer, std::move(new_buffer), block_sref_reuse);
+    return Downcast<Block>(mutator.VisitStmt(scope_block));
+  }
+
+ private:
+  BufferAxisSeparatorMutator(const Buffer& old_buffer, Buffer new_buffer,
+                             Map<Block, Block>* block_sref_reuse)
+      : ReplaceBufferMutator(old_buffer, new_buffer, block_sref_reuse) {}
+
+  MatchBufferRegion VisitMatchBufferRegion(const MatchBufferRegion& match_buffer) final {
+    auto it = buffer_var_map_.find(match_buffer->source->buffer->data.get());
+    if (it != buffer_var_map_.end()) {
+      const Buffer& new_source_buffer = it->second;
+      Buffer new_target_buffer = match_buffer->buffer;
+      new_target_buffer.CopyOnWrite()->axis_separators = new_source_buffer->axis_separators;
+      if (new_target_buffer->shape.size() != new_source_buffer->shape.size()) {
+        LOG(WARNING)
+            << "Target buffer in match_buffer doesn't have the same dimensionality as its source "
+               "buffer. `axis_separators` for the target buffer might be incorrect.";
+      }
+      buffer_var_map_[new_target_buffer->data.get()] = new_target_buffer;
+      return MatchBufferRegion(new_target_buffer,
+                               BufferRegion(new_source_buffer, match_buffer->source->region));
+    }
+    return match_buffer;
+  }
+};
+
+void SetAxisSeparator(ScheduleState self, const StmtSRef& block_sref, int buffer_index,
+                      BufferIndexType buffer_index_type, const Array<IntImm>& axis_separators) {
+  const BlockNode* block_ptr = TVM_SREF_TO_BLOCK(block_ptr, block_sref);
+  Buffer old_buffer = GetNthAccessBuffer(self, GetRef<Block>(block_ptr), buffer_index,
+                                         buffer_index_type == BufferIndexType::kWrite);
+  Optional<StmtSRef> defining_site_sref;
+  bool is_alloc;
+  std::tie(defining_site_sref, is_alloc) = GetBufferDefiningSite(block_sref, old_buffer);
+  if (defining_site_sref.defined() && !is_alloc) {
+    throw BufferIsSubregionError(self->mod, old_buffer);
+  }
+
+  StmtSRef scope_sref = defining_site_sref.defined()
+                            ? defining_site_sref.value()
+                            : GetScopeRoot(self, block_sref, /*require_stage_pipeline=*/false);
+  const BlockNode* scope_block = TVM_SREF_TO_BLOCK(scope_block, scope_sref);
+
+  // Step 1: Check and update axis_separators of the buffer.
+  Buffer new_buffer = old_buffer;
+  new_buffer.CopyOnWrite()->axis_separators = axis_separators;
+
+  Map<Block, Block> block_sref_reuse;
+
+  // Step 2: Rewrite alloc_buffer of the block or buffer_map of the PrimFunc.
+  Block new_scope_block = BufferAxisSeparatorMutator::Mutate(GetRef<Block>(scope_block), old_buffer,
+                                                             new_buffer, &block_sref_reuse);
+  if (!defining_site_sref.defined()) {
+    // mutate buffer_map of the PrimFunc
+    GlobalVar g_var;
+    GetRootPrimFunc(self->mod, scope_block, &g_var);
+    IRModuleNode* new_mod = self->mod.CopyOnWrite();
+    MapNode* new_map = new_mod->functions.CopyOnWrite();
+    PrimFunc ref_new_func = Downcast<PrimFunc>(std::move(new_map->at(g_var)));
+    PrimFuncNode* new_func = ref_new_func.CopyOnWrite();
+    MapNode* new_buffer_map = new_func->buffer_map.CopyOnWrite();
+    for (auto it = new_buffer_map->begin(); it != new_buffer_map->end(); ++it) {
+      if ((*it).second.same_as(old_buffer)) {
+        (*it).second = new_buffer;
+      }
+    }
+    new_map->at(g_var) = std::move(ref_new_func);
+  }
+
+  // Step 4: Replace the scope block with the new block
+  self->Replace(scope_sref, new_scope_block, block_sref_reuse);
+}
+
 /******** InstructionKind Registration ********/
 
 struct TransformLayoutTraits : public UnpackedInstTraits<TransformLayoutTraits> {
@@ -503,42 +491,12 @@ struct TransformLayoutTraits : public UnpackedInstTraits<TransformLayoutTraits> 
   friend struct ::tvm::tir::UnpackedInstTraits;
 };
 
-<<<<<<< HEAD
-struct SetAxisSeparatorTraits : public UnpackedInstTraits<SetAxisSeparatorTraits> {
-  static constexpr const char* kName = "SetAxisSeparator";
-=======
 struct TransformBlockLayoutTraits : public UnpackedInstTraits<TransformBlockLayoutTraits> {
   static constexpr const char* kName = "TransformBlockLayout";
->>>>>>> 6ffa9aacf (Squashed commit: AutoTIR)
   static constexpr bool kIsPure = false;
 
  private:
   static constexpr size_t kNumInputs = 1;
-<<<<<<< HEAD
-  static constexpr size_t kNumAttrs = 3;
-  static constexpr size_t kNumDecisions = 0;
-
-  static void UnpackedApplyToSchedule(Schedule sch, BlockRV block_rv, Integer buffer_index,
-                                      Integer buffer_index_type, Array<IntImm> axis_separators) {
-    return sch->SetAxisSeparator(block_rv, buffer_index,
-                                 static_cast<BufferIndexType>(buffer_index_type->value),
-                                 axis_separators);
-  }
-
-  static String UnpackedAsPython(Array<String> outputs, String block_rv, Integer buffer_index,
-                                 Integer buffer_index_type, Array<IntImm> axis_separators) {
-    PythonAPICall py("set_axis_separator");
-    py.Input("block", block_rv);
-    py.Input("buffer_index", buffer_index);
-    py.Input("buffer_index_type", '"' +
-                                      std::string(BufferIndexType2Str(
-                                          static_cast<BufferIndexType>(buffer_index_type->value))) +
-                                      '"');
-    py.Input("axis_separators", axis_separators);
-    return py.Str();
-  }
-
-=======
   static constexpr size_t kNumAttrs = 1;
   static constexpr size_t kNumDecisions = 0;
 
@@ -568,17 +526,47 @@ struct TransformBlockLayoutTraits : public UnpackedInstTraits<TransformBlockLayo
     return attrs;
   }
 
->>>>>>> 6ffa9aacf (Squashed commit: AutoTIR)
+  template <typename>
+  friend struct ::tvm::tir::UnpackedInstTraits;
+};
+
+struct SetAxisSeparatorTraits : public UnpackedInstTraits<SetAxisSeparatorTraits> {
+  static constexpr const char* kName = "SetAxisSeparator";
+  static constexpr bool kIsPure = false;
+
+ private:
+  static constexpr size_t kNumInputs = 1;
+  static constexpr size_t kNumAttrs = 3;
+  static constexpr size_t kNumDecisions = 0;
+
+  static void UnpackedApplyToSchedule(Schedule sch, BlockRV block_rv, Integer buffer_index,
+                                      Integer buffer_index_type, Array<IntImm> axis_separators) {
+    return sch->SetAxisSeparator(block_rv, buffer_index,
+                                 static_cast<BufferIndexType>(buffer_index_type->value),
+                                 axis_separators);
+  }
+
+  static String UnpackedAsPython(Array<String> outputs, String block_rv, Integer buffer_index,
+                                 Integer buffer_index_type, Array<IntImm> axis_separators) {
+    PythonAPICall py("set_axis_separator");
+    py.Input("block", block_rv);
+    py.Input("buffer_index", buffer_index);
+    py.Input("buffer_index_type", '"' +
+                                      std::string(BufferIndexType2Str(
+                                          static_cast<BufferIndexType>(buffer_index_type->value))) +
+                                      '"');
+    py.Input("axis_separators", axis_separators);
+    return py.Str();
+  }
+
   template <typename>
   friend struct ::tvm::tir::UnpackedInstTraits;
 };
 
 TVM_REGISTER_INST_KIND_TRAITS(TransformLayoutTraits);
-<<<<<<< HEAD
-TVM_REGISTER_INST_KIND_TRAITS(SetAxisSeparatorTraits);
-=======
 TVM_REGISTER_INST_KIND_TRAITS(TransformBlockLayoutTraits);
->>>>>>> 6ffa9aacf (Squashed commit: AutoTIR)
+TVM_REGISTER_INST_KIND_TRAITS(SetAxisSeparatorTraits);
 
 }  // namespace tir
 }  // namespace tvm
+

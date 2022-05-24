@@ -2241,6 +2241,7 @@ class Schedule(Object):
             index_map = IndexMap.from_func(index_map)
         _ffi_api.ScheduleTransformBlockLayout(  # type: ignore # pylint: disable=no-member
             self, block, index_map
+        )
 
     @type_checked
     def set_axis_separator(
