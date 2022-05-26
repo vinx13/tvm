@@ -316,7 +316,7 @@ Optional<LoopRV> MultiLevelTilingNode::TransformWithTensorIntrin(State& state, c
   block = TVM_SREF_TO_BLOCK(block, block_sref);
 
   // Transform the layout of reindex buffers accordingly
-  std::unordered_map<tir::Var, tir::Var, ObjectPtrHash, ObjectPtrEqual> unmapped_vars;
+  std::unordered_set<tir::Var, ObjectPtrHash, ObjectPtrEqual> unmapped_vars;
   std::unordered_map<tir::Var, tir::Var, ObjectPtrHash, ObjectPtrEqual> representer_map;
   std::unordered_map<tir::Var, PrimExpr, ObjectPtrHash, ObjectPtrEqual> tgt_iter_map;
   size_t offset = info->mapping->final_indices.size() - info->rhs_iters.size();
@@ -327,7 +327,7 @@ Optional<LoopRV> MultiLevelTilingNode::TransformWithTensorIntrin(State& state, c
   for (size_t i = 0; i < offset; ++i) {
     const tir::VarNode* var_ptr = info->mapping->final_indices[i].as<tir::VarNode>();
     ICHECK(var_ptr != nullptr);
-    unmapped_vars[block->iter_vars[i]->var] = Downcast<tir::Var>(info->mapping->final_indices[i]);
+    unmapped_vars.insert(GetRef<tir::Var>(var_ptr));
   }
   for (size_t i = offset; i < info->mapping->final_indices.size(); ++i) {
     tgt_iter_map[info->rhs_iters[i - offset]->var] = info->mapping->final_indices[i];
@@ -345,10 +345,10 @@ Optional<LoopRV> MultiLevelTilingNode::TransformWithTensorIntrin(State& state, c
       ICHECK(tir::is_one(range->extent));
       const tir::VarNode* var_ptr = range->min.as<tir::VarNode>();
       ICHECK(var_ptr != nullptr);
-      sub_representers.push_back(representer_map[GetRef<tir::Var>(var_ptr)]);
-      auto it = unmapped_vars.find(GetRef<tir::Var>(var_ptr));
-      if (it != unmapped_vars.end()) {
-        sub_target_iters.push_back(it->second);
+      const tir::Var& representer = representer_map[GetRef<tir::Var>(var_ptr)];
+      sub_representers.push_back(representer);
+      if (unmapped_vars.count(representer)) {
+        sub_target_iters.push_back(representer);
       }
     }
     for (size_t i = 0; i < info->rhs_indices_map[rhs_buffer].size(); ++i) {
