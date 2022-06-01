@@ -156,7 +156,7 @@ def wmma_sync_desc(a: T.handle, b: T.handle, c: T.handle) -> None:
         for i, j, k in T.grid(16, 16, 16):
             with T.block(""):
                 vii, vjj, vkk = T.axis.remap("SSR", [i, j, k])
-                C[vii, vjj] = C[vii, vjj] + T.cast(A[vii, vkk], 'float32') * T.cast(B[vjj, vkk], 'float32')
+                C[vii, vjj] = C[vii, vjj] + T.cast(A[vii, vkk], 'float32') * T.cast(B[vkk, vjj], 'float32')
 
 
 @T.prim_func
