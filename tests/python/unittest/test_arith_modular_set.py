@@ -16,7 +16,6 @@
 # under the License.
 import tvm
 from tvm import te
-from tvm.arith import analyzer
 
 
 def test_cast():

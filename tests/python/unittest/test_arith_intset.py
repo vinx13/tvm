@@ -15,7 +15,8 @@
 # specific language governing permissions and limitations
 # under the License.
 import tvm
-from tvm import te, tir
+from tvm import te
+from tvm import tir
 from tvm.ir.base import structural_equal
 
 
