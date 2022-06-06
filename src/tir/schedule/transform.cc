@@ -280,7 +280,7 @@ Optional<LoopRV> TileWithTensorIntrin(const tir::Schedule& sch, const tir::Block
     ICHECK_EQ(total % inner, 0);
     int64_t outer = int_block_extent->value / int_desc_extent->value;
     // Do the split
-    Array<LoopRV> split = sch->Split(loop2rv.at(block_loop_sref), {Integer(outer), Integer(inner)});
+    Array<LoopRV> split = sch->Split(loop2rv.at(block_loop_sref), {Integer{nullptr}, Integer(inner)});
     ICHECK_EQ(split.size(), 2);
     inner_loops.insert(sch->GetSRef(split[1]).operator->());
     // The inner split will be reordered to the loop domain that is tensorized

@@ -16,11 +16,16 @@
 # under the License.
 # pylint: disable=missing-module-docstring,missing-function-docstring,missing-class-docstring
 import tvm
+import tvm.testing
 from tvm import te
 from tvm.meta_schedule import schedule_rule
 from tvm.meta_schedule.space_generator.post_order_apply import PostOrderApply
 from tvm.meta_schedule.testing import te_workload
-from tvm.meta_schedule.testing.schedule_rule import multi_level_tiling
+from tvm.meta_schedule.testing.schedule_rule import (
+    auto_inline,
+    multi_level_tiling,
+    multi_level_tiling_tensor_core,
+)
 from tvm.meta_schedule.testing.space_generation import check_trace
 from tvm.meta_schedule.tune_context import TuneContext
 from tvm.script import tir as T
@@ -31,11 +36,13 @@ from tvm.tir.tensor_intrin import VNNI_DOT_16x4_INTRIN as VNNI_INTRIN
 
 
 def _create_context(mod, target, rule) -> TuneContext:
+    if not isinstance(rule, (list, tuple)):
+        rule = [rule]
     ctx = TuneContext(
         mod=mod,
         target=target,
         space_generator=PostOrderApply(),
-        sch_rules=[rule],
+        sch_rules=rule,
         task_name="test",
     )
     return ctx
@@ -556,11 +563,173 @@ sch.annotate(block_or_loop=b49, ann_key="meta_schedule.cooperative_fetch", ann_v
     check_trace(spaces, expected)
 
 
+def test_cuda_tensor_core_conv2d():
+    target = Target("cuda", host="llvm")
+    ctx = _create_context(
+        create_prim_func(
+            te_workload.conv2d_nhwc_f16(
+                N=1, H=16, W=16, CI=16, CO=16, kernel_size=3, stride=1, padding=1
+            )
+        ),
+        target,
+        multi_level_tiling_tensor_core(target=target, scope="shared"),
+    )
+    spaces = ctx.space_generator.generate_design_space(mod=ctx.mod)
+    assert len(spaces) == 1
+
+    expected = []
+    print("".join(spaces[0].trace.as_python()))
+    check_trace(spaces, expected)
+
+
+def test_cuda_tensor_core_matmul_relu():
+    m = n = k = 128
+    target = Target("cuda", host="llvm")
+    ctx = _create_context(
+        create_prim_func(
+            te_workload.matmul_relu_fp16(
+                n=n,
+                m=m,
+                k=k,
+            )
+        ),
+        target=target,
+        rule=multi_level_tiling_tensor_core(target=target, scope="shared"),
+    )
+    spaces = ctx.space_generator.generate_design_space(mod=ctx.mod)
+    assert len(spaces) == 1
+
+    expected = []
+    print("".join(spaces[0].trace.as_python()))
+    check_trace(spaces, expected)
+
+
+def test_cuda_tensor_core_matmul_relu_global():
+    m = n = k = 128
+    target = Target("cuda", host="llvm")
+    ctx = _create_context(
+        create_prim_func(
+            te_workload.matmul_relu_fp16(
+                n=n,
+                m=m,
+                k=k,
+            ),
+        ),
+        target=target,
+        rule=[multi_level_tiling_tensor_core(target=target, scope="global"), auto_inline(target)],
+    )
+    spaces = ctx.space_generator.generate_design_space(mod=ctx.mod)
+    assert len(spaces) == 1
+
+    expected = [
+        """b0 = sch.get_block(name="C", func_name="main")
+sch.annotate(block_or_loop=b0, ann_key="meta_schedule.tiling_structure", ann_val="SSSRRSRS")
+b1 = sch.reindex(block=b0, buffer=("write", 0))
+b2 = sch.reindex(block=b0, buffer=("read", 0))
+b3 = sch.reindex(block=b0, buffer=("read", 1))
+sch.transform_layout(block=b0, buffer=("write", 0), index_map=lambda i, j: (i, j, ))
+sch.transform_layout(block=b0, buffer=("read", 1), index_map=lambda j, k: (k, j, ))
+sch.transform_layout(block=b0, buffer=("read", 0), index_map=lambda i, k: (i, k, ))
+sch.transform_block_layout(block=b1, index_map=lambda i, j, k: (i, j, k, ))
+sch.transform_block_layout(block=b2, index_map=lambda i, j, k: (i, j, k, ))
+sch.transform_block_layout(block=b3, index_map=lambda i, j, k: (i, j, k, ))
+sch.transform_block_layout(block=b0, index_map=lambda i, j, k: (i, j, k, ))
+l4, l5, l6 = sch.get_loops(block=b0)
+l7, l8 = sch.split(loop=l6, factors=[None, 16], preserve_unit_iters=True)
+l9, l10 = sch.split(loop=l5, factors=[None, 16], preserve_unit_iters=True)
+l11, l12 = sch.split(loop=l4, factors=[None, 16], preserve_unit_iters=True)
+l13, l14, l15, l16, l17, l18 = sch.get_loops(block=b0)
+sch.reorder(l15, l17, l12, l10, l8)
+b19 = sch.blockize(loop=l12)
+sch.annotate(block_or_loop=b19, ann_key="meta_schedule.auto_tensorize", ann_val="wmma_sync_16x16x16_f16f16f32")
+sch.annotate(block_or_loop=b19, ann_key="meta_schedule.auto_tensorize_init", ann_val="wmma_fill_16x16x16_f32")
+sch.annotate(block_or_loop=b19, ann_key="warp_execution", ann_val=1)
+l20, l21, l22 = sch.get_loops(block=b19)
+v23, v24, v25, v26, v27 = sch.sample_perfect_tile(loop=l20, n=5, max_innermost_factor=64)
+l28, l29, l30, l31, l32 = sch.split(loop=l20, factors=[v23, v24, v25, v26, v27], preserve_unit_iters=True)
+v33, v34, v35, v36, v37 = sch.sample_perfect_tile(loop=l21, n=5, max_innermost_factor=64)
+l38, l39, l40, l41, l42 = sch.split(loop=l21, factors=[v33, v34, v35, v36, v37], preserve_unit_iters=True)
+v43, v44, v45 = sch.sample_perfect_tile(loop=l22, n=3, max_innermost_factor=64)
+l46, l47, l48 = sch.split(loop=l22, factors=[v43, v44, v45], preserve_unit_iters=True)
+sch.reorder(l28, l38, l29, l39, l30, l40, l46, l47, l31, l41, l48, l32, l42)
+l49 = sch.fuse(l28, l38, preserve_unit_iters=True)
+sch.bind(loop=l49, thread_axis="blockIdx.x")
+l50 = sch.fuse(l29, l39, preserve_unit_iters=True)
+sch.bind(loop=l50, thread_axis="vthread.x")
+l51 = sch.fuse(l30, l40, preserve_unit_iters=True)
+sch.bind(loop=l51, thread_axis="threadIdx.x")
+b52 = sch.cache_write(block=b19, write_buffer_index=0, storage_scope="wmma.accumulator")
+sch.reverse_compute_at(block=b52, loop=l51, preserve_unit_loops=True)
+b53, = sch.get_consumers(block=b52)
+sch.reverse_compute_inline(block=b53)
+l54, l55, l56, l57, l58 = sch.get_loops(block=b52)
+l59, l60 = sch.split(loop=l58, factors=[None, 16], preserve_unit_iters=True)
+l61, l62 = sch.split(loop=l57, factors=[None, 16], preserve_unit_iters=True)
+l63, l64, l65, l66, l67, l68, l69 = sch.get_loops(block=b52)
+sch.reorder(l68, l62, l60)
+sch.tensorize(block_or_loop=l62, tensor_intrin="wmma_store_16x16x16_f32_global")
+b70 = sch.cache_read(block=b19, read_buffer_index=0, storage_scope="shared")
+sch.compute_at(block=b70, loop=l46, preserve_unit_loops=True)
+l71, l72, l73, l74, l75, l76 = sch.get_loops(block=b70)
+l77 = sch.fuse(l75, l76, preserve_unit_iters=True)
+v78 = sch.sample_categorical(candidates=[1, 2, 3, 4], probs=[0.25, 0.25, 0.25, 0.25])
+sch.annotate(block_or_loop=b70, ann_key="meta_schedule.cooperative_fetch", ann_val=v78)
+b79 = sch.cache_read(block=b19, read_buffer_index=1, storage_scope="shared")
+sch.compute_at(block=b79, loop=l46, preserve_unit_loops=True)
+l80, l81, l82, l83, l84, l85 = sch.get_loops(block=b79)
+l86 = sch.fuse(l84, l85, preserve_unit_iters=True)
+v87 = sch.sample_categorical(candidates=[1, 2, 3, 4], probs=[0.25, 0.25, 0.25, 0.25])
+sch.annotate(block_or_loop=b79, ann_key="meta_schedule.cooperative_fetch", ann_val=v87)
+b88 = sch.cache_read(block=b19, read_buffer_index=0, storage_scope="wmma.matrix_a")
+sch.compute_at(block=b88, loop=l47, preserve_unit_loops=True)
+l89, l90, l91, l92, l93, l94, l95 = sch.get_loops(block=b88)
+l96, l97 = sch.split(loop=l95, factors=[None, 16], preserve_unit_iters=True)
+l98, l99 = sch.split(loop=l94, factors=[None, 16], preserve_unit_iters=True)
+l100, l101, l102, l103, l104, l105, l106, l107, l108 = sch.get_loops(block=b88)
+sch.reorder(l107, l99, l97)
+sch.tensorize(block_or_loop=l99, tensor_intrin="wmma_load_16x16x16_f16_a")
+b109 = sch.cache_read(block=b19, read_buffer_index=1, storage_scope="wmma.matrix_b")
+sch.compute_at(block=b109, loop=l47, preserve_unit_loops=True)
+l110, l111, l112, l113, l114, l115, l116 = sch.get_loops(block=b109)
+l117, l118 = sch.split(loop=l116, factors=[None, 16], preserve_unit_iters=True)
+l119, l120 = sch.split(loop=l115, factors=[None, 16], preserve_unit_iters=True)
+l121, l122, l123, l124, l125, l126, l127, l128, l129 = sch.get_loops(block=b109)
+sch.reorder(l128, l120, l118)
+sch.tensorize(block_or_loop=l120, tensor_intrin="wmma_load_16x16x16_f16_b")
+sch.compute_inline(block=b2)
+sch.compute_inline(block=b3)""".split(
+            "\n"
+        )
+    ]
+    check_trace(spaces, expected)
+    print(spaces[0].mod.script())
+
+
+def test_multi_level_tiling_non_tensorizable():
+    # expected to do nothing on non-tensorizable workloads
+    m = n = k = 128
+    target = Target("cuda", host="llvm")
+    ctx = _create_context(
+        create_prim_func(
+            # dtype doesn't match tensor intrin
+            te_workload.matmul_relu(
+                n=n,
+                m=m,
+                k=k,
+            )
+        ),
+        target=target,
+        rule=multi_level_tiling_tensor_core(target=target, scope="global"),
+    )
+    spaces = ctx.space_generator.generate_design_space(mod=ctx.mod)
+    assert len(spaces) == 1
+
+    expected = [
+        "",
+    ]
+    print("".join(spaces[0].trace.as_python()))
+    check_trace(spaces, expected)
+
+
 if __name__ == "__main__":
-    test_cpu_matmul()
-    test_cpu_matmul_relu()
-    test_cuda_matmul()
-    test_cuda_matmul_relu()
-    test_cuda_sum_with_trivial_block_iter()
-    test_multi_level_tiling_conv2d_nchwc_vnni()
-    test_multi_level_tiling_dense_dpa4()
+    tvm.testing.main()

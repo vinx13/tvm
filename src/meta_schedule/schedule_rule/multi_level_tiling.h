@@ -28,6 +28,11 @@
 #include "../../support/array.h"
 
 namespace tvm {
+namespace tir {
+std::vector<int> GetReadBufferNDims(const StmtSRef& block_sref);
+}
+}  // namespace tvm
+namespace tvm {
 namespace meta_schedule {
 
 /*!
@@ -93,6 +98,10 @@ class StateNode : public Object {
   tir::BlockRV block_rv;
   /*! \brief The loop tiles */
   Array<Array<tir::LoopRV>> tiles;
+  /*! \brief The mapping from buffer index to read cache block. */
+  std::unordered_map<int, tir::BlockRV> read_reuse;
+  /*! \brief The mapping from buffer index to write cache block. */
+  std::unordered_map<int, tir::BlockRV> write_reuse;
 
   /*!
    * \brief Create a copy of the state. The underlying schedule is copied. Schedule rules that
@@ -111,6 +120,37 @@ class State : public ObjectRef {
   explicit State(tir::Schedule sch, tir::BlockRV block_rv, Array<Array<tir::LoopRV>> tiles = {});
   TVM_DEFINE_MUTABLE_OBJECT_REF_METHODS(State, ObjectRef, StateNode);
 };
+
+class TensorCoreStateNode : public StateNode {
+ public:
+  /*! \brief The Tensor Core cache read block A for Tensor Core computation */
+  tir::BlockRV tensor_core_load_A;
+  /*! \brief The Tensor Core cache read block B for Tensor Core computation */
+  tir::BlockRV tensor_core_load_B;
+  /*! \brief The Tensor Core cache write block for Tensor Core computation */
+  tir::BlockRV tensor_core_store;
+  /*! \brief The Tensor Core reindex block A for Tensor Core computation */
+  tir::BlockRV tensor_core_reindex_A;
+  /*! \brief The Tensor Core reindex block B for Tensor Core computation */
+  tir::BlockRV tensor_core_reindex_B;
+  /*! \brief The Tensor Core reindex store block for Tensor Core computation */
+  tir::BlockRV tensor_core_reindex_store;
+
+  State Copy() const final;
+
+  static constexpr const char* _type_key = "meta_schedule.TensorCoreState";
+  TVM_DECLARE_FINAL_OBJECT_INFO(TensorCoreStateNode, StateNode);
+};
+
+class TensorCoreState : public State {
+ public:
+  explicit TensorCoreState(tir::Schedule sch, tir::BlockRV block_rv,
+                           Array<Array<tir::LoopRV>> tiles = {});
+
+  TVM_DEFINE_MUTABLE_OBJECT_REF_METHODS(TensorCoreState, State, TensorCoreStateNode);
+};
+
+struct AutoTensorizationState : public State {};
 
 /*!
  * \brief Helper to apply a sub-rule to a list of auto scheduling states
@@ -148,7 +188,12 @@ class MultiLevelTilingNode : public ScheduleRuleNode {
   void InitializeWithTuneContext(const TuneContext& context) final;
 
   // Entry of the mega rule; Inherited from ScheduleRuleNode
-  Array<tir::Schedule> Apply(const tir::Schedule& sch, const tir::BlockRV& block_rv) final;
+  Array<tir::Schedule> Apply(const tir::Schedule& sch, const tir::BlockRV& block_rv) override;
+
+  // Utilities functions
+
+  // Annotate a block to use cooperative fetching
+  void AnnotateCooperativeFetching(tir::Schedule* sch, const tir::BlockRV& block) const;
 
  protected:
   virtual std::vector<State> ApplySubRules(std::vector<State> states);
