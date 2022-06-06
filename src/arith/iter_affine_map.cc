@@ -1547,16 +1547,20 @@ PrimExpr IterMapRewriter::VisitExpr_(const FloorDivNode* op) {
                       << " may not be an iterator";
     return GetRef<PrimExpr>(op);
   }
-
   IterSumExpr preprocessed = PreprocessDividend(Downcast<IterMapExpr>(a), op->a);
   if (!preprocessed.defined()) {
     return GetRef<PrimExpr>(op);
   }
-  PrimExpr remainder = SplitFloorDivConst(preprocessed->args[0], preprocessed->base, b);
-  if (!remainder.defined()) {
-    return GetRef<PrimExpr>(op);
+  ICHECK(preprocessed->args.size() <= 1);
+  if (preprocessed->args.empty()) {
+    return IterSumExpr({}, floordiv(preprocessed->base, b));
+  } else {
+    PrimExpr remainder = SplitFloorDivConst(preprocessed->args[0], preprocessed->base, b);
+    if (!remainder.defined()) {
+      return GetRef<PrimExpr>(op);
+    }
+    return remainder;
   }
-  return remainder;
 }
 
 PrimExpr IterMapRewriter::SplitFloorModConst(IterSplitExpr lhs, PrimExpr base, PrimExpr rhs) {
@@ -1636,12 +1640,16 @@ PrimExpr IterMapRewriter::VisitExpr_(const FloorModNode* op) {
   if (!preprocessed.defined()) {
     return GetRef<PrimExpr>(op);
   }
-
-  PrimExpr remainder = SplitFloorModConst(preprocessed->args[0], preprocessed->base, b);
-  if (!remainder.defined()) {
-    return GetRef<PrimExpr>(op);
+  ICHECK(preprocessed->args.size() <= 1);
+  if (preprocessed->args.empty()) {
+    return IterSumExpr({}, floormod(preprocessed->base, b));
+  } else {
+    PrimExpr remainder = SplitFloorModConst(preprocessed->args[0], preprocessed->base, b);
+    if (!remainder.defined()) {
+      return GetRef<PrimExpr>(op);
+    }
+    return remainder;
   }
-  return remainder;
 }
 
 /*! * \brief Given an expression that may contain IterVarMapExpr, transform it to normal PrimExpr.
