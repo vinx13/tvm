@@ -118,6 +118,9 @@ class RewriteReductionBlockNode : public PostprocNode {
 
   static constexpr const char* _type_key = "meta_schedule.RewriteReductionBlock";
   TVM_DECLARE_FINAL_OBJECT_INFO(RewriteReductionBlockNode, PostprocNode);
+
+ private:
+  void RewriteAutoTensorizationAnnotation() const;
 };
 
 bool RewriteReductionBlockNode::Apply(const tir::Schedule& sch) {
@@ -135,6 +138,21 @@ bool RewriteReductionBlockNode::Apply(const tir::Schedule& sch) {
       tir::BlockRV block_rv = GetRVFromSRef(sch, block_sref, global_var_name);
       Array<tir::LoopRV> loop_rvs = sch->GetLoops(block_rv);
       tir::BlockRV init_block_rv = sch->DecomposeReduction(block_rv, loop_rvs[decompose_point]);
+
+      // Rewrite auto tensorization related annotations
+      if (tir::GetAnn<String>(block_sref, tir::attr::meta_schedule_auto_tensorize).defined()) {
+        // Remove tensorization annotation as it shouldn't be propagated to the init block.
+        sch->Unannotate(init_block_rv, tir::attr::meta_schedule_auto_tensorize);
+      }
+      if (Optional<String> tensorize_init =
+              tir::GetAnn<String>(block_sref, tir::attr::meta_schedule_auto_tensorize_init)) {
+        // The annotation of tensorization of the init statement should be moved to the init block
+        // after 'DecomposeReduction'.
+        sch->Annotate(init_block_rv, tir::attr::meta_schedule_auto_tensorize,
+                      tensorize_init.value());
+        sch->Unannotate(block_rv, tir::attr::meta_schedule_auto_tensorize_init);
+        sch->Unannotate(init_block_rv, tir::attr::meta_schedule_auto_tensorize_init);
+      }
       ++rewritten;
     }
     if (rewritten == 0) {

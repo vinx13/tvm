@@ -38,7 +38,7 @@ void CollectTensorizationJobs(
       if (Optional<String> intrin_name =
               tir::GetAnn<String>(block_sref, tir::attr::meta_schedule_auto_tensorize)) {
         std::string block_name = block_sref->StmtAs<tir::BlockNode>()->name_hint;
-        if (block_name.find("init") == std::string::npos) {
+        if (true || block_name.find("init") == std::string::npos) {
           jobs->emplace_back(block_name, func_name, [sch, intrin_name](tir::BlockRV block) {
             try {
               sch->Tensorize(block, intrin_name.value());
