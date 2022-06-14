@@ -432,6 +432,7 @@ inline std::vector<State> MultiLevelTilingNode::SeekForTensorCore(State state) c
   if (!transformed_loop_rv.defined()) return {state};
   // Do tiling to match Tensor Core wmma sync intrin
   BlockRV block_rv = state.block_rv;
+  LOG(INFO) << tir::AsTVMScript(state.sch->mod());
   Optional<LoopRV> tiled_loop_rv = TilingwithTensorIntrin(state.sch, block_rv, "wmma_sync");
   ICHECK(tiled_loop_rv.defined());
   // Do blockize

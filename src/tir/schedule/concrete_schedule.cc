@@ -742,6 +742,13 @@ void ConcreteScheduleNode::SetAxisSeparator(const BlockRV& block_rv, int buffer_
   this->state_->DebugVerify();
 }
 
+void ConcreteScheduleNode::Padding(const BlockRV& block_rv, const Array<IntImm>& padding) {
+  TVM_TIR_SCHEDULE_BEGIN();
+  tir::Padding(state_, this->GetSRef(block_rv), padding);
+  TVM_TIR_SCHEDULE_END("padding", this->error_render_level_);
+  this->state_->DebugVerify();
+}
+
 /******** Schedule: Misc ********/
 
 }  // namespace tir
