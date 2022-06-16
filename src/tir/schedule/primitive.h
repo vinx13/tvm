@@ -416,7 +416,7 @@ TVM_DLL void SetAxisSeparator(ScheduleState self, const StmtSRef& block_sref, in
  * \param block_sref The block that accesses the target buffer.
  * \param padding The shape after padding
  */
-TVM_DLL void Padding(ScheduleState self, const StmtSRef& block_sref, const Array<IntImm>& padding);
+TVM_DLL void PaddingEinSum(ScheduleState self, const StmtSRef& block_sref, const Array<IntImm>& padding);
 
 /******** Schedule: Blockize & Tensorize ********/
 

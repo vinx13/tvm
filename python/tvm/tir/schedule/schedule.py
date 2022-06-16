@@ -2542,6 +2542,14 @@ class Schedule(Object):
             self, block, buffer_index, buffer_index_type_enum, axis_separators
         )
 
+    def padding_einsum(
+        self,
+        block,
+        padding,
+    ):
+        _ffi_api.SchedulePaddingEinSum(
+            self, block, padding
+        )
     ########## Schedule: Misc ##########
 
     @type_checked

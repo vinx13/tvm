@@ -145,7 +145,7 @@ class ConcreteScheduleNode : public ScheduleNode {
   void SetAxisSeparator(const BlockRV& block_rv, int buffer_index,
                         BufferIndexType buffer_index_type,
                         const Array<IntImm>& axis_separators) override;
-  void Padding(const BlockRV& block_rv, const Array<IntImm>& padding) override;
+  void PaddingEinSum(const BlockRV& block_rv, const Array<IntImm>& padding) override;
   /******** Schedule: Misc ********/
   void EnterPostproc() override {}
 

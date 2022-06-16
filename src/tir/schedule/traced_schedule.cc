@@ -502,9 +502,9 @@ void TracedScheduleNode::SetAxisSeparator(const BlockRV& block_rv, int buffer_in
       /*outputs=*/{}));
 }
 
-void TracedScheduleNode::Padding(const BlockRV& block_rv, const Array<IntImm>& padding) {
-  ConcreteScheduleNode::Padding(block_rv, padding);
-  static const InstructionKind& kind = InstructionKind::Get("Padding");
+void TracedScheduleNode::PaddingEinSum(const BlockRV& block_rv, const Array<IntImm>& padding) {
+  ConcreteScheduleNode::PaddingEinSum(block_rv, padding);
+  static const InstructionKind& kind = InstructionKind::Get("PaddingEinSum");
   trace_->Append(/*inst=*/Instruction(
       /*kind=*/kind,
       /*inputs=*/{block_rv},
