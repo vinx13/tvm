@@ -326,8 +326,8 @@ struct PaddingEinSumTraits : public UnpackedInstTraits<PaddingEinSumTraits> {
     sch->PaddingEinSum(block, padding);
   }
 
-  static String UnpackedAsPython(Array<String> outputs, BlockRV block, Array<IntImm> padding) {
-    PythonAPICall py("padding");
+  static String UnpackedAsPython(Array<String> outputs, String block, Array<IntImm> padding) {
+    PythonAPICall py("padding_einsum");
     py.Input("block", block);
     py.Input("padding", padding);
     return py.Str();
