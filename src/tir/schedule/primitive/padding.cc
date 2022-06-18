@@ -64,7 +64,7 @@ void PaddingBuffer(ScheduleState self, const StmtSRef& block_sref, const Array<I
   // Change buffer shape
   // TODO: more careful check here over stride or so
   Buffer buffer = store->buffer;
-  auto padded_buffer_ptr = make_object<BufferNode>(*(store->buffer.get()));
+  auto padded_buffer_ptr = make_object<BufferNode>(*(buffer.get()));
   std::vector<PrimExpr> new_shape;
   for (const IntImm& pad : padding) new_shape.push_back(pad);
   padded_buffer_ptr->shape = std::move(new_shape);
@@ -94,7 +94,6 @@ void PaddingBuffer(ScheduleState self, const StmtSRef& block_sref, const Array<I
   }
   padded_block_ptr->iter_vars = std::move(enlarged_iters);
   padded_block_ptr->body = padded_store;
-  padded_block_ptr->writes = ReplaceBuffer(block->writes, buffer, padded_buffer);
   Block padded_block = Block(padded_block_ptr);
 
   // Change BlockRealize
@@ -117,7 +116,8 @@ void PaddingBuffer(ScheduleState self, const StmtSRef& block_sref, const Array<I
 
   // Replace old buffer with padded buffer
   Map<Block, Block> block_sref_reuse;
-  StmtSRef scope_sref = GetScopeRoot(self, block_sref, true);
+  const StmtSRef& padded_block_sref = self->stmt2ref[padded_block.get()];
+  StmtSRef scope_sref = GetScopeRoot(self, padded_block_sref, true);
   const BlockNode* scope_block_ptr = TVM_SREF_TO_BLOCK(scope_block_ptr, scope_sref);
   ReplaceBufferMutator buffer_replacer(buffer, padded_buffer, &block_sref_reuse);
   Block new_scope_block = Downcast<Block>(buffer_replacer(GetRef<Block>(scope_block_ptr)));
@@ -275,7 +275,8 @@ void PaddingEinSum(ScheduleState self, const StmtSRef& block_sref, const Array<I
   self->Replace(loops[0], body, {{GetRef<Block>(block), padded_block}});
 
   // Change producer / input buffers
-  Array<StmtSRef> producers = GetProducers(self, block_sref);
+  const StmtSRef& padded_block_sref = self->stmt2ref[padded_block.get()];
+  Array<StmtSRef> producers = GetProducers(self, padded_block_sref);
   std::unordered_map<Buffer, StmtSRef, ObjectPtrHash, ObjectPtrEqual> producer_map;
   auto new_shape = [&](const std::vector<Var>& indices) {
     std::vector<IntImm> padding;
@@ -304,7 +305,8 @@ void PaddingEinSum(ScheduleState self, const StmtSRef& block_sref, const Array<I
   Buffer padded_buffer = Buffer(padded_buffer_ptr);
 
   Map<Block, Block> block_sref_reuse;
-  StmtSRef scope_sref = GetScopeRoot(self, block_sref, true);
+  ICHECK(padded_block_sref.defined());
+  StmtSRef scope_sref = GetScopeRoot(self, padded_block_sref, true);
   const BlockNode* scope_block_ptr = TVM_SREF_TO_BLOCK(scope_block_ptr, scope_sref);
   ReplaceBufferMutator buffer_replacer(ein_sum.output_buffer, padded_buffer, &block_sref_reuse);
   Block new_scope_block = Downcast<Block>(buffer_replacer(GetRef<Block>(scope_block_ptr)));
