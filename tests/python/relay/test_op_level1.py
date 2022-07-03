@@ -22,7 +22,6 @@ import scipy
 from tvm import relay
 import pytest
 from tvm.relay.testing import run_infer_type
-from tvm.relay.transform.transform import InferType
 import tvm.topi.testing
 from tvm.contrib.nvcc import have_fp16
 import tvm.testing
@@ -145,7 +144,6 @@ def test_binary_op():
             y_data = np.random.rand(5, 10, 5).astype(dtype)
             ref_res = ref(x_data, y_data)
             func = relay.Function([x, y], z)
-
 
             for target, dev in tvm.testing.enabled_targets():
                 # use graph by execuor default for testing, as we need

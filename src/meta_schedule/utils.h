@@ -243,20 +243,6 @@ inline tir::BlockRV GetRVFromSRef(const tir::Schedule& sch, const tir::StmtSRef&
 }
 
 /*!
- * \brief Get the BlockRV of the root node of the sref tree, which is the root block of the PrimFunc.
- * \param sch The schedule
- * \param block_rv The given block.
- * \return The root node of the sref tree which contains the given node.
- */
-inline tir::BlockRV GetRootBlockRV(const tir::Schedule& sch, const tir::BlockRV& block_rv) {
-  tir::StmtSRef root_sref = tir::GetSRefTreeRoot(sch->GetSRef(block_rv));
-  GlobalVar gv;
-  tir::GetRootPrimFunc(sch->mod(), root_sref->stmt, &gv);
-  tir::BlockRV root_rv = sch->GetBlock(root_sref->StmtAs<tir::BlockNode>()->name_hint, gv->name_hint);
-  return root_rv;
-}
-
-/*!
  * \brief A helper data structure that replays a trace and collects failure counts
  * for each postprocessor
  */
