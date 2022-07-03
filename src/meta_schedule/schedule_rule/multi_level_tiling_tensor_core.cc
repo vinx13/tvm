@@ -63,27 +63,27 @@ State TensorCoreStateNode::Copy() const {
  */
 class MultiLevelTilingTensorCoreNode : public MultiLevelTilingNode {
  private:
-  // SubRule 0. detect compute intrin
+  // SubRule: Add tensorization-related transformations
   inline std::vector<State> TransformForTensorization(TensorCoreState state) const;
-  // SubRule
+  // Subrule: Add tensorized load
   inline std::vector<State> AddReadReuseTensorCore(TensorCoreState state) const;
+  // Subrule: Add tensorized store
   inline std::vector<State> AddWriteReuseTensorCore(TensorCoreState state) const;
 
-  //   // SubRule 1. add write cache
-  //   inline std::vector<State> AddWriteReuse(State state) const;
-  //   // SubRule 3. add read cache
-  //   inline std::vector<State> AddReadReuse(State state) const;
-
-  // Override ApplySubRules to tile the inner loops according to the given tensor intrinsic, then
-  // tile the outerloops.
+  // Override ApplySubRules to apply tensorization-specific sub-rules
   virtual std::vector<State> ApplySubRules(std::vector<State> states) final;
+
+  // Override Apply to apply tensorization-specific analysis before applying sub-rules
   Array<Schedule> Apply(const tir::Schedule& sch, const tir::BlockRV& block_rv) override;
 
-  // TODO: refactor this
+  /*!
+   * \brief Transform and tensorize with the given tensor intrin
+   * \param state The state of the meta schedule rule
+   * \param intrin_name The name of the tensor intrin
+   * \return The loop to be tensorized. NullOpt if the workload can't be tensorized.
+   */
   Optional<tir::LoopRV> TransformWithTensorIntrin(TensorCoreState& state,
                                                   const String& intrin_name) const;
-
-  // Utilities functions
 
   using BufferTypeIndex = std::pair<tir::BufferIndexType, int>;
 
@@ -93,15 +93,17 @@ class MultiLevelTilingTensorCoreNode : public MultiLevelTilingNode {
   std::unordered_map<tir::Buffer, BufferTypeIndex, ObjectPtrHash, ObjectPtrEqual>
   ExtractBufferIndex(const tir::StmtSRef& block_sref) const;
 
+ public:
+  /*! \brief The tensor core intrin group to apply */
+  TensorCoreIntrinGroup intrin_group;
+  static constexpr const char* _type_key = "meta_schedule.MultiLevelTilingTensorCore";
+  TVM_DECLARE_FINAL_OBJECT_INFO(MultiLevelTilingTensorCoreNode, MultiLevelTilingNode);
+
+ private:
   /*!
    * \brief The mapping info for auto tensorization
    */
   tir::AutoTensorizeMappingInfo mapping_info_{nullptr};
-
- public:
-  TensorCoreIntrinGroup intrin_group;
-  static constexpr const char* _type_key = "meta_schedule.MultiLevelTilingTensorCore";
-  TVM_DECLARE_FINAL_OBJECT_INFO(MultiLevelTilingTensorCoreNode, MultiLevelTilingNode);
 };
 
 // Entry of the mega rule; Inherited from ScheduleRuleNode
@@ -160,7 +162,7 @@ std::vector<State> MultiLevelTilingTensorCoreNode::AddWriteReuseTensorCore(
   sch->ReverseComputeAt(cache_write, loop, true);
 
   if (state->write_reuse.count(0)) {
-      AnnotateCooperativeFetching(&sch, state->write_reuse[0]);
+    AnnotateCooperativeFetching(&sch, state->write_reuse[0]);
   }
   sch->ReverseComputeInline(state->tensor_core_reindex_store);
   auto tiled_loop = TileWithTensorIntrin(sch, cache_write, intrin_group.store_intrin).value();

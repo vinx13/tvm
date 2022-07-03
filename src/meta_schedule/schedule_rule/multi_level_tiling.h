@@ -28,11 +28,6 @@
 #include "../../support/array.h"
 
 namespace tvm {
-namespace tir {
-std::vector<int> GetReadBufferNDims(const StmtSRef& block_sref);
-}
-}  // namespace tvm
-namespace tvm {
 namespace meta_schedule {
 
 /*!
@@ -190,13 +185,11 @@ class MultiLevelTilingNode : public ScheduleRuleNode {
   // Entry of the mega rule; Inherited from ScheduleRuleNode
   Array<tir::Schedule> Apply(const tir::Schedule& sch, const tir::BlockRV& block_rv) override;
 
-  // Utilities functions
+ protected:
+  virtual std::vector<State> ApplySubRules(std::vector<State> states);
 
   // Annotate a block to use cooperative fetching
   void AnnotateCooperativeFetching(tir::Schedule* sch, const tir::BlockRV& block) const;
-
- protected:
-  virtual std::vector<State> ApplySubRules(std::vector<State> states);
 
  public:
   /*!

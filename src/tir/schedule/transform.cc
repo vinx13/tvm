@@ -278,7 +278,8 @@ Optional<LoopRV> TileWithTensorIntrin(const tir::Schedule& sch, const tir::Block
     int64_t total = int_block_extent->value;
     int64_t inner = int_desc_extent->value;
     ICHECK_EQ(total % inner, 0);
-    // Do the split
+    // Do the split. Leave the outer extent as NullOpt (unspecified) so that the split factors
+    // can be used for different extents (needed during tuning).
     Array<LoopRV> split = sch->Split(loop2rv.at(block_loop_sref), {NullOpt, Integer(inner)});
     ICHECK_EQ(split.size(), 2);
     inner_loops.insert(sch->GetSRef(split[1]).operator->());

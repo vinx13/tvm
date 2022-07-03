@@ -118,9 +118,6 @@ class RewriteReductionBlockNode : public PostprocNode {
 
   static constexpr const char* _type_key = "meta_schedule.RewriteReductionBlock";
   TVM_DECLARE_FINAL_OBJECT_INFO(RewriteReductionBlockNode, PostprocNode);
-
- private:
-  void RewriteAutoTensorizationAnnotation() const;
 };
 
 bool RewriteReductionBlockNode::Apply(const tir::Schedule& sch) {

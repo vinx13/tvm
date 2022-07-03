@@ -143,7 +143,7 @@ class MultiLevelTilingTensorCore(ScheduleRule):
         A group of tensor core intrinsics. The map should contains key "init", "load_a", "load_b",
         "compute", "store", which represent the tensor intrin for initialization, loading operand A,
         loading operand B, tensor core computation, storing the result.
-        The value of the map should be names of a tensor intrinsic, must be registerd via
+        The value of the map should be names of tensor intrinsics, must be registerd via
         TensorIntrin.register(...) beforehand
     structure : str
         The tiling structure. Recommended:
@@ -152,7 +152,7 @@ class MultiLevelTilingTensorCore(ScheduleRule):
     tile_bind : Optional[List[str]]
         For each level of tiles, which thread axis it is bound to. Recommended:
         - None on CPU
-        - [blockIdx.x, vthread.x, threadIdx.x] on GPU
+        - [blockIdx.y, vthread.x, threadIdx.y] on GPU
     max_innermost_factor : Optional[int]
         The maximum size of the innermost factor. None means no limit
     vector_load_lens : Optional[List[int]]

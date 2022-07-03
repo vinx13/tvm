@@ -594,13 +594,122 @@ def test_cuda_tensor_core_matmul_relu():
             )
         ),
         target=target,
-        rule=multi_level_tiling_tensor_core(target=target, scope="shared"),
+        rule=[multi_level_tiling_tensor_core(target=target, scope="shared"), auto_inline(target)],
     )
     spaces = ctx.space_generator.generate_design_space(mod=ctx.mod)
     assert len(spaces) == 1
 
-    expected = []
-    print("".join(spaces[0].trace.as_python()))
+    expected = [
+        """b0 = sch.get_block(name="C", func_name="main")
+b1 = sch.get_block(name="compute", func_name="main")
+sch.annotate(block_or_loop=b0, ann_key="meta_schedule.tiling_structure", ann_val="SSSRRSRS")
+b2 = sch.reindex(block=b0, buffer=("write", 0))
+b3 = sch.reindex(block=b0, buffer=("read", 0))
+b4 = sch.reindex(block=b0, buffer=("read", 1))
+sch.transform_layout(block=b0, buffer=("write", 0), index_map=lambda i, j: (i, j, ))
+sch.transform_layout(block=b0, buffer=("read", 1), index_map=lambda j, k: (k, j, ))
+sch.transform_layout(block=b0, buffer=("read", 0), index_map=lambda i, k: (i, k, ))
+sch.transform_block_layout(block=b2, index_map=lambda i, j, k: (i, j, k, ))
+sch.transform_block_layout(block=b3, index_map=lambda i, j, k: (i, j, k, ))
+sch.transform_block_layout(block=b4, index_map=lambda i, j, k: (i, j, k, ))
+sch.transform_block_layout(block=b0, index_map=lambda i, j, k: (i, j, k, ))
+l5, l6, l7 = sch.get_loops(block=b0)
+l8, l9 = sch.split(loop=l7, factors=[None, 16], preserve_unit_iters=True)
+l10, l11 = sch.split(loop=l6, factors=[None, 16], preserve_unit_iters=True)
+l12, l13 = sch.split(loop=l5, factors=[None, 16], preserve_unit_iters=True)
+l14, l15, l16, l17, l18, l19 = sch.get_loops(block=b0)
+sch.reorder(l16, l18, l13, l11, l9)
+b20 = sch.blockize(loop=l13)
+sch.annotate(block_or_loop=b20, ann_key="meta_schedule.auto_tensorize", ann_val="wmma_sync_16x16x16_f16f16f32")
+sch.annotate(block_or_loop=b20, ann_key="meta_schedule.auto_tensorize_init", ann_val="wmma_fill_16x16x16_f32")
+sch.annotate(block_or_loop=b20, ann_key="warp_execution", ann_val=1)
+l21, l22, l23 = sch.get_loops(block=b20)
+v24, v25, v26, v27, v28 = sch.sample_perfect_tile(loop=l21, n=5, max_innermost_factor=4)
+l29, l30, l31, l32, l33 = sch.split(loop=l21, factors=[v24, v25, v26, v27, v28], preserve_unit_iters=True)
+v34, v35, v36, v37, v38 = sch.sample_perfect_tile(loop=l22, n=5, max_innermost_factor=4)
+l39, l40, l41, l42, l43 = sch.split(loop=l22, factors=[v34, v35, v36, v37, v38], preserve_unit_iters=True)
+v44, v45, v46 = sch.sample_perfect_tile(loop=l23, n=3, max_innermost_factor=4)
+l47, l48, l49 = sch.split(loop=l23, factors=[v44, v45, v46], preserve_unit_iters=True)
+sch.reorder(l29, l39, l30, l40, l31, l41, l47, l48, l32, l42, l49, l33, l43)
+l50 = sch.fuse(l29, l39, preserve_unit_iters=True)
+sch.bind(loop=l50, thread_axis="blockIdx.y")
+l51 = sch.fuse(l30, l40, preserve_unit_iters=True)
+sch.bind(loop=l51, thread_axis="blockIdx.x")
+l52 = sch.fuse(l31, l41, preserve_unit_iters=True)
+sch.bind(loop=l52, thread_axis="threadIdx.y")
+b53 = sch.cache_write(block=b20, write_buffer_index=0, storage_scope="shared")
+sch.reverse_compute_at(block=b53, loop=l51, preserve_unit_loops=True)
+b54 = sch.cache_write(block=b20, write_buffer_index=0, storage_scope="wmma.accumulator")
+sch.reverse_compute_at(block=b54, loop=l52, preserve_unit_loops=True)
+v55 = sch.sample_categorical(candidates=[1, 2, 3, 4], probs=[0.25, 0.25, 0.25, 0.25])
+sch.annotate(block_or_loop=b53, ann_key="meta_schedule.cooperative_fetch", ann_val=v55)
+sch.reverse_compute_inline(block=b2)
+l56, l57, l58, l59, l60 = sch.get_loops(block=b54)
+l61, l62 = sch.split(loop=l60, factors=[None, 16], preserve_unit_iters=True)
+l63, l64 = sch.split(loop=l59, factors=[None, 16], preserve_unit_iters=True)
+l65, l66, l67, l68, l69, l70, l71 = sch.get_loops(block=b54)
+sch.reorder(l70, l64, l62)
+b72 = sch.blockize(loop=l64)
+sch.annotate(block_or_loop=b72, ann_key="meta_schedule.auto_tensorize", ann_val="wmma_store_16x16x16_f32_shared")
+b73 = sch.cache_read(block=b20, read_buffer_index=0, storage_scope="shared")
+sch.compute_at(block=b73, loop=l47, preserve_unit_loops=True)
+l74, l75, l76, l77, l78, l79 = sch.get_loops(block=b73)
+l80 = sch.fuse(l78, l79, preserve_unit_iters=True)
+v81 = sch.sample_categorical(candidates=[1, 2, 3, 4], probs=[0.25, 0.25, 0.25, 0.25])
+sch.annotate(block_or_loop=b73, ann_key="meta_schedule.cooperative_fetch", ann_val=v81)
+b82 = sch.cache_read(block=b20, read_buffer_index=1, storage_scope="shared")
+sch.compute_at(block=b82, loop=l47, preserve_unit_loops=True)
+l83, l84, l85, l86, l87, l88 = sch.get_loops(block=b82)
+l89 = sch.fuse(l87, l88, preserve_unit_iters=True)
+v90 = sch.sample_categorical(candidates=[1, 2, 3, 4], probs=[0.25, 0.25, 0.25, 0.25])
+sch.annotate(block_or_loop=b82, ann_key="meta_schedule.cooperative_fetch", ann_val=v90)
+b91 = sch.cache_read(block=b20, read_buffer_index=0, storage_scope="wmma.matrix_a")
+sch.compute_at(block=b91, loop=l48, preserve_unit_loops=True)
+l92, l93, l94, l95, l96, l97, l98 = sch.get_loops(block=b91)
+l99, l100 = sch.split(loop=l98, factors=[None, 16], preserve_unit_iters=True)
+l101, l102 = sch.split(loop=l97, factors=[None, 16], preserve_unit_iters=True)
+l103, l104, l105, l106, l107, l108, l109, l110, l111 = sch.get_loops(block=b91)
+sch.reorder(l110, l102, l100)
+b112 = sch.blockize(loop=l102)
+sch.annotate(block_or_loop=b112, ann_key="meta_schedule.auto_tensorize", ann_val="wmma_load_16x16x16_f16_a")
+b113 = sch.cache_read(block=b20, read_buffer_index=1, storage_scope="wmma.matrix_b")
+sch.compute_at(block=b113, loop=l48, preserve_unit_loops=True)
+l114, l115, l116, l117, l118, l119, l120 = sch.get_loops(block=b113)
+l121, l122 = sch.split(loop=l120, factors=[None, 16], preserve_unit_iters=True)
+l123, l124 = sch.split(loop=l119, factors=[None, 16], preserve_unit_iters=True)
+l125, l126, l127, l128, l129, l130, l131, l132, l133 = sch.get_loops(block=b113)
+sch.reorder(l132, l124, l122)
+b134 = sch.blockize(loop=l124)
+sch.annotate(block_or_loop=b134, ann_key="meta_schedule.auto_tensorize", ann_val="wmma_load_16x16x16_f16_b")
+sch.compute_inline(block=b3)
+sch.compute_inline(block=b4)
+sch.storage_align(block=b73, buffer_index=0, axis=-2, factor=32, offset=8)
+sch.storage_align(block=b82, buffer_index=0, axis=-2, factor=32, offset=8)
+sch.reverse_compute_inline(block=b1)""".split(
+            "\n"
+        )
+    ]
+    check_trace(spaces, expected)
+
+    # test multi_level_tiling_tensor_core and multi_level_tiling can be used together in order
+    # to use multi_level_tiling as a fallback when the workload can't be tensorized
+    ctx = _create_context(
+        create_prim_func(
+            te_workload.matmul_relu_fp16(
+                n=n,
+                m=m,
+                k=k,
+            )
+        ),
+        target=target,
+        rule=[
+            multi_level_tiling_tensor_core(target=target, scope="shared"),
+            multi_level_tiling(target=target),
+            auto_inline(target),
+        ],
+    )
+    spaces = ctx.space_generator.generate_design_space(mod=ctx.mod)
+    assert len(spaces) == 1
     check_trace(spaces, expected)
 
 
@@ -645,29 +754,29 @@ sch.annotate(block_or_loop=b19, ann_key="meta_schedule.auto_tensorize", ann_val=
 sch.annotate(block_or_loop=b19, ann_key="meta_schedule.auto_tensorize_init", ann_val="wmma_fill_16x16x16_f32")
 sch.annotate(block_or_loop=b19, ann_key="warp_execution", ann_val=1)
 l20, l21, l22 = sch.get_loops(block=b19)
-v23, v24, v25, v26, v27 = sch.sample_perfect_tile(loop=l20, n=5, max_innermost_factor=64)
+v23, v24, v25, v26, v27 = sch.sample_perfect_tile(loop=l20, n=5, max_innermost_factor=4)
 l28, l29, l30, l31, l32 = sch.split(loop=l20, factors=[v23, v24, v25, v26, v27], preserve_unit_iters=True)
-v33, v34, v35, v36, v37 = sch.sample_perfect_tile(loop=l21, n=5, max_innermost_factor=64)
+v33, v34, v35, v36, v37 = sch.sample_perfect_tile(loop=l21, n=5, max_innermost_factor=4)
 l38, l39, l40, l41, l42 = sch.split(loop=l21, factors=[v33, v34, v35, v36, v37], preserve_unit_iters=True)
-v43, v44, v45 = sch.sample_perfect_tile(loop=l22, n=3, max_innermost_factor=64)
+v43, v44, v45 = sch.sample_perfect_tile(loop=l22, n=3, max_innermost_factor=4)
 l46, l47, l48 = sch.split(loop=l22, factors=[v43, v44, v45], preserve_unit_iters=True)
 sch.reorder(l28, l38, l29, l39, l30, l40, l46, l47, l31, l41, l48, l32, l42)
 l49 = sch.fuse(l28, l38, preserve_unit_iters=True)
-sch.bind(loop=l49, thread_axis="blockIdx.x")
+sch.bind(loop=l49, thread_axis="blockIdx.y")
 l50 = sch.fuse(l29, l39, preserve_unit_iters=True)
-sch.bind(loop=l50, thread_axis="vthread.x")
+sch.bind(loop=l50, thread_axis="blockIdx.x")
 l51 = sch.fuse(l30, l40, preserve_unit_iters=True)
-sch.bind(loop=l51, thread_axis="threadIdx.x")
+sch.bind(loop=l51, thread_axis="threadIdx.y")
 b52 = sch.cache_write(block=b19, write_buffer_index=0, storage_scope="wmma.accumulator")
 sch.reverse_compute_at(block=b52, loop=l51, preserve_unit_loops=True)
-b53, = sch.get_consumers(block=b52)
-sch.reverse_compute_inline(block=b53)
-l54, l55, l56, l57, l58 = sch.get_loops(block=b52)
-l59, l60 = sch.split(loop=l58, factors=[None, 16], preserve_unit_iters=True)
-l61, l62 = sch.split(loop=l57, factors=[None, 16], preserve_unit_iters=True)
-l63, l64, l65, l66, l67, l68, l69 = sch.get_loops(block=b52)
-sch.reorder(l68, l62, l60)
-sch.tensorize(block_or_loop=l62, tensor_intrin="wmma_store_16x16x16_f32_global")
+sch.reverse_compute_inline(block=b1)
+l53, l54, l55, l56, l57 = sch.get_loops(block=b52)
+l58, l59 = sch.split(loop=l57, factors=[None, 16], preserve_unit_iters=True)
+l60, l61 = sch.split(loop=l56, factors=[None, 16], preserve_unit_iters=True)
+l62, l63, l64, l65, l66, l67, l68 = sch.get_loops(block=b52)
+sch.reorder(l67, l61, l59)
+b69 = sch.blockize(loop=l61)
+sch.annotate(block_or_loop=b69, ann_key="meta_schedule.auto_tensorize", ann_val="wmma_store_16x16x16_f32_global")
 b70 = sch.cache_read(block=b19, read_buffer_index=0, storage_scope="shared")
 sch.compute_at(block=b70, loop=l46, preserve_unit_loops=True)
 l71, l72, l73, l74, l75, l76 = sch.get_loops(block=b70)
@@ -687,22 +796,25 @@ l96, l97 = sch.split(loop=l95, factors=[None, 16], preserve_unit_iters=True)
 l98, l99 = sch.split(loop=l94, factors=[None, 16], preserve_unit_iters=True)
 l100, l101, l102, l103, l104, l105, l106, l107, l108 = sch.get_loops(block=b88)
 sch.reorder(l107, l99, l97)
-sch.tensorize(block_or_loop=l99, tensor_intrin="wmma_load_16x16x16_f16_a")
-b109 = sch.cache_read(block=b19, read_buffer_index=1, storage_scope="wmma.matrix_b")
-sch.compute_at(block=b109, loop=l47, preserve_unit_loops=True)
-l110, l111, l112, l113, l114, l115, l116 = sch.get_loops(block=b109)
-l117, l118 = sch.split(loop=l116, factors=[None, 16], preserve_unit_iters=True)
-l119, l120 = sch.split(loop=l115, factors=[None, 16], preserve_unit_iters=True)
-l121, l122, l123, l124, l125, l126, l127, l128, l129 = sch.get_loops(block=b109)
-sch.reorder(l128, l120, l118)
-sch.tensorize(block_or_loop=l120, tensor_intrin="wmma_load_16x16x16_f16_b")
+b109 = sch.blockize(loop=l99)
+sch.annotate(block_or_loop=b109, ann_key="meta_schedule.auto_tensorize", ann_val="wmma_load_16x16x16_f16_a")
+b110 = sch.cache_read(block=b19, read_buffer_index=1, storage_scope="wmma.matrix_b")
+sch.compute_at(block=b110, loop=l47, preserve_unit_loops=True)
+l111, l112, l113, l114, l115, l116, l117 = sch.get_loops(block=b110)
+l118, l119 = sch.split(loop=l117, factors=[None, 16], preserve_unit_iters=True)
+l120, l121 = sch.split(loop=l116, factors=[None, 16], preserve_unit_iters=True)
+l122, l123, l124, l125, l126, l127, l128, l129, l130 = sch.get_loops(block=b110)
+sch.reorder(l129, l121, l119)
+b131 = sch.blockize(loop=l121)
+sch.annotate(block_or_loop=b131, ann_key="meta_schedule.auto_tensorize", ann_val="wmma_load_16x16x16_f16_b")
 sch.compute_inline(block=b2)
-sch.compute_inline(block=b3)""".split(
+sch.compute_inline(block=b3)
+sch.storage_align(block=b70, buffer_index=0, axis=-2, factor=32, offset=8)
+sch.storage_align(block=b79, buffer_index=0, axis=-2, factor=32, offset=8)""".split(
             "\n"
         )
     ]
     check_trace(spaces, expected)
-    print(spaces[0].mod.script())
 
 
 def test_multi_level_tiling_non_tensorizable():
@@ -725,9 +837,116 @@ def test_multi_level_tiling_non_tensorizable():
     assert len(spaces) == 1
 
     expected = [
-        "",
+        "",  # expected to do nothing when the workload can't be tensorized
     ]
-    print("".join(spaces[0].trace.as_python()))
+    check_trace(spaces, expected)
+
+
+def test_cuda_tensor_core_conv2d():
+    target = Target("cuda", host="llvm")
+    ctx = _create_context(
+        create_prim_func(
+            # dtype doesn't match tensor intrin
+            te_workload.conv2d_nhwc_f16(
+                N=1, H=16, W=16, CI=32, CO=32, kernel_size=3, stride=1, padding=1
+            )
+        ),
+        target=target,
+        rule=multi_level_tiling_tensor_core(target=target, scope="shared"),
+    )
+    spaces = ctx.space_generator.generate_design_space(mod=ctx.mod)
+    assert len(spaces) == 1
+
+    expected = [
+        """b0 = sch.get_block(name="conv2d_nhwc", func_name="main")
+sch.annotate(block_or_loop=b0, ann_key="meta_schedule.tiling_structure", ann_val="SSSRRSRS")
+b1 = sch.reindex(block=b0, buffer=("write", 0))
+b2 = sch.reindex(block=b0, buffer=("read", 0))
+b3 = sch.reindex(block=b0, buffer=("read", 1))
+sch.transform_layout(block=b0, buffer=("write", 0), index_map=lambda h, w, co: (((h*16) + w), co, ))
+sch.transform_layout(block=b0, buffer=("read", 1), index_map=lambda co, rh, rw, rc: ((((rh*96) + (rw*32)) + rc), co, ))
+sch.transform_layout(block=b0, buffer=("read", 0), index_map=lambda h, w, rh, rw, rc: (((h*16) + w), (((rh*96) + (rw*32)) + rc), ))
+sch.transform_block_layout(block=b1, index_map=lambda n, h, w, co, rh, rw, rc: (n, ((h*16) + w), co, (((rh*96) + (rw*32)) + rc), ))
+sch.transform_block_layout(block=b2, index_map=lambda n, h, w, co, rh, rw, rc: (n, ((h*16) + w), co, (((rh*96) + (rw*32)) + rc), ))
+sch.transform_block_layout(block=b3, index_map=lambda n, h, w, co, rh, rw, rc: (n, ((h*16) + w), co, (((rh*96) + (rw*32)) + rc), ))
+sch.transform_block_layout(block=b0, index_map=lambda n, h, w, co, rh, rw, rc: (n, ((h*16) + w), co, (((rh*96) + (rw*32)) + rc), ))
+l4, l5, l6, l7 = sch.get_loops(block=b0)
+l8, l9 = sch.split(loop=l7, factors=[None, 16], preserve_unit_iters=True)
+l10, l11 = sch.split(loop=l6, factors=[None, 16], preserve_unit_iters=True)
+l12, l13 = sch.split(loop=l5, factors=[None, 16], preserve_unit_iters=True)
+l14, l15, l16, l17, l18, l19, l20 = sch.get_loops(block=b0)
+sch.reorder(l17, l19, l13, l11, l9)
+b21 = sch.blockize(loop=l13)
+sch.annotate(block_or_loop=b21, ann_key="meta_schedule.auto_tensorize", ann_val="wmma_sync_16x16x16_f16f16f32")
+sch.annotate(block_or_loop=b21, ann_key="meta_schedule.auto_tensorize_init", ann_val="wmma_fill_16x16x16_f32")
+sch.annotate(block_or_loop=b21, ann_key="warp_execution", ann_val=1)
+l22, l23, l24, l25 = sch.get_loops(block=b21)
+v26, v27, v28, v29, v30 = sch.sample_perfect_tile(loop=l22, n=5, max_innermost_factor=4)
+l31, l32, l33, l34, l35 = sch.split(loop=l22, factors=[v26, v27, v28, v29, v30], preserve_unit_iters=True)
+v36, v37, v38, v39, v40 = sch.sample_perfect_tile(loop=l23, n=5, max_innermost_factor=4)
+l41, l42, l43, l44, l45 = sch.split(loop=l23, factors=[v36, v37, v38, v39, v40], preserve_unit_iters=True)
+v46, v47, v48, v49, v50 = sch.sample_perfect_tile(loop=l24, n=5, max_innermost_factor=4)
+l51, l52, l53, l54, l55 = sch.split(loop=l24, factors=[v46, v47, v48, v49, v50], preserve_unit_iters=True)
+v56, v57, v58 = sch.sample_perfect_tile(loop=l25, n=3, max_innermost_factor=4)
+l59, l60, l61 = sch.split(loop=l25, factors=[v56, v57, v58], preserve_unit_iters=True)
+sch.reorder(l31, l41, l51, l32, l42, l52, l33, l43, l53, l59, l60, l34, l44, l54, l61, l35, l45, l55)
+l62 = sch.fuse(l31, l41, l51, preserve_unit_iters=True)
+sch.bind(loop=l62, thread_axis="blockIdx.y")
+l63 = sch.fuse(l32, l42, l52, preserve_unit_iters=True)
+sch.bind(loop=l63, thread_axis="blockIdx.x")
+l64 = sch.fuse(l33, l43, l53, preserve_unit_iters=True)
+sch.bind(loop=l64, thread_axis="threadIdx.y")
+b65 = sch.cache_write(block=b21, write_buffer_index=0, storage_scope="shared")
+sch.reverse_compute_at(block=b65, loop=l63, preserve_unit_loops=True)
+b66 = sch.cache_write(block=b21, write_buffer_index=0, storage_scope="wmma.accumulator")
+sch.reverse_compute_at(block=b66, loop=l64, preserve_unit_loops=True)
+v67 = sch.sample_categorical(candidates=[1, 2, 3, 4], probs=[0.25, 0.25, 0.25, 0.25])
+sch.annotate(block_or_loop=b65, ann_key="meta_schedule.cooperative_fetch", ann_val=v67)
+sch.reverse_compute_inline(block=b1)
+l68, l69, l70, l71, l72 = sch.get_loops(block=b66)
+l73, l74 = sch.split(loop=l72, factors=[None, 16], preserve_unit_iters=True)
+l75, l76 = sch.split(loop=l71, factors=[None, 16], preserve_unit_iters=True)
+l77, l78, l79, l80, l81, l82, l83 = sch.get_loops(block=b66)
+sch.reorder(l82, l76, l74)
+b84 = sch.blockize(loop=l76)
+sch.annotate(block_or_loop=b84, ann_key="meta_schedule.auto_tensorize", ann_val="wmma_store_16x16x16_f32_shared")
+b85 = sch.cache_read(block=b21, read_buffer_index=0, storage_scope="shared")
+sch.compute_at(block=b85, loop=l59, preserve_unit_loops=True)
+l86, l87, l88, l89, l90, l91 = sch.get_loops(block=b85)
+l92 = sch.fuse(l90, l91, preserve_unit_iters=True)
+v93 = sch.sample_categorical(candidates=[1, 2, 3, 4], probs=[0.25, 0.25, 0.25, 0.25])
+sch.annotate(block_or_loop=b85, ann_key="meta_schedule.cooperative_fetch", ann_val=v93)
+b94 = sch.cache_read(block=b21, read_buffer_index=1, storage_scope="shared")
+sch.compute_at(block=b94, loop=l59, preserve_unit_loops=True)
+l95, l96, l97, l98, l99, l100 = sch.get_loops(block=b94)
+l101 = sch.fuse(l99, l100, preserve_unit_iters=True)
+v102 = sch.sample_categorical(candidates=[1, 2, 3, 4], probs=[0.25, 0.25, 0.25, 0.25])
+sch.annotate(block_or_loop=b94, ann_key="meta_schedule.cooperative_fetch", ann_val=v102)
+b103 = sch.cache_read(block=b21, read_buffer_index=0, storage_scope="wmma.matrix_a")
+sch.compute_at(block=b103, loop=l60, preserve_unit_loops=True)
+l104, l105, l106, l107, l108, l109, l110 = sch.get_loops(block=b103)
+l111, l112 = sch.split(loop=l110, factors=[None, 16], preserve_unit_iters=True)
+l113, l114 = sch.split(loop=l109, factors=[None, 16], preserve_unit_iters=True)
+l115, l116, l117, l118, l119, l120, l121, l122, l123 = sch.get_loops(block=b103)
+sch.reorder(l122, l114, l112)
+b124 = sch.blockize(loop=l114)
+sch.annotate(block_or_loop=b124, ann_key="meta_schedule.auto_tensorize", ann_val="wmma_load_16x16x16_f16_a")
+b125 = sch.cache_read(block=b21, read_buffer_index=1, storage_scope="wmma.matrix_b")
+sch.compute_at(block=b125, loop=l60, preserve_unit_loops=True)
+l126, l127, l128, l129, l130, l131, l132 = sch.get_loops(block=b125)
+l133, l134 = sch.split(loop=l132, factors=[None, 16], preserve_unit_iters=True)
+l135, l136 = sch.split(loop=l131, factors=[None, 16], preserve_unit_iters=True)
+l137, l138, l139, l140, l141, l142, l143, l144, l145 = sch.get_loops(block=b125)
+sch.reorder(l144, l136, l134)
+b146 = sch.blockize(loop=l136)
+sch.annotate(block_or_loop=b146, ann_key="meta_schedule.auto_tensorize", ann_val="wmma_load_16x16x16_f16_b")
+sch.compute_inline(block=b2)
+sch.compute_inline(block=b3)
+sch.storage_align(block=b85, buffer_index=0, axis=-2, factor=32, offset=8)
+sch.storage_align(block=b94, buffer_index=0, axis=-2, factor=32, offset=8)""".split(
+            "\n"
+        )
+    ]
     check_trace(spaces, expected)
 
 
