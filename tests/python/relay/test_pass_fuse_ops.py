@@ -828,5 +828,42 @@ def test_fuse_softmax():
         tvm.testing.assert_allclose(result, ref, rtol=1e-4, atol=1e-4)
 
 
+def test_fuse_injective():
+    """Test fusion case of conv2d"""
+
+    def before():
+        x = relay.var("x", shape=[128, 128])
+        w1 = relay.var("w1", shape=[128, 128])
+        dense = relay.nn.dense(x, w1)
+        reshape = relay.reshape(dense, newshape=[8, 16, 128])
+        transpose = relay.transpose(reshape)
+        return relay.Function([x, w1], transpose)
+
+    def expected():
+        # segment 0
+        x = relay.var("p0", shape=[128, 128])
+        w1 = relay.var("p1", shape=[128, 128])
+        dense = relay.nn.dense(x, w1)
+        reshape = relay.reshape(dense, newshape=[8, 16, 128])
+        transpose = relay.transpose(reshape)
+        f0 = relay.Function([x, w1], transpose)
+        f0 = f0.with_attr("Primitive", tvm.tir.IntImm("int32", 1))
+
+        # compose
+        x = relay.var("x", shape=[128, 128])
+        w1 = relay.var("w1", shape=[128, 128])
+        y = relay.Call(f0, [x, w1])
+        return relay.Function([x, w1], y)
+
+    # dshape = (1, 16, 64, 64)
+    z = before()
+    with tvm.transform.PassContext(config={"relay.FuseOps.fuse_injective": True}):
+        zz = run_opt_pass(z, transform.FuseOps(fuse_opt_level=2))
+    after = run_opt_pass(expected(), transform.InferType())
+    print(zz.astext(False))
+    print(after.astext(False))
+    assert tvm.ir.structural_equal(zz, after)
+
+
 if __name__ == "__main__":
-    pytest.main([__pfile__])
+    tvm.testing.main()
