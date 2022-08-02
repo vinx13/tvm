@@ -262,6 +262,8 @@ TVM_DLL Pass VerifyMemory();
  */
 TVM_DLL Pass VerifyGPUCode(Map<String, PrimExpr> constraints);
 
+TVM_DLL Pass VerifyBufferDecl();
+
 }  // namespace transform
 }  // namespace tir
 }  // namespace tvm
