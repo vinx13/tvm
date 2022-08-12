@@ -182,7 +182,11 @@ void ElseFrameNode::ExitWithScope() {
 
 void DeclBufferFrameNode::ExitWithScope() {
   TIRFrameNode::ExitWithScope();
-  AddToParent(tvm::tir::DeclBuffer(buffer, AsStmt(stmts)));
+  tvm::tir::Stmt stmt = tvm::tir::DeclBuffer(buffer, AsStmt(stmts));
+  if (need_alloc) {
+    stmt = tvm::tir::Allocate(buffer->data, buffer->dtype, buffer->shape, Bool(1), std::move(stmt));
+  }
+  AddToParent(std::move(stmt));
 }
 
 TVM_REGISTER_NODE_TYPE(TIRFrameNode);

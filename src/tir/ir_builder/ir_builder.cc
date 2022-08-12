@@ -56,6 +56,9 @@ DeclBufferFrame DeclBuffer(Array<PrimExpr> shape, DataType dtype, String buffer_
                            int offset_factor, String buffer_type,
                            Optional<Array<IntImm>> axis_separators) {
   ObjectPtr<DeclBufferFrameNode> n = make_object<DeclBufferFrameNode>();
+  if (!data.defined()) {
+    n->need_alloc = true;
+  }
   n->buffer = BufferDecl(shape, dtype, buffer_name, data, strides, elem_offset, storage_scope,
                          align, offset_factor, buffer_type, axis_separators);
   return DeclBufferFrame(n);

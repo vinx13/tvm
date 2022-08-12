@@ -431,10 +431,12 @@ class ElseFrame : public TIRFrame {
 class DeclBufferFrameNode : public TIRFrameNode {
  public:
   tvm::tir::Buffer buffer;
+  bool need_alloc = false;
 
   void VisitAttrs(tvm::AttrVisitor* v) {
     TIRFrameNode::VisitAttrs(v);
     v->Visit("buffer", &buffer);
+    v->Visit("need_alloc", &need_alloc);
   }
 
   static constexpr const char* _type_key = "ir_builder.tir.DeclBufferFrame";
