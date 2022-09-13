@@ -508,7 +508,8 @@ Optional<LoopRV> MultiLevelTilingTensorCoreNode::TransformWithTensorIntrin(
   state->sch->TransformBlockLayout(state->tensor_core_reindex_B, index_map);
   state->sch->TransformBlockLayout(state->block_rv, index_map);
 
-  return tir::TileWithTensorIntrin(state->sch, state->block_rv, intrin_name);
+  return tir::TileWithTensorIntrin(state->sch, state->block_rv, intrin_name,
+                                   /*allow_padding=*/true);
 }
 
 inline std::vector<State> MultiLevelTilingTensorCoreNode::TransformForTensorization(
