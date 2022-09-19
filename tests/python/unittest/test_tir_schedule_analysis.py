@@ -337,6 +337,7 @@ def check_index_map(workload, block_name, intrin_name, expected_index_map):
         assert info is None
         return
     assert len(info.mappings) == 1
+    print(info.mappings[0])
     assert IndexMap.from_func(expected_index_map).is_equivalent_to(info.mappings[0])
 
 
@@ -361,7 +362,7 @@ def test_get_auto_tensorize_mapping_info_conv2d_unit_batch():
         "conv2d_nhwc",
         WMMA_SYNC_16x16x16_f16f16f32_INTRIN,
         # unit iter is not mapped
-        lambda n, h, w, c, rh, rw, rc: (n, h * 16 + w, c, rh * 192 + rw * 64 + rc),
+        lambda n, h, w, c, rh, rw, rc: (n * 256 + h * 16 + w, c, rh * 192 + rw * 64 + rc),
     )
 
 
@@ -388,7 +389,7 @@ def test_get_auto_tensorize_mapping_info_batch_matmul(b, m, n, k):
                 k,
             ),
         ),
-        (1, 32, 32, None),
+        (1, 32, 32, lambda n, m, k: (n, m, k)),
     ],
 )
 def test_get_auto_tensorize_mapping_info_matmul(n, m, k, expected):
