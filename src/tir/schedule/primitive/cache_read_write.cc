@@ -1128,7 +1128,7 @@ StmtSRef ReIndex(ScheduleState self, const StmtSRef& block_sref, int buffer_inde
     analyzer.Bind(iter->var, iter->dom);
   }
   original_indices.MutateByApply(
-      [&analyzer](const PrimExpr& expr) { return analyzer.Simplify(expr); });
+      [&analyzer](const PrimExpr& expr) { return SimplifyNonTrivialExpr(expr, &analyzer); });
 
   // Collect block iters appearing in the original_indices
   std::unordered_set<Var, ObjectPtrHash, ObjectPtrEqual> covered;

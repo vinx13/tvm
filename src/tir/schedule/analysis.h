@@ -724,6 +724,8 @@ Optional<Array<Var>> CheckTrivialBufferIndices(const T& buffer_access) {
   return indices;
 }
 
+PrimExpr SimplifyNonTrivialExpr(const PrimExpr& expr, arith::Analyzer* analyzer);
+
 /*! \brief Necessary information used for tensorization */
 class TensorizeInfoNode : public Object {
  public:

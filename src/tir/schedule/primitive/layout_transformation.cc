@@ -699,7 +699,9 @@ class TransformLayoutRewriter : private arith::IRMutatorWithAnalyzer {
 
   void RewriteBufferAccess(Buffer* buffer, Array<PrimExpr>* indices) {
     *buffer = new_buffer_;
-    *indices = index_map_->MapIndices(*indices, analyzer_);
+    *indices = index_map_->MapIndices(*indices);
+    (*indices).MutateByApply(
+        [&](const PrimExpr& e) { return SimplifyNonTrivialExpr(e, analyzer_); });
   }
 
   using Parent = arith::IRMutatorWithAnalyzer;
@@ -1197,7 +1199,7 @@ void TransformBlockLayout(ScheduleState self, const StmtSRef& block_sref,
   auto iter_map = arith::DetectIterMap(
       /*indices=*/transformed_block_iters, /*input_iters=*/block_iter_dom, /*predicate=*/Bool(true),
       /*check_level=*/arith::IterMapLevel::Bijective, &analyzer,
-      /*simplify_trivial_iterators=*/true);
+      /*simplify_trivial_iterators=*/false);
   if (iter_map->indices.empty()) {
     throw NotBijectiveAffineIndexMapError(self->mod, index_map);
   }
@@ -1223,15 +1225,6 @@ void TransformBlockLayout(ScheduleState self, const StmtSRef& block_sref,
   // in the body.
 
   auto inverse_map = arith::InverseAffineIterMap(iter_map->indices, new_block_vars);
-  // Trivial block iters will be simplified in DetectIterMap, they should be mapped to constant
-  // zero.
-  for (const auto& iter_var : block_ptr->iter_vars) {
-    if (inverse_map.find(iter_var->var) == inverse_map.end()) {
-      ICHECK(is_one(iter_var->dom->extent));
-      inverse_map.Set(iter_var->var, 0);
-    }
-  }
-
   Block new_block = Downcast<Block>(Substitute(GetRef<Block>(block_ptr), inverse_map));
   new_block.CopyOnWrite()->iter_vars = new_block_iters;
   new_block = Downcast<Block>(BlockBufferAccessSimplifier::Simplify(new_block, &analyzer));
