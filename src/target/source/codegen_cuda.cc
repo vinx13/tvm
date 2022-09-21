@@ -1240,10 +1240,10 @@ void CodeGenCUDA::VisitExpr_(const FloatImmNode* op, std::ostream& os) {  // NOL
 void CodeGenCUDA::PrintWmmaScope(const runtime::StorageScope& scope, DataType t,
                                  const VarNode* variable, std::ostream& os) {
   std::stringstream type;
-  PrintType(t, type);
   std::string shape_str = fragment_shapes.at(variable);
-  if ((t.is_int() || t.is_uint()) && t.bits() < 8 && t.lanes() == 1) {
-    type.str(std::string());
+  if (scope.tag == ".tf32") {
+    type << "nvcuda::wmma::precision::tf32";
+  } else if ((t.is_int() || t.is_uint()) && t.bits() < 8 && t.lanes() == 1) {
     if (t.is_int()) {
       if (t.bits() == 4) {
         type << "nvcuda::wmma::experimental::precision::s4";
@@ -1259,6 +1259,8 @@ void CodeGenCUDA::PrintWmmaScope(const runtime::StorageScope& scope, DataType t,
         LOG(FATAL) << "Unhandled integer type for wmma fragment!";
       }
     }
+  } else {
+    PrintType(t, type);
   }
   if (scope.rank == runtime::StorageRank::kWMMAMatrixA) {
     need_mma_h_ = true;
