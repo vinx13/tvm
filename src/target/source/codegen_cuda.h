@@ -31,6 +31,7 @@
 #include <string>
 #include <unordered_map>
 
+#include "../../runtime/thread_storage_scope.h"
 #include "codegen_c.h"
 
 namespace tvm {
@@ -49,7 +50,8 @@ class CodeGenCUDA final : public CodeGenC {
   void PrintExtraAttrs(const PrimFunc& f) final;
   void VisitStmt_(const ForNode* op) final;
   void PrintStorageSync(const CallNode* op) final;
-  void PrintStorageScope(const std::string& scope, std::ostream& os) final;  // NOLINT(*)
+  void PrintStorageScope(const std::string& scope, std::ostream& os) final;      // NOLINT(*)
+  void PrintStorageScope(const runtime::StorageScope& scope, std::ostream& os);  // NOLINT(*)
   void PrintVecBinaryOp(const std::string& op, DataType t, PrimExpr lhs, PrimExpr rhs,
                         std::ostream& os) final;       // NOLINT(*)
   void PrintType(DataType t, std::ostream& os) final;  // NOLINT(*)
@@ -106,9 +108,10 @@ class CodeGenCUDA final : public CodeGenC {
   std::unordered_map<const VarNode*, std::string> fragment_shapes;
   std::unordered_map<const VarNode*, std::string> fragment_layouts;
   friend void PrintConst(const FloatImmNode* op, std::ostream& os, CodeGenCUDA* p);
-  void PrintWmmaScope(const std::string& scope, DataType t, const VarNode* variable,
+  void PrintWmmaScope(const runtime::StorageScope& scope, DataType t, const VarNode* variable,
                       std::ostream& os);
-  int32_t GetWmmaFragmentSize(const std::string& scope, const VarNode* variable, int32_t size);
+  int32_t GetWmmaFragmentSize(const runtime::StorageScope& scope, const VarNode* variable,
+                              int32_t size);
 };
 
 }  // namespace codegen
