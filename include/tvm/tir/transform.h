@@ -685,6 +685,12 @@ TVM_DLL Pass RemoveWeightLayoutRewriteBlock();
  */
 TVM_DLL Pass ManifestSharedMemoryLocalStage();
 
+/*!
+ * \brief Lower the usage of TF32 in CUDA tensor core. Add necessary conversions from FP32.
+ * \return The pass.
+ */
+TVM_DLL Pass LowerTF32TensorCore();
+
 }  // namespace transform
 }  // namespace tir
 }  // namespace tvm
