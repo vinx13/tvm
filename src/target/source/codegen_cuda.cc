@@ -834,6 +834,19 @@ void CodeGenCUDA::VisitExpr_(const CallNode* op, std::ostream& os) {
       this->stream << PrintLoadMatrixAssembly(trans, num, type, local_ptr, local_elem_offset,
                                               smem_ptr, smem_elem_offset);
     }
+  } else if (op->op.same_as(builtin::tvm_wmma_get_element())) {
+    ICHECK_EQ(op->args.size(), 3U);
+    std::string a = this->PrintExpr(op->args[0]);
+    std::string i = this->PrintExpr(op->args[1]);
+    std::string t = this->PrintExpr(op->args[2]);
+    this->stream << a << "[" << i << "].x[" << t << "]";
+  } else if (op->op.same_as(builtin::tvm_wmma_set_element())) {
+    ICHECK_EQ(op->args.size(), 4U);
+    std::string a = this->PrintExpr(op->args[0]);
+    std::string i = this->PrintExpr(op->args[1]);
+    std::string t = this->PrintExpr(op->args[2]);
+    std::string v = this->PrintExpr(op->args[3]);
+    this->stream << a << "[" << i << "].x[" << t << "] = " << v;
   } else if (op->op.same_as(builtin::mma_store())) {
     int m = Downcast<Integer>(op->args[0])->value;
     int n = Downcast<Integer>(op->args[1])->value;
