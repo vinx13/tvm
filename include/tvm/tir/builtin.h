@@ -599,6 +599,9 @@ TVM_DLL const Op& tvm_fill_fragment();
  */
 TVM_DLL const Op& tvm_store_matrix_sync();
 
+TVM_DLL const Op& tvm_wmma_get_element();
+TVM_DLL const Op& tvm_wmma_set_element();
+
 /*!
  * \brief tvm intrinsic for ptx tensor core mma instructions.
  *
