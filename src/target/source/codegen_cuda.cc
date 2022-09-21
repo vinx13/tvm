@@ -580,7 +580,7 @@ void CodeGenCUDA::PrintStorageScope(const runtime::StorageScope& scope, std::ost
   if (scope.rank == runtime::StorageRank::kShared) {
     if (scope.tag == "") {
       os << "__shared__ ";
-    } else if (scope.tag == "dyn") {
+    } else if (scope.tag == ".dyn") {
       os << "extern __shared__ ";
     } else {
       LOG(FATAL) << "Unknown shared memory scope tag: " << scope.tag;
@@ -988,7 +988,7 @@ void CodeGenCUDA::VisitStmt_(const AllocateNode* op) {
     PrintType(op->dtype, stream);
   }
 
-  if (scope.rank == runtime::StorageRank::kShared && scope.tag == "dyn") {
+  if (scope.rank == runtime::StorageRank::kShared && scope.tag == ".dyn") {
     stream << ' ' << vid << "[];\n";
   } else {
     size_t constant_size = op->ConstantAllocationSize();
