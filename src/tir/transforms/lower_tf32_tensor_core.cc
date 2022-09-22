@@ -80,7 +80,6 @@ class TF32TensorCoreLowerer : public StmtMutator {
         PrimExpr n = call->args[2];
         PrimExpr k = call->args[3];
         PrimExpr fragment_index = call->args[4];
-        String layout = Downcast<String>(call->args[7]);
         Stmt stmt_after = EmitWMMAFragmentFloatToTF32Cast(scope, fragment, m, n, k, fragment_index);
         return SeqStmt({std::move(evaluate), stmt_after});
       }
