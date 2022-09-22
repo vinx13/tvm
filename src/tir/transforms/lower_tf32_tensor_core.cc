@@ -55,13 +55,16 @@ class TF32TensorCoreLowerer : public StmtMutator {
                                        const PrimExpr& fragment_index) {
     PrimExpr wmma_size = GetWMMAFragmentSize(scope, fragment, m, n, k);
     Var element_index = Var("e");
-    PrimExpr fp32_element = Call(DataType::Float(32), builtin::tvm_wmma_get_element(),
-                                 {fragment, fragment_index, element_index});
-    PrimExpr tf32_element = Call(
-        DataType::Float(32), builtin::call_pure_extern(),
-        {StringImm("__float_to_tf32"), fp32_element});  // the storage format of tf32 is still fp32
-    Stmt set_element = Evaluate(Call(DataType::Handle(), builtin::tvm_wmma_set_element(),
-                                     {fragment, fragment_index, element_index, tf32_element}));
+    // not sure why codegen doesn't work
+    // PrimExpr fp32_element = Call(DataType::Float(32), builtin::tvm_wmma_get_element(),
+    //                              {fragment, fragment_index, element_index});
+    // PrimExpr tf32_element = Call(
+    //     DataType::Float(32), builtin::call_pure_extern(),
+    //     {StringImm("__float_to_tf32"), fp32_element});  // the storage format of tf32 is still fp32
+    // Stmt set_element = Evaluate(Call(DataType::Handle(), builtin::tvm_wmma_set_element(),
+    //                                  {fragment, fragment_index, element_index, tf32_element}));
+    Stmt set_element = Evaluate(Call(DataType::Handle(), builtin::tvm_wmma_convert_element_fp32_to_tf32(),
+                                     {fragment, fragment_index, element_index}));
     return For(element_index, Integer(0), wmma_size, ForKind::kSerial, set_element);
   }
 

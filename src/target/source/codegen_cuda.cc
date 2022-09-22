@@ -849,15 +849,25 @@ void CodeGenCUDA::VisitExpr_(const CallNode* op, std::ostream& os) {
     std::string i = this->PrintExpr(op->args[1]);
     std::string t = this->PrintExpr(op->args[2]);
     this->stream << a << "[" << i << "].x[" << t << "]";
-    LOG(INFO) << "tvm_wmma_get_element " << a << "[" << i << "].x[" << t << "]";
   } else if (op->op.same_as(builtin::tvm_wmma_set_element())) {
     ICHECK_EQ(op->args.size(), 4U);
     std::string a = this->PrintExpr(op->args[0]);
     std::string i = this->PrintExpr(op->args[1]);
     std::string t = this->PrintExpr(op->args[2]);
     std::string v = this->PrintExpr(op->args[3]);
-    LOG(INFO) << "V  = " << v;
     this->stream << a << "[" << i << "].x[" << t << "] = " << v;
+  } else if (op->op.same_as(builtin::tvm_wmma_convert_element_fp32_to_tf32())) {
+    need_mma_h_ = true;
+    ICHECK_EQ(op->args.size(), 3U);
+    std::string a = this->PrintExpr(op->args[0]);
+    std::string i = this->PrintExpr(op->args[1]);
+    std::string t = this->PrintExpr(op->args[2]);
+    std::ostringstream temp_os;
+    temp_os << a << "[" << i << "].x[" << t << "]";
+    std::string element = temp_os.str();
+    this->PrintIndent();
+    this->stream << element << " = nvcuda::wmma::__float_to_tf32(" << element << ");";
+    this->stream << "\n";
   } else if (op->op.same_as(builtin::mma_store())) {
     int m = Downcast<Integer>(op->args[0])->value;
     int n = Downcast<Integer>(op->args[1])->value;
