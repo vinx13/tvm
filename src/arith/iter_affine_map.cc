@@ -712,7 +712,7 @@ class IterMapRewriter : public ExprMutator {
     if (opt.defined()) {
       return opt.value();
     } else {
-      ErrorLogger(this) << "Could not normalize iterators";
+      ErrorLogger(this) << "Could not normalize iterators " << expr;
       return expr;
     }
   }

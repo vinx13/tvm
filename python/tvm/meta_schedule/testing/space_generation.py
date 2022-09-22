@@ -43,6 +43,8 @@ def _find_match_sketch_id(
     *,
     debug_mask="all",
 ) -> Optional[int]:
+    print('ttttt')
+    print(len(sketches))
     for sketch_id, sketch in enumerate(sketches):
         i = 0
         new_decisions = {}
@@ -54,12 +56,16 @@ def _find_match_sketch_id(
                 new_decisions[inst] = expected_decision[i][1]
                 i += 1
         if len(new_decisions) != len(expected_decision):
+            print(f"sketch {sketch_id} has different number of decisions", len(new_decisions), len(expected_decision))
+            print("\n".join(sketch.trace.as_python()))
             continue
         sch = Schedule(mod, debug_mask=debug_mask)
         Trace(
             insts=sketch.trace.insts,
             decisions=new_decisions,
         ).apply_to_schedule(sch, remove_postproc=True)
+        print("ACTUAL:")
+        print(sch.mod.script())
         if structural_equal(sch.mod, expected_mod):
             verify_trace_roundtrip(sch=sch, mod=mod, debug_mask=debug_mask)
             return sketch_id

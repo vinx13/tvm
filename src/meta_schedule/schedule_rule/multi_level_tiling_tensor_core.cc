@@ -487,6 +487,9 @@ Optional<LoopRV> MultiLevelTilingTensorCoreNode::TransformWithTensorIntrin(
 
   std::unordered_set<tir::Buffer, ObjectPtrHash, ObjectPtrEqual> visited_buffers;
 
+  Map<tir::Buffer, tir::IndexMap> buffer_sub_index_map;  // cache of the sub index map associated
+                                                         // with each buffer
+
   auto f_transform_buffer_layout = [&](tir::BufferIndexType index_type, int buffer_index) {
     const tir::Buffer& lhs_buffer = tir::GetNthAccessBuffer(
         state->sch->state(), block_before_reindex, buffer_index, index_type);
@@ -499,7 +502,20 @@ Optional<LoopRV> MultiLevelTilingTensorCoreNode::TransformWithTensorIntrin(
     const tir::BufferRegion& reindexed_buffer_region = tir::GetNthAccessBufferRegion(
         state->sch->state(), GetRef<tir::Block>(block), buffer_index, index_type);
     auto sub_index_map = f_get_sub_index_map(lhs_buffer, reindexed_buffer_region->region);
+    LOG(INFO) << lhs_buffer;
+    buffer_sub_index_map.Set(lhs_buffer, sub_index_map);
     state->sch->TransformLayout(state->block_rv, buffer_index, index_type, sub_index_map, NullOpt);
+
+    // TODO: remove this
+    // if (index_type == tir::BufferIndexType::kRead) {
+    //   if (buffer_index == 0) {
+    //     state->sch->TransformBlockLayout(state->tensor_core_reindex_A, sub_index_map);
+    //   } else {
+    //     state->sch->TransformBlockLayout(state->tensor_core_reindex_B, sub_index_map);
+    //   }
+    // } else {
+    //   state->sch->TransformBlockLayout(state->tensor_core_reindex_store, sub_index_map);
+    // }
   };
 
   for (int i = 0, n = block_before_reindex->reads.size(); i < n; ++i) {
@@ -509,12 +525,22 @@ Optional<LoopRV> MultiLevelTilingTensorCoreNode::TransformWithTensorIntrin(
     f_transform_buffer_layout(tir::BufferIndexType::kWrite, i);
   }
 
-  // Transform the layout of current block and reindex blocks
-  state->sch->TransformBlockLayout(state->tensor_core_reindex_store, index_map);
-  state->sch->TransformBlockLayout(state->tensor_core_reindex_A, index_map);
-  state->sch->TransformBlockLayout(state->tensor_core_reindex_B, index_map);
-  state->sch->TransformBlockLayout(state->block_rv, index_map);
+  // // Transform the layout of current block and reindex blocks
+  auto f_transform_reindex_block_layout = [&](const BlockRV& block_rv, tir::BufferIndexType buffer_type) {
+    tir::Buffer buffer = tir::GetNthAccessBuffer(state->sch->state(), state->sch->Get(block_rv), 0, buffer_type);
+    LOG(INFO) << buffer;
+    const auto& sub_index_map = buffer_sub_index_map.at(buffer);
+    state->sch->TransformBlockLayout(block_rv, sub_index_map);
+  };
+  // state->sch->TransformBlockLayout(state->tensor_core_reindex_store, index_map);
+  // state->sch->TransformBlockLayout(state->tensor_core_reindex_A, index_map);
+  // state->sch->TransformBlockLayout(state->tensor_core_reindex_B, index_map);
 
+  LOG(INFO) << "Applying " << state->sch->Get(state->block_rv)->name_hint;
+  f_transform_reindex_block_layout(state->tensor_core_reindex_store, tir::BufferIndexType::kWrite);
+  f_transform_reindex_block_layout(state->tensor_core_reindex_A, tir::BufferIndexType::kRead);
+  f_transform_reindex_block_layout(state->tensor_core_reindex_B, tir::BufferIndexType::kRead);
+  state->sch->TransformBlockLayout(state->block_rv, index_map);
   return tir::TileWithTensorIntrin(state->sch, state->block_rv, intrin_name,
                                    /*allow_padding=*/true);
 }

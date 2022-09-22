@@ -183,7 +183,7 @@ Block MakeCacheStage(const BufferRegion& cache_region, CacheStageInfo* info,
 Block MakeReIndexStage(const Block& block, CacheStageInfo* info,
                        const std::unordered_set<Var, ObjectPtrHash, ObjectPtrEqual>& covered,
                        const Array<PrimExpr>& original_indices, int buffer_index,
-                       BufferIndexType buffer_index_type) {
+                       BufferIndexType buffer_index_type, bool keep_unused_block_iters) {
   // iters of the reindex block
   Array<IterVar> new_block_iters;
   // the substition map from the original block iter to the iters of the reindex block
@@ -195,12 +195,18 @@ Block MakeReIndexStage(const Block& block, CacheStageInfo* info,
 
   // Step 1: Create block iters, access regions of the reindex block, and accessing indices to the
   // reindex buffer.
-  for (const IterVar& iter : block->iter_vars) {
+  std::unordered_set<int> skipped_block_iters;
+  for (int i = 0, n = block->iter_vars.size(); i < n; ++i) {
+    const IterVar& iter = block->iter_vars[i];
     Var var("v" + std::to_string(new_block_iters.size()));
     bool used = covered.count(iter->var);
-    new_block_iters.push_back(IterVar(/*dom=*/used ? iter->dom : Range::FromMinExtent(0, 1),
-                                      /*var=*/var,
-                                      /*IterVarType=*/kDataPar));
+    if (used || keep_unused_block_iters) {
+      new_block_iters.push_back(IterVar(/*dom=*/used ? iter->dom : Range::FromMinExtent(0, 1),
+                                        /*var=*/var,
+                                        /*IterVarType=*/kDataPar));
+    } else {
+      skipped_block_iters.insert(i);
+    }
     if (used) {
       reindex_indices.push_back(var);
       reindex_region.push_back(Range::FromMinExtent(var, 1));
@@ -254,6 +260,9 @@ Block MakeReIndexStage(const Block& block, CacheStageInfo* info,
   std::vector<Var> loop_vars;         // loop variables
   std::vector<PrimExpr> iter_values;  // bindings in block realize
   for (int i = 0; i < static_cast<int>(block->iter_vars.size()); ++i) {
+    if (skipped_block_iters.count(i)) {
+      continue;
+    }
     Var loop_var("ax" + std::to_string(loop_vars.size()));
     loop_vars.push_back(loop_var);
     iter_values.push_back(loop_var);
@@ -1172,7 +1181,7 @@ StmtSRef ReIndex(ScheduleState self, const StmtSRef& block_sref, int buffer_inde
 
   // Step 4. Making new reindex stage block and rewrite
   Block reindex_stage =
-      MakeReIndexStage(block, &info, covered, original_indices, buffer_index, buffer_index_type);
+      MakeReIndexStage(block, &info, covered, original_indices, buffer_index, buffer_index_type, /*keep_unused_block_iters=*/false);
   Stmt new_scope = ReIndexRewriter::Rewrite(scope_sref, block_sref, &info, covered);
 
   // Step 5. Replacing and updating flags

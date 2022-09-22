@@ -1115,7 +1115,7 @@ class IndexMapNotApplicableToBlockIterError : public ScheduleError {
 
   IRModule mod() const final { return mod_; }
 
-  Array<ObjectRef> LocationsOfInterest() const final { return {}; }
+  Array<ObjectRef> LocationsOfInterest() const final { return {block_}; }
 
  private:
   IRModule mod_;
@@ -1196,14 +1196,6 @@ void TransformBlockLayout(ScheduleState self, const StmtSRef& block_sref,
   Array<PrimExpr> transformed_block_iters = index_map->MapIndices(block_vars);
   Array<PrimExpr> new_block_iter_range = index_map->MapShape(block_iter_range_array);
 
-  auto iter_map = arith::DetectIterMap(
-      /*indices=*/transformed_block_iters, /*input_iters=*/block_iter_dom, /*predicate=*/Bool(true),
-      /*check_level=*/arith::IterMapLevel::Bijective, &analyzer,
-      /*simplify_trivial_iterators=*/false);
-  if (iter_map->indices.empty()) {
-    throw NotBijectiveAffineIndexMapError(self->mod, index_map);
-  }
-
   // Step 5: Create the new block after transformation.
 
   // Step 5.1: Create new block iters. After applying the IndexMap f to block iters ax_0, ..., ax_n,
@@ -1223,9 +1215,28 @@ void TransformBlockLayout(ScheduleState self, const StmtSRef& block_sref,
 
   // Step 5.2: Update the block body. Use the inverse map f^{-1} to replace the original block iters
   // in the body.
+  Map<Var, PrimExpr> inverse_subst_map;
+  // Construct the inverse map
+  {
+    Array<Range> initial_ranges;
+    for (const PrimExpr& extent : block_iter_range_array) {
+      initial_ranges.push_back(Range::FromMinExtent(make_const(extent.dtype(), 0), extent));
+    }
+    IndexMap inverse_index_map{nullptr};
+    try {
+      inverse_index_map = index_map.Inverse(initial_ranges);
+    } catch (...) {
+      throw NotBijectiveAffineIndexMapError(self->mod, index_map);
+    }
 
-  auto inverse_map = arith::InverseAffineIterMap(iter_map->indices, new_block_vars);
-  Block new_block = Downcast<Block>(Substitute(GetRef<Block>(block_ptr), inverse_map));
+    Array<PrimExpr> inversed_new_block_vars = inverse_index_map->MapIndices(
+        new_block_vars);  // old block vars written in terms of new block vars
+
+    for (int i = 0, n = block_vars.size(); i < n; ++i) {
+      inverse_subst_map.Set(Downcast<Var>(block_vars[i]), inversed_new_block_vars[i]);
+    }
+  }
+  Block new_block = Downcast<Block>(Substitute(GetRef<Block>(block_ptr), inverse_subst_map));
   new_block.CopyOnWrite()->iter_vars = new_block_iters;
   new_block = Downcast<Block>(BlockBufferAccessSimplifier::Simplify(new_block, &analyzer));
 
