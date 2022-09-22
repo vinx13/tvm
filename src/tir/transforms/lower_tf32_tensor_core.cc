@@ -28,7 +28,7 @@
 #include <tvm/tir/stmt_functor.h>
 #include <tvm/tir/transform.h>
 
-#include "../../support/utils.h"
+#include "../../runtime/thread_storage_scope.h"
 #include "ir_utils.h"
 
 namespace tvm {
@@ -36,17 +36,13 @@ namespace tir {
 
 class TF32TensorCoreLowerer : public StmtMutator {
  private:
-  PrimExpr GetWMMAFragmentSize(const Var& fragment, const PrimExpr& m, const PrimExpr& n,
-                               const PrimExpr& k, const PrimExpr& fragment_index) {
-    // get the size of the WMMA fragment from load_matrix_sync call
-    static const Op& load_matrix_sync = builtin::tvm_load_matrix_sync();
-    ICHECK(call->op.same_as(load_matrix_sync));
-    String scope = GetPtrStorageScope(fragment);
-    if (support::StartsWith(scope, "wmma.matrix_a")) {
+  PrimExpr GetWMMAFragmentSize(const runtime::StorageScope& scope, const Var& fragment,
+                               const PrimExpr& m, const PrimExpr& n, const PrimExpr& k) {
+    if (scope.rank == runtime::StorageRank::kWMMAMatrixA) {
       return m * k;
-    } else if (support::StartsWith(scope, "wmma.matrix_b")) {
+    } else if (scope.rank == runtime::StorageRank::kWMMAMatrixB) {
       return k * n;
-    } else if (support::StartsWith(scope, "wmma.accumulator")) {
+    } else if (scope.rank == runtime::StorageRank::kWMMAAccumulator) {
       return m * n;
     } else {
       LOG(FATAL) << "Unsupported WMMA fragment: " << fragment;
@@ -54,9 +50,10 @@ class TF32TensorCoreLowerer : public StmtMutator {
     }
   }
 
-  Stmt EmitWMMAFragmentFloatToTF32Cast(const Var& fragment, const PrimExpr& m, const PrimExpr& n,
-                                       const PrimExpr& k, const PrimExpr& fragment_index) {
-    PrimExpr wmma_size = GetWMMAFragmentSize(fragment, m, n, k, fragment_index);
+  Stmt EmitWMMAFragmentFloatToTF32Cast(const runtime::StorageScope& scope, Var& fragment,
+                                       const PrimExpr& m, const PrimExpr& n, const PrimExpr& k,
+                                       const PrimExpr& fragment_index) {
+    PrimExpr wmma_size = GetWMMAFragmentSize(scope, fragment, m, n, k);
     Var element_index = Var("e");
     PrimExpr fp32_element = Call(DataType::Float(32), builtin::tvm_wmma_get_element(),
                                  {fragment, fragment_index, element_index});
@@ -72,15 +69,19 @@ class TF32TensorCoreLowerer : public StmtMutator {
     static const Op& load_matrix_sync = builtin::tvm_load_matrix_sync();
 
     Evaluate evaluate = Downcast<Evaluate>(StmtMutator::VisitStmt_(op));
-    if (const CallNode* call = evaluate->value.as<CallNode>()) {
-      if (call->op.same_as(load_matrix_sync)) {
-        Var fragment = Downcast<Var>(call->args[0]);
+    if (const CallNode* call = evaluate->value.as<CallNode>();
+        call != nullptr && call->op.same_as(load_matrix_sync)) {
+      Var fragment = Downcast<Var>(call->args[0]);
+      runtime::StorageScope scope = runtime::StorageScope::Create(GetPtrStorageScope(fragment));
+      if ((scope.rank == runtime::StorageRank::kWMMAMatrixA ||
+           scope.rank == runtime::StorageRank::kWMMAMatrixB) &&
+          scope.tag == ".tf32") {
         PrimExpr m = call->args[1];
         PrimExpr n = call->args[2];
         PrimExpr k = call->args[3];
         PrimExpr fragment_index = call->args[4];
         String layout = Downcast<String>(call->args[7]);
-        Stmt stmt_after = EmitWMMAFragmentFloatToTF32Cast(fragment, m, n, k, fragment_index);
+        Stmt stmt_after = EmitWMMAFragmentFloatToTF32Cast(scope, fragment, m, n, k, fragment_index);
         return SeqStmt({std::move(evaluate), stmt_after});
       }
     }
