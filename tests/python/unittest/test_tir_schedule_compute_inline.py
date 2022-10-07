@@ -626,6 +626,39 @@ def elementwise_producer_not_cover_consumer(
             D[vi, vj] = T.if_then_else(vi >= 128, B[vi - 128, vj], T.float32(0), dtype="float32")
 
 
+@T.prim_func
+def elementwise_mixed_dtype(A: T.Buffer[(128, 128), "float32"], C: T.Buffer[(T.int64(128), T.int64(128)), "float32"]) -> None:
+    B = T.alloc_buffer((128, 128))
+    for i, j in T.grid(128, 128):
+        with T.block("B"):
+            vi, vj = T.axis.remap("SS", [i, j])
+            B[vi, vj] = A[vi, vj] * 2.0
+    for i, j in T.grid(T.int64(128), T.int64(128)):
+        with T.block("C"):
+            vi, vj = T.axis.remap("SS", [i, j])
+            C[vi, vj] = B[T.cast(vi, "int32"), T.cast(vj, "int32")] + 1.0
+
+
+@T.prim_func
+def elementwise_mixed_dtype_inlined(A: T.Buffer[(128, 128), "float32"], C: T.Buffer[(T.int64(128), T.int64(128)), "float32"]) -> None:
+    for i, j in T.grid(T.int64(128), T.int64(128)):
+        with T.block("C"):
+            vi, vj = T.axis.remap("SS", [i, j])
+            T.reads(A[T.cast(vi, "int32"), T.cast(vj, "int32")])
+            T.writes(C[vi, vj])
+            C[vi, vj] = A[T.cast(vi, "int32"), T.cast(vj, "int32")] * T.float32(2) + T.float32(1)
+
+
+@T.prim_func
+def elementwise_mixed_dtype_reverse_inlined(A: T.Buffer[(128, 128), "float32"], C: T.Buffer[(T.int64(128), T.int64(128)), "float32"]) -> None:
+    for i, j in T.grid(128, 128):
+        with T.block("B"):
+            vi, vj = T.axis.remap("SS", [i, j])
+            T.reads(A[vi, vj])
+            T.writes(C[T.cast(vi, "int64"), T.cast(vj, "int64")])
+            C[T.cast(vi, "int64"), T.cast(vj, "int64")] = A[vi, vj] * T.float32(2) + T.float32(1)
+
+
 # pylint: enable=no-member,invalid-name,unused-variable
 
 use_block_name = tvm.testing.parameter(by_dict={"block_obj": False, "block_name": True})
@@ -881,6 +914,24 @@ def test_reverse_compute_inline_error_producer_not_cover_consumer(use_block_name
     compute = "C" if use_block_name else sch.get_block("C")
     with pytest.raises(tvm.tir.ScheduleError):
         sch.reverse_compute_inline(compute)
+
+
+def test_compute_inline_mixed_dtype(use_block_name):
+    """Test compute inline with mixed dtype in buffer indices"""
+    sch = tir.Schedule(elementwise_mixed_dtype, debug_mask="all")
+    compute = "B" if use_block_name else sch.get_block("B")
+    sch.compute_inline(compute)
+    print(sch.mod["main"].script())
+    tvm.ir.assert_structural_equal(elementwise_mixed_dtype_inlined, sch.mod["main"])
+
+
+@pytest.mark.xfail(reason="mixed dtypes not supported in reverse compute inline")
+def test_compute_inline_mixed_dtype(use_block_name):
+    """Test compute inline with mixed dtype in buffer indices"""
+    sch = tir.Schedule(elementwise_mixed_dtype, debug_mask="all")
+    compute = "C" if use_block_name else sch.get_block("C")
+    sch.reverse_compute_inline(compute)
+    tvm.ir.assert_structural_equal(elementwise_mixed_dtype_reverse_inlined, sch.mod["main"])
 
 
 if __name__ == "__main__":
