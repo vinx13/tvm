@@ -1695,6 +1695,14 @@ PrimExpr RewriteSimplifier::Impl::VisitExpr_(const VarNode* op) {
 PrimExpr RewriteSimplifier::Impl::VisitExpr_(const CastNode* op) {
   PrimExpr ret = IRMutatorWithAnalyzer::VisitExpr_(op);
   op = ret.as<CastNode>();
+  if (IsIndexType(op->dtype)) {
+    if (const auto* inner = op->value.as<CastNode>()) {
+      const PrimExpr& inner_value = inner->value;
+      if (op->dtype.code() == inner->dtype.code() && op->dtype.bits() >= inner_value->dtype.bits() && inner->dtype.bits() >= inner_value->dtype.bits()) {
+        return cast(op->dtype, inner_value);
+      }
+    }
+  }
   return cast(op->dtype, op->value);
 }
 

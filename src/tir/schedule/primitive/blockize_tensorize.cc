@@ -203,6 +203,7 @@ Map<Var, PrimExpr> DeriveBlockBinding(const Array<IterVar>& iter_vars,          
   Map<Var, PrimExpr> block_var_subst;
   ICHECK_EQ(iter_vars.size() + 1, division.size());
   for (int i = 0, n = iter_vars.size(); i < n; ++i) {
+    // LOG(INFO) << i;
     const IterVar& iter_var = iter_vars[i];
     arith::IterMark outer_mark = division[i][0];
     arith::IterMark inner_mark = division[i][1];
@@ -221,13 +222,19 @@ Map<Var, PrimExpr> DeriveBlockBinding(const Array<IterVar>& iter_vars,          
       continue;
     }
     // create iter var for the outer block
-    IterVar outer_iter(/*dom=*/RangeFromExtent(outer_mark->extent),
+    // auto ext_outer = cast(outer_mark->source->dtype, outer_mark->extent);
+    // auto ext_inner = cast(inner_mark->source->dtype, inner_mark->extent);
+    auto ext_outer = cast(iter_var->var->dtype, outer_mark->extent);
+    auto ext_inner = cast(iter_var->var->dtype, inner_mark->extent);
+    // LOG(INFO) << "ext_outer: " << ext_outer;
+    // LOG(INFO) << "ext_inner: " << ext_inner;
+    IterVar outer_iter(/*dom=*/RangeFromExtent(ext_outer),
                        /*var=*/iter_var->var.copy_with_suffix("_o"),
                        /*iter_type=*/iter_var->iter_type);
     outer_bindings->push_back(NormalizeIterMapToExpr(outer_binding));
     outer_iter_vars->push_back(outer_iter);
     // create iter var for the inner block
-    IterVar inner_iter(/*dom=*/RangeFromExtent(inner_mark->extent),
+    IterVar inner_iter(/*dom=*/RangeFromExtent(ext_inner),
                        /*var=*/iter_var->var.copy_with_suffix("_i"),
                        /*iter_type=*/iter_var->iter_type);
     inner_bindings->push_back(NormalizeIterMapToExpr(inner_binding));

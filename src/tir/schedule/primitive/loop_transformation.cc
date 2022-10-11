@@ -65,6 +65,21 @@ class SubstituteVarAndCollectOpaqueBlock : public StmtExprMutator {
     if (realize->block->iter_vars.empty()) {
       opaque_blocks_->Set(op->block, realize->block);
     }
+    // wuwei: not needed
+    // Array<PrimExpr> new_iter_values;
+    // bool changed = false;
+    // for (int i = 0, n = static_cast<int>(realize->iter_values.size()); i < n; ++i) {
+    //   if (realize->iter_values[i]->dtype != realize->block->iter_vars[i]->var->dtype) {
+    //     new_iter_values.push_back(
+    //         cast(realize->block->iter_vars[i]->var->dtype, realize->iter_values[i]));
+    //     changed = true;
+    //   } else {
+    //     new_iter_values.push_back(realize->iter_values[i]);
+    //   }
+    // }
+    // if (changed) {
+      // realize.CopyOnWrite()->iter_values = new_iter_values;
+    // }
     return std::move(realize);
   }
 
@@ -121,6 +136,7 @@ class IterMapSimplifyBlockBinding : public StmtExprMutator {
                                /*input_pred=*/op->predicate,
                                /*check_level=*/arith::IterMapLevel::Surjective,
                                /*simplify_trivial_iterators=*/!preserve_unit_iters_);
+    // LOG(INFO) << "IterMapSimplify: " << op->iter_values << " -> " << v;
     if (v.same_as(op->iter_values)) {
       return GetRef<Stmt>(op);
     } else {
@@ -524,8 +540,10 @@ StmtSRef Fuse(ScheduleState self, const Array<StmtSRef>& loop_srefs, bool preser
     }
     return NullOpt;
   };
+  // LOG(INFO) << new_stmt;
   new_stmt =
       SubstituteVarAndCollectOpaqueBlock(f_substitute, &opaque_block_reuse)(std::move(new_stmt));
+  // LOG(INFO) << new_stmt;
   // Step 3. Generate a loop to replace the original loops
   PrimExpr fused_extent = 1;
   for (int i = 0; i < n; i++) {

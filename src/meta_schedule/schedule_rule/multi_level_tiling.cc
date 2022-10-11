@@ -118,6 +118,7 @@ std::vector<State> MultiLevelTilingNode::ApplySubRules(std::vector<State> states
 }
 
 std::vector<State> MultiLevelTilingNode::AddWriteReuse(State state) const {
+
   const ReuseConfig& config = this->reuse_write_;
   if (config.req == ReuseType::kNoReuse) {
     return {std::move(state)};
@@ -153,10 +154,13 @@ std::vector<State> MultiLevelTilingNode::AddWriteReuse(State state) const {
   }
 
   // Case 3. Add one write cache
+  LOG(INFO) << tir::AsTVMScript(state->sch->mod());
+  LOG(INFO) << "CacheWrite " << state->sch->Get(state->block_rv)->name_hint;
   BlockRV write_cache =
       state->sch->CacheWrite(/*block_rv=*/state->block_rv, /*read_buffer_index=*/0,
                              /*storage_scope=*/config.scope);
   state->write_reuse.emplace(0, write_cache);
+  LOG(INFO) << "OK";
   for (int level : levels) {
     State new_state = state->Copy();
     const LoopRV& loop_rv = new_state->tiles[level - 1].back();

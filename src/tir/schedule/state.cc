@@ -90,7 +90,7 @@ Array<arith::IntSet> AnalyzeRegionLowerBound(const BufferRegion& region,        
 bool ProducerCoversConsumer(const Array<PrimExpr>& buffer_shape,
                             const Array<arith::IntSet>& produced_region,
                             const Array<arith::IntSet>& consumed_region,
-                            arith::Analyzer* analyzer) {
+                            arith::Analyzer* analyzer, bool debug=false) {
   ICHECK_EQ(buffer_shape.size(), consumed_region.size());
   ICHECK_EQ(produced_region.size(), consumed_region.size());
   int ndim = produced_region.size();
@@ -113,6 +113,11 @@ bool ProducerCoversConsumer(const Array<PrimExpr>& buffer_shape,
     consumed = arith::IntSet::Interval(analyzer->Simplify(consumed.min()),
                                        analyzer->Simplify(consumed.max()));
 
+  if (debug) {
+    LOG(INFO) << "Producer: " << produced << "\nConsumer: " << consumed;
+    LOG(INFO) << analyzer->CanProve(analyzer->canonical_simplify(produced.min() - consumed.min()) <= 0);
+    LOG(INFO) << analyzer->CanProve(analyzer->canonical_simplify(produced.max() - consumed.max()) >= 0);
+  }
     if (!analyzer->CanProve((analyzer->canonical_simplify(produced.min() - consumed.min()) <= 0) &&
                             (analyzer->canonical_simplify(consumed.max() - produced.max()) <= 0))) {
       return false;
@@ -244,6 +249,7 @@ class BlockInfoCollector : private StmtVisitor {
       Array<BufferRegion> reads;
       reads.reserve(block->reads.size());
       for (const BufferRegion& region : block->reads) {
+        // LOG(INFO) << "Subst " << region->region << " with " << binding;
         reads.push_back(BufferRegion(region->buffer, Substitute(region->region, binding)));
       }
       block_reads_unbound.emplace(block_sref.get(), std::move(reads));
@@ -251,6 +257,7 @@ class BlockInfoCollector : private StmtVisitor {
       Array<BufferRegion> writes;
       writes.reserve(block->writes.size());
       for (const BufferRegion& region : block->writes) {
+        // LOG(INFO) << "Subst " << region->region << " with " << binding;
         writes.push_back(BufferRegion(region->buffer, Substitute(region->region, binding)));
       }
       block_writes_unbound.emplace(block_sref.get(), std::move(writes));
@@ -261,6 +268,7 @@ class BlockInfoCollector : private StmtVisitor {
       const Array<Dependency>& deps = kv.second;
       const BlockNode* consumer_block = TVM_SREF_TO_BLOCK(consumer_block_sref);
       const BlockRealize& consumer_realize = block2realize_.at(consumer_block);
+      // LOG(INFO) << "Check region cover for " << consumer_block_sref->StmtAs<BlockNode>()->name_hint;
       bool& region_cover = self_->block_info.at(consumer_block_sref).region_cover = true;
       // Step 2.1. Extract the path to the scope root
       std::unordered_map<const StmtSRefNode*, std::vector<const StmtSRefNode*>> lca_loc;
@@ -345,6 +353,10 @@ class BlockInfoCollector : private StmtVisitor {
                   /*analyzer=*/&analyzer_);
               if (!ProducerCoversConsumer(buffer->shape, produced_region, consumed_region,
                                           &analyzer_)) {
+                                            LOG(INFO) << "Region cover false " << produced_region << " " << consumed_region;
+                                            LOG(INFO) << "Debug\n-------";
+                                            ProducerCoversConsumer(buffer->shape, produced_region, consumed_region, &analyzer_, true);
+                                            LOG(INFO) << "-------";
                 region_cover = false;
                 self_->block_info.at(consumer_block_sref).region_cover = region_cover;
                 break;

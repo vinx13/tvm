@@ -121,6 +121,7 @@ Block MakeCacheStage(const BufferRegion& cache_region, CacheStageInfo* info,
   // indices used in block body
   Array<PrimExpr> access_indices;
   // Create block vars, block's accessed region and accessing indices
+  // LOG(INFO) << "Buffer shape " << cache_region->buffer->shape;
   for (const PrimExpr& dim : cache_region->buffer->shape) {
     Var var("v" + std::to_string(access_indices.size()), dim.dtype());
     block_vars.push_back(IterVar(/*dom=*/Range::FromMinExtent(make_zero(dim->dtype), dim),
@@ -129,7 +130,7 @@ Block MakeCacheStage(const BufferRegion& cache_region, CacheStageInfo* info,
     access_indices.push_back(var);
     access_region.push_back(Range::FromMinExtent(var, make_const(var.dtype(), 1)));
   }
-
+  // LOG(INFO) << "block vars " << block_vars;
   // Create the body block:
   //   reads = [read_buffer[access_region]]
   //   writes = [write_buffer[access_region]]
@@ -151,6 +152,7 @@ Block MakeCacheStage(const BufferRegion& cache_region, CacheStageInfo* info,
                            /*predicate=*/const_true(),
                            /*block=*/block);
   // Create surrounding loops
+  // LOG(INFO) << cache_region->region;
   for (size_t i = loop_vars.size(); i >= 1; --i) {
     body = For(/*loop_var=*/loop_vars[i - 1],
                /*min=*/0,
@@ -350,6 +352,7 @@ BufferRegion RelaxBufferRegion(ScheduleState self, const BufferRegion& buffer_re
   const Buffer& buffer = buffer_region->buffer;
   arith::Analyzer analyzer;
   BufferRegion subst_region = BufferRegion(buffer, Substitute(buffer_region->region, binding));
+  // LOG(INFO) << subst_region;
   Array<arith::IntSet> int_sets = AnalyzeRegionUpperBound(
       /*region=*/subst_region,
       /*predicate=*/realize->predicate,
@@ -360,6 +363,7 @@ BufferRegion RelaxBufferRegion(ScheduleState self, const BufferRegion& buffer_re
 
   Region region;
   region.reserve(int_sets.size());
+  // LOG(INFO) << int_sets;
   for (size_t i = 0; i < int_sets.size(); ++i) {
     region.push_back(int_sets[i].CoverRange(Range::FromMinExtent(0, buffer->shape[i])));
   }
@@ -1123,6 +1127,7 @@ StmtSRef CacheWrite(ScheduleState self, const StmtSRef& block_sref, int write_bu
   CacheLocDetector::Detect(self, block_sref, scope_sref, &info);
   BufferRegion cache_region =
       RelaxBufferRegion(self, region, block_sref, parent_sref, info.loc_sref);
+      // LOG(INFO) << "Relax buffer region: " << region << " -> " << cache_region;
 
   // Step 5. Making new cache stage block and rewrite readers.
   Block cache_write_stage = MakeCacheStage(/*cache_region=*/cache_region, /*info=*/&info,

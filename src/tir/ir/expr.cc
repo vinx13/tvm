@@ -122,6 +122,7 @@ TVM_STATIC_IR_FUNCTOR(ReprPrinter, vtable)
       // omit the type
       // stream << op->name << "." << op->type;
       p->stream << op->name_hint;
+      p->stream << ": " << op->dtype;
     });
 
 // SizeVar

@@ -71,11 +71,11 @@ bool TensorizeComparator::VisitStmt(const Stmt& n, const Stmt& other) {
 
 bool TensorizeComparator::VisitExpr(const PrimExpr& n, const PrimExpr& other) {
   bool equal =
-      n.same_as(other) || ((n->type_index() == other->type_index()) && n->dtype == other->dtype &&
+      n.same_as(other) || ((n->type_index() == other->type_index()) &&
                            ExprComparator::VisitExpr(n, other));
   if (!equal && assert_mode_) {
     std::ostringstream os;
-    os << "Expression mismatch: " << n << " vs " << other;
+    os << "Expression mismatch: " << n << " vs " << other << " " << n->GetTypeKey() << " " << other->GetTypeKey();
     EmitError(os.str());
   }
   return equal;
@@ -83,12 +83,25 @@ bool TensorizeComparator::VisitExpr(const PrimExpr& n, const PrimExpr& other) {
 
 bool TensorizeComparator::VisitStmt_(const ForNode* op, const Stmt& other) {
   const auto* rhs = other.as<ForNode>();
-  if (!DefEqual(op->loop_var, rhs->loop_var)) return false;
-  if (!VisitExpr(op->min, rhs->min)) return false;
-  if (!VisitExpr(op->extent, rhs->extent)) return false;
-  if (op->thread_binding.defined() != rhs->thread_binding.defined()) return false;
+  if (!DefEqual(op->loop_var, rhs->loop_var)) {
+    LOG(INFO) << "A";
+    return false;
+  }
+  if (!VisitExpr(op->min, rhs->min)) {
+    LOG(INFO) << "B";
+    return false;
+  }
+  if (!VisitExpr(op->extent, rhs->extent)) {
+    LOG(INFO) << "C";
+    return false;
+  }
+  if (op->thread_binding.defined() != rhs->thread_binding.defined()) {
+    LOG(INFO) << "D";
+    return false;
+  }
   if (op->thread_binding.defined() &&
       !VisitExpr(op->thread_binding.value(), rhs->thread_binding.value())) {
+        LOG(INFO) << "E";
     return false;
   }
   if (op->kind != rhs->kind) return false;
@@ -110,6 +123,7 @@ bool TensorizeComparator::VisitStmt_(const BlockRealizeNode* op, const Stmt& oth
   const auto* rhs = other.as<BlockRealizeNode>();
   if (!is_scope_block) {
     if (!CompareArray(op->iter_values, rhs->iter_values, &TensorizeComparator::VisitExpr)) {
+      LOG(INFO) << "CompareArray " << op->iter_values << " vs " << rhs->iter_values;
       return false;
     }
   }

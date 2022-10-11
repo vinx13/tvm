@@ -1033,8 +1033,9 @@ Map<Var, arith::IntSet> AsIntSet(const Map<Var, Range>& var_dom) {
 /*! \brief Helper function to convert IterSumExpr to the actual touched range. */
 static Optional<IntSet> EvalIterSum(const IterSumExpr& iter_min, const PrimExpr& extent,
                                     Analyzer* analyzer) {
+  auto dtype = iter_min->dtype;
   if (iter_min->args.empty()) {
-    return IntSet::FromMinExtent(iter_min->base, extent);
+    return IntSet::FromMinExtent(cast(dtype, iter_min->base), extent);
   }
   ICHECK_EQ(iter_min->args.size(), 1) << "The `EvalIterSum` expects fused iter sum expr";
   const IterSplitExpr& split = iter_min->args[0];
@@ -1050,11 +1051,11 @@ static Optional<IntSet> EvalIterSum(const IterSumExpr& iter_min, const PrimExpr&
     // The total base is `base + (extent - 1) * scale`,
     // while total extent is `dom_extent + (extent - 1) * (-scale)`
     const PrimExpr& var_extent = (split->extent - 1) * split->scale;
-    return IntSet::FromMinExtent(base + var_extent, extent - var_extent);
+    return IntSet::FromMinExtent(cast(dtype, base + var_extent), cast(dtype, extent - var_extent));
   } else {
     // If scale is positive, the var dom is [0, (extent - 1) * scale]
     // The total dom is [base, dom_extent + (extent - 1) * scale]
-    return IntSet::FromMinExtent(base, extent + (split->extent - 1) * split->scale);
+    return IntSet::FromMinExtent(base, cast(dtype, extent + (split->extent - 1) * split->scale));
   }
 }
 
@@ -1090,6 +1091,8 @@ Optional<Array<IntSet>> EstimateRegionStrictBound(const Array<Range>& region,
     Optional<IntSet> int_set = EvalIterSum(sum_expr, range->extent, analyzer);
     if (int_set.defined()) {
       result.push_back(int_set.value());
+      // LOG(INFO) << "EstimateRegionStrictBound: " << range << " -> " << int_set.value();
+      // LOG(INFO) << "IterSum " << sum_expr << " -> " << int_set.value();
     } else {
       return NullOpt;
     }
@@ -1110,6 +1113,7 @@ Array<IntSet> EstimateRegionUpperBound(const Array<Range>& region, const Map<Var
           /*region=*/region,
           /*var_dom=*/var_dom,
           /*predicate=*/predicate, /*analyzer=*/analyzer)) {
+    // LOG(INFO) << "HasStrictBound ";
     return result.value();
   }
   Array<IntSet> result;
@@ -1133,11 +1137,13 @@ Array<IntSet> EstimateRegionUpperBound(const Array<Range>& region, const Map<Var
 
       if (Optional<IntSet> int_set = EvalIterSum(sum_expr, range->extent, analyzer)) {
         result.push_back(int_set.value());
+        // LOG(INFO) << "EvalIterSum " << result.back();
         continue;
       }
     }
     // fallback to coarse grained evalset
     result.push_back(EvalSet(range, AsIntSet(var_dom)));
+    // LOG(INFO) << "fallback " << result.back();
   }
   return result;
 }

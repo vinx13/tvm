@@ -267,6 +267,9 @@ std::vector<State> MultiLevelTilingTensorCoreNode::AddWriteReuseTensorCore(
 
 std::vector<State> MultiLevelTilingTensorCoreNode::AddReadReuseTensorCore(
     TensorCoreState state) const {
+
+
+
   const Array<LoopRV>& r_tiles = state->tiles[r_indices_[1]];
   Schedule& sch = state->sch;
   ICHECK(!r_tiles.empty()) << "ValueError: Cannot find the suitable reduction loop in the block";
@@ -275,6 +278,14 @@ std::vector<State> MultiLevelTilingTensorCoreNode::AddReadReuseTensorCore(
     auto cache_read = sch->CacheRead(state->block_rv, read_index, scope);
     state->sch->ComputeAt(cache_read, r_tiles.back(), true);
     TileAndAnnotateTensorize(&sch, cache_read, intrin_name);
+
+     std::ostringstream os;
+ auto trace = state->sch->trace().value();
+ auto insts = trace->AsPython(false);
+ for (auto inst : insts) {
+   os << inst << "\n";
+ }
+ LOG(INFO) << os.str();
   };
 
   f_tensorize_load(0, "wmma.matrix_a", state->intrin_group.load_a_intrin);

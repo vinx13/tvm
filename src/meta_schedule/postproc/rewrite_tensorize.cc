@@ -43,6 +43,13 @@ void CollectTensorizationJobs(
             try {
               sch->Tensorize(block, intrin_name.value());
             } catch (const std::exception& e) {
+                   std::ostringstream os;
+ auto trace = sch->trace().value();
+ auto insts = trace->AsPython(false);
+ for (auto inst : insts) {
+   os << inst << "\n";
+ }
+ LOG(INFO) << os.str();
               LOG(WARNING) << "Tensorize failed with error " << e.what();
             }
           });

@@ -102,7 +102,7 @@ TVM_STATIC_IR_FUNCTOR(ReprPrinter, vtable)
     .set_dispatch<IterSplitExprNode>([](const ObjectRef& node, ReprPrinter* p) {
       auto* op = static_cast<const IterSplitExprNode*>(node.get());
       p->stream << "IterSplit(" << op->source << ", lower_factor=" << op->lower_factor
-                << ", extent=" << op->extent << ", scale=" << op->scale << ")";
+                << ", extent=" << op->extent << ", scale=" << op->scale << ", dtype=" << op->dtype << ")";
     });
 
 IterSumExpr::IterSumExpr(Array<IterSplitExpr> args, PrimExpr base) {
@@ -123,7 +123,7 @@ TVM_REGISTER_NODE_TYPE(IterSumExprNode);
 TVM_STATIC_IR_FUNCTOR(ReprPrinter, vtable)
     .set_dispatch<IterSumExprNode>([](const ObjectRef& node, ReprPrinter* p) {
       auto* op = static_cast<const IterSumExprNode*>(node.get());
-      p->stream << "IterSum(" << op->args << ", " << op->base << ")";
+      p->stream << "IterSum(" << op->args << ", " << op->base << ", dtype=" << op->dtype << ")";
     });
 
 /*!
@@ -324,6 +324,20 @@ class IterMapRewriter : public ExprMutator {
   PrimExpr VisitExpr_(const MulNode* op) final;
   PrimExpr VisitExpr_(const FloorDivNode* op) final;
   PrimExpr VisitExpr_(const FloorModNode* op) final;
+
+  PrimExpr VisitExpr_(const CastNode* op) final {
+    auto new_value = DirectMutate(op->value);
+    if (new_value->IsInstance<IterSumExprNode>()) {
+      IterSumExpr iter_sum = Downcast<IterSumExpr>(new_value);
+      iter_sum.CopyOnWrite()->dtype = op->dtype;
+      return std::move(iter_sum);
+    } else if (new_value->IsInstance<IterSplitExprNode>()) {
+      IterSplitExpr iter_split = Downcast<IterSplitExpr>(new_value);
+      iter_split.CopyOnWrite()->dtype = op->dtype;
+      return std::move(iter_split);
+    }
+    return Cast(op->dtype, new_value);
+  }
 
  private:
   /* \brief Preprocessing common to both FloorDiv and FloorMod
@@ -868,10 +882,10 @@ class IterMapRewriter : public ExprMutator {
     IterSumExpr structured_form = expr, flattened_form = expr;
     flattened_form.CopyOnWrite()->args =
         Array<IterSplitExpr>(flattened_iters.rbegin(), flattened_iters.rend());
-    flattened_form.CopyOnWrite()->base = 0;
+    flattened_form.CopyOnWrite()->base = make_const(flattened_form->dtype, 0);
     structured_form.CopyOnWrite()->args =
         Array<IterSplitExpr>(grouped_iters.rbegin(), grouped_iters.rend());
-    structured_form.CopyOnWrite()->base = 0;
+    structured_form.CopyOnWrite()->base = make_const(structured_form->dtype, 0);
     auto it = sum_fuse_map_.find(flattened_form);
     if (it != sum_fuse_map_.end()) {
       // old iter
@@ -1651,6 +1665,7 @@ PrimExpr IterMapRewriter::VisitExpr_(const FloorModNode* op) {
 
   PrimExpr a = this->DirectMutate(op->a);
   PrimExpr b = this->DirectMutate(op->b);
+  // LOG(INFO) << "FMOD " << GetRef<PrimExpr>(op) << " " << a << " " << b;
 
   // const folding
   if (auto const_res = TryConstFold<FloorMod>(a, b)) return const_res.value();
@@ -1681,6 +1696,7 @@ PrimExpr IterMapRewriter::VisitExpr_(const FloorModNode* op) {
   if (!remainder.defined()) {
     return GetRef<PrimExpr>(op);
   }
+  // LOG(INFO) << "remainder " << remainder;
   return remainder;
 }
 
@@ -1710,7 +1726,7 @@ class IterMapToExprNormalizer : public ExprMutator {
       res += ConvertIterSplitExpr(arg);
     }
     res += expr->base;
-    return res;
+    return cast(expr->dtype, res);
   }
 
   PrimExpr ConvertIterSplitExpr(const IterSplitExpr& expr) {
@@ -1722,14 +1738,16 @@ class IterMapToExprNormalizer : public ExprMutator {
     } else {
       source = VisitExpr(expr->source->source);
     }
+    PrimExpr result{nullptr};
     if (analyzer_->CanProve(expr->extent == expr->source->extent) && is_one(expr->lower_factor)) {
-      return source * expr->scale;
+      result = source * expr->scale;
     } else if (analyzer_->CanProve(expr->source->extent == expr->lower_factor * expr->extent)) {
-      return floordiv(source, expr->lower_factor) * expr->scale;
+      result = floordiv(source, expr->lower_factor) * expr->scale;
     } else {
-      return floordiv(floormod(source, expr->lower_factor * expr->extent), expr->lower_factor) *
+      result = floordiv(floormod(source, expr->lower_factor * expr->extent), expr->lower_factor) *
              expr->scale;
     }
+    return cast(expr->dtype, result);
   }
 
  private:
@@ -1764,9 +1782,11 @@ Array<PrimExpr> IterMapSimplify(const Array<PrimExpr>& indices, const Map<Var, R
                                 bool simplify_trivial_iterators) {
   if (!IterRangeSanityCheck(input_iters)) return indices;
   Analyzer analyzer;
+  // LOG(INFO) << "Detect: " << indices;
   auto res = DetectIterMap(indices, input_iters, input_pred, check_level, &analyzer,
                            /*simplify_trivial_iterators=*/simplify_trivial_iterators);
   Array<IterSumExpr> rewrite = res->indices;
+  // LOG(INFO) << "Detected: " << rewrite;
 
   if (rewrite.empty()) {
     return indices;
@@ -1829,11 +1849,11 @@ class SubspaceDivider {
     IterSplitExpr GetInnerAsSplit() const { return GetAsSplit(inner, inner_extent); }
 
     static DivisionResult Inner(const IterMapExpr& iter, const PrimExpr& extent) {
-      return DivisionResult(IterSumExpr({}, 0), 1, iter, extent);
+      return DivisionResult(IterSumExpr({}, 0), make_const(iter->dtype, 1), iter, extent);
     }
 
     static DivisionResult Outer(const IterMapExpr& iter, const PrimExpr& extent) {
-      return DivisionResult(iter, extent, IterSumExpr({}, 0), 1);
+      return DivisionResult(iter, extent, IterSumExpr({}, 0), make_const(iter->dtype, 1));
     }
 
    private:
@@ -1853,7 +1873,9 @@ class SubspaceDivider {
   DivisionResult DivideIterSumExpr(const IterSumExpr& expr, const PrimExpr& mark_extent) {
     if (expr->args.empty()) {
       // base
-      return DivisionResult(IterSumExpr({}, 0), 1, IterSumExpr({}, expr->base), 1);
+      const auto& dtype = expr->dtype;
+      return DivisionResult(IterSumExpr({}, make_const(dtype, 0)), make_const(dtype, 1),
+                            IterSumExpr({}, expr->base), make_const(dtype, 1));
     } else if (expr->args.size() == 1) {
       // arg + base, if arg=Y*E(X)+X, then arg+base = Y*E(X)+(X+base)
       if (!is_one(expr->args[0]->scale)) {
@@ -2059,6 +2081,7 @@ Array<Array<IterMark>> SubspaceDivide(const Array<PrimExpr>& bindings,
   if (!IterRangeSanityCheck(input_iters)) return Array<Array<IterMark>>();
   auto res = DetectIterMap(bindings, input_iters, predicate, check_level, analyzer);
   const Array<IterSumExpr>& maps = res->indices;
+  // LOG(INFO) << res->errors;
   if (maps.empty()) return {};
 
   std::unordered_set<Var, ObjectPtrHash, ObjectPtrEqual> inner_iter_set;
@@ -2080,6 +2103,10 @@ Array<Array<IterMark>> SubspaceDivide(const Array<PrimExpr>& bindings,
 
   results.push_back({IterMark(IterSumExpr({}, 0), subspace_divider.GetOuterPreds()),
                      IterMark(IterSumExpr({}, 0), subspace_divider.GetInnerPreds())});
+  for (auto result : results) {
+    // LOG(INFO) << "Division: "
+              // << "Outer: " << result[0] << "; Inner: " << result[1];
+  }
   return results;
 }
 

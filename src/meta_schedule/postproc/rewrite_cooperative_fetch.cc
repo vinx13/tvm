@@ -119,6 +119,8 @@ class RewriteCooperativeFetchNode : public PostprocNode {
 };
 
 bool RewriteCooperativeFetchNode::Apply(const tir::Schedule& sch) {
+static std::mutex m;
+std::lock_guard<std::mutex> lock(m);
   tir::Trace trace = sch->trace().value();
   int64_t thread_extent_x = -1;
   int64_t thread_extent_y = -1;

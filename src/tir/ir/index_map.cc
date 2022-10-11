@@ -34,6 +34,54 @@
 namespace tvm {
 namespace tir {
 
+class IndexMapEvaluator : public StmtExprMutator {
+ public:
+  IndexMapEvaluator(const IndexMap& index_map) : index_map_(index_map) {}
+
+  Array<PrimExpr> Eval(const Array<PrimExpr>& arguments) {
+    var_map_.clear();
+    ICHECK_EQ(arguments.size(), index_map_->initial_indices.size());
+    for (int i = 0; i < static_cast<int>(arguments.size()); ++i) {
+      var_map_.Set(index_map_->initial_indices[i], arguments[i]);
+    }
+    Array<PrimExpr> result = index_map_->final_indices;
+    result.MutateByApply([this](PrimExpr expr) { return this->VisitExpr(expr); });
+    return result;
+  }
+
+  PrimExpr VisitExpr_(const VarNode* op) final {
+    if (auto it = var_map_.find(GetRef<Var>(op)); it != var_map_.end()) {
+      return (*it).second;
+    } else {
+      return GetRef<PrimExpr>(op);
+    }
+  }
+
+#define DEFINE_BINARY_OP_MUTATOR(OP, FuncWithAutoCast) \
+  PrimExpr VisitExpr_(const OP* op) {                  \
+    PrimExpr a = this->VisitExpr(op->a);               \
+    PrimExpr b = this->VisitExpr(op->b);               \
+    if (a.same_as(op->a) && b.same_as(op->b)) {        \
+      return GetRef<PrimExpr>(op);                     \
+    } else {                                           \
+      return FuncWithAutoCast(a, b);                   \
+    }                                                  \
+  }
+
+  DEFINE_BINARY_OP_MUTATOR(AddNode, add)
+  DEFINE_BINARY_OP_MUTATOR(SubNode, sub)
+  DEFINE_BINARY_OP_MUTATOR(MulNode, mul)
+  DEFINE_BINARY_OP_MUTATOR(DivNode, div)
+  DEFINE_BINARY_OP_MUTATOR(ModNode, truncmod)
+  DEFINE_BINARY_OP_MUTATOR(FloorDivNode, floordiv)
+  DEFINE_BINARY_OP_MUTATOR(FloorModNode, floormod)
+
+#undef DEFINE_BINARY_OP_MUTATOR
+ private:
+  IndexMap index_map_;
+  Map<Var, PrimExpr> var_map_;
+};
+
 IndexMap::IndexMap(Array<Var> initial_indices, Array<PrimExpr> final_indices,
                    Optional<IndexMap> inverse_index_map) {
   auto n = make_object<IndexMapNode>();
@@ -155,8 +203,8 @@ Array<PrimExpr> IndexMapNode::MapIndices(const Array<PrimExpr>& indices,
     analyzer = &local_analyzer;
   }
 
-  Array<PrimExpr> output = final_indices.Map(
-      [&](PrimExpr index) { return analyzer->Simplify(Substitute(std::move(index), vmap)); });
+  Array<PrimExpr> output = IndexMapEvaluator(GetRef<IndexMap>(this)).Eval(indices);
+  output.MutateByApply([&](const PrimExpr& e) { return analyzer->Simplify(e); });
 
   return output;
 }

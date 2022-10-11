@@ -1003,6 +1003,7 @@ void TransformLayout(ScheduleState self, const StmtSRef& block_sref, int buffer_
   // Step 2: Infer the shape of the new buffer
   Buffer new_buffer = old_buffer;
   new_buffer.CopyOnWrite()->shape = index_map->MapShape(old_buffer->shape);
+  // LOG(INFO) << "TransformLayout: new_buffer = " << new_buffer->shape;
 
   // Step 3: Rewrite BufferLoad/BufferStore access indices, block read/write regions, and block
   // alloc_buffers.
