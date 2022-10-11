@@ -206,6 +206,8 @@ class DataTypeRewriter : public DataTypeLegalizer {
     return VisitStmt(s);
   }
 
+  using Parent = DataTypeLegalizer;
+
   Stmt VisitStmt_(const StoreNode* op) final {
     LOG(FATAL) << "Unexpected use of deprecated StoreNode.  Please use BufferStoreNode instead.";
     return Stmt();
