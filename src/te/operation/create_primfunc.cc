@@ -579,9 +579,8 @@ class BufferShapeDtypeNormalizer : public StmtExprMutator {
   }
 
   Buffer VisitBuffer(const Buffer& buffer) {
-    Array<PrimExpr> new_shape = buffer->shape.Map([this](const PrimExpr& expr) {
-      return cast(target_dtype_, expr);
-    });
+    Array<PrimExpr> new_shape =
+        buffer->shape.Map([this](const PrimExpr& expr) { return cast(target_dtype_, expr); });
     if (!new_shape.same_as(buffer->shape)) {
       Buffer new_buffer = buffer;
       new_buffer.CopyOnWrite()->shape = new_shape;
@@ -609,9 +608,8 @@ class BufferShapeDtypeNormalizer : public StmtExprMutator {
   }
 
   Stmt VisitStmt_(const BlockNode* op) final {
-    Array<Buffer> new_alloc_buffers = op->alloc_buffers.Map([this](const Buffer& buffer) {
-      return VisitBuffer(buffer);
-    });
+    Array<Buffer> new_alloc_buffers =
+        op->alloc_buffers.Map([this](const Buffer& buffer) { return VisitBuffer(buffer); });
     ICHECK(op->match_buffers.empty());  // not supported
     Block new_block = Downcast<Block>(StmtExprMutator::VisitStmt_(op));
     auto f_mutate_buffer_region = [this](const BufferRegion& region) {
@@ -626,12 +624,37 @@ class BufferShapeDtypeNormalizer : public StmtExprMutator {
     new_block_node->alloc_buffers = std::move(new_alloc_buffers);
     new_block_node->reads = new_block_node->reads.Map(f_mutate_buffer_region);
     new_block_node->writes = new_block_node->writes.Map(f_mutate_buffer_region);
-    return std::move(new_block);
+    new_block_node->annotations = VisitBlockAnnotations(new_block_node->annotations);
+    return new_block;
   }
+
+  Map<String, ObjectRef> VisitBlockAnnotations(const Map<String, ObjectRef>& annotations) {
+    auto new_annotations = annotations;
+
+    std::function<ObjectRef(const ObjectRef&)> f_mutate_obj =
+        [this, &f_mutate_obj](const ObjectRef& obj) -> ObjectRef {
+      if (obj->IsInstance<BufferNode>()) {
+        if (auto it = buffer_remap_.find(Downcast<Buffer>(obj)); it != buffer_remap_.end()) {
+          return (*it).second;
+        }
+        return obj;
+      } else if (obj->IsInstance<ArrayNode>()) {
+        return Downcast<Array<ObjectRef>>(obj).Map(f_mutate_obj);
+      }
+      return obj;
+    };
+    for (const auto& [key, value] : annotations) {
+      auto new_value = f_mutate_obj(value);
+      if (!new_value.same_as(value)) {
+        new_annotations.Set(key, new_value);
+      }
+    }
+    return new_annotations;
+  }
+
  private:
   DataType target_dtype_{DataType::Int(64)};
   Map<Buffer, Buffer> buffer_remap_;
-
 };
 
 PrimFunc CreatePrimFuncWithConstants(const Array<te::Tensor>& arg_list,
