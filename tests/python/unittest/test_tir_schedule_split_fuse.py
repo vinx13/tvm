@@ -351,6 +351,16 @@ def elementwise_not_affine_fused(a: T.handle, b: T.handle) -> None:
                 B[vi, vj] = A[vi, vj]
 
 
+@T.prim_func
+def elementwise_mixed_dtype(a: T.handle, b: T.handle) -> None:
+    A = T.match_buffer(a, (128, T.int64(128), 128))
+    B = T.match_buffer(b, (128, T.int64(128), 128))
+    for i, j, k in T.grid(128, T.int64(128), 128):
+        with T.block("B"):
+            vi, vj, vk = T.axis.remap("SSS", [i, j, k])
+            B[vi, vj, vk] = A[vi, vj, vk] * 2.0
+
+
 # pylint: enable=no-member,invalid-name,unused-variable
 
 
@@ -645,6 +655,14 @@ def test_split_int64_factors():
     sch.split(k, factors=[IntImm(dtype="int64", value=10), None])
     tvm.ir.assert_structural_equal(elementwise_symbolic_split, sch.mod["main"])
 
+
+def test_fuse_mixed_dtype():
+    sch = tir.Schedule(elementwise_mixed_dtype, debug_mask="all")
+    block_b = sch.get_block("B")
+    print(sch.get_loops(block_b))
+    i, j, k = sch.get_loops(block_b)
+    sch.fuse(i, j, k)
+    print(sch.mod.script())
 
 if __name__ == "__main__":
     tvm.testing.main()
