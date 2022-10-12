@@ -34,8 +34,36 @@
 namespace tvm {
 namespace tir {
 
-IndexMap::IndexMap(Array<Var> initial_indices, Array<PrimExpr> final_indices,
-                   Optional<IndexMap> inverse_index_map) {
+class IndexMapEvaluator : public DataTypeLegalizer {
+ public:
+  IndexMapEvaluator(const IndexMap& index_map) : index_map_(index_map) {}
+
+  Array<PrimExpr> Eval(const Array<PrimExpr>& arguments) {
+    var_map_.clear();
+    ICHECK_EQ(arguments.size(), index_map_->initial_indices.size());
+    for (int i = 0; i < static_cast<int>(arguments.size()); ++i) {
+      var_map_.Set(index_map_->initial_indices[i], arguments[i]);
+    }
+    Array<PrimExpr> result = index_map_->final_indices;
+    result.MutateByApply([this](PrimExpr expr) { return this->VisitExpr(expr); });
+    return result;
+  }
+
+  PrimExpr VisitExpr_(const VarNode* op) final {
+    if (auto it = var_map_.find(GetRef<Var>(op)); it != var_map_.end()) {
+      return (*it).second;
+    } else {
+      return GetRef<PrimExpr>(op);
+    }
+  }
+
+ private:
+  IndexMap index_map_;
+  Map<Var, PrimExpr> var_map_;
+};
+
+ IndexMap::IndexMap(Array<Var> initial_indices, Array<PrimExpr> final_indices,
+                     Optional<IndexMap> inverse_index_map) {
   auto n = make_object<IndexMapNode>();
   n->initial_indices = std::move(initial_indices);
   n->final_indices = std::move(final_indices);
@@ -48,7 +76,7 @@ IndexMap IndexMap::FromFunc(int ndim, runtime::TypedPackedFunc<Array<PrimExpr>(A
   Array<Var> initial_indices;
   initial_indices.reserve(ndim);
   for (int i = 0; i < ndim; ++i) {
-    initial_indices.push_back(Var("i" + std::to_string(i), DataType::Int(32)));
+    initial_indices.push_back(Var("i" + std::to_string(i), DataType::Int(64)));
   }
   return IndexMap(initial_indices, func(initial_indices), std::move(inverse_index_map));
 }
@@ -162,8 +190,8 @@ Array<PrimExpr> IndexMapNode::MapIndices(const Array<PrimExpr>& indices,
     analyzer = &local_analyzer;
   }
 
-  Array<PrimExpr> output = final_indices.Map(
-      [&](PrimExpr index) { return analyzer->Simplify(Substitute(std::move(index), vmap)); });
+  Array<PrimExpr> output = IndexMapEvaluator(GetRef<IndexMap>(this)).Eval(indices);
+  output.MutateByApply([&](const PrimExpr& e) { return analyzer->Simplify(e); });
 
   return output;
 }
