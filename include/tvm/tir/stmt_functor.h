@@ -478,7 +478,6 @@ bool ContainsNode(const Stmt& stmt) {
 class DataTypeLegalizer : public StmtExprMutator {
  public:
   Stmt VisitStmt_(const ForNode* op) override;
-
   Stmt VisitStmt_(const AttrStmtNode* op) override;
   Stmt VisitStmt_(const BlockRealizeNode* op) override;
   Stmt VisitStmt_(const BlockNode* op) override;
@@ -508,6 +507,41 @@ class DataTypeLegalizer : public StmtExprMutator {
   // a map from IterVar before rewrite to that after rewrite,
   // ensures one old IterVar maps to exactly one new IterVar
   std::unordered_map<const IterVarNode*, IterVar> ivmap_;
+};
+
+/*!
+ * \brief Data type rewriter for buffer indices.
+ *
+ * Detect the components of buffer indices that should be considered for data type rewriting.
+ * This class doesn't perform actual rewriting of data types. During recursive visiting, the interal
+ * flags `is_index_` and `is_conditional_` are used to indicate whether the current expression is a
+ * buffer index or a conditional expression, which can be used in the sub-classes to implement
+ * different rewriting rules.
+ */
+class IndexDataTypeRewriter : public DataTypeLegalizer {
+  using Parent = DataTypeLegalizer;
+
+ public:
+  // Stmt VisitStmt_(const BlockNode* op) override;
+  Stmt VisitStmt_(const BufferStoreNode* op) override;
+  PrimExpr VisitExpr_(const BufferLoadNode* op) override;
+  Array<PrimExpr> VisitIndices(Array<PrimExpr> indices);
+  Stmt VisitStmt_(const IfThenElseNode* op) override;
+  PrimExpr VisitExpr_(const EQNode* op) override;
+  PrimExpr VisitExpr_(const NENode* op) override;
+  PrimExpr VisitExpr_(const LTNode* op) override;
+  PrimExpr VisitExpr_(const LENode* op) override;
+  PrimExpr VisitExpr_(const GTNode* op) override;
+  PrimExpr VisitExpr_(const GENode* op) override;
+  PrimExpr VisitExpr_(const CallNode* op) override;
+  using DataTypeLegalizer::VisitExpr_;
+  using DataTypeLegalizer::VisitStmt_;
+
+ protected:
+  // indicator of index expr to rewrite
+  bool is_index_{false};
+  // indicator of condition
+  bool is_condition_{false};
 };
 
 }  // namespace tir
