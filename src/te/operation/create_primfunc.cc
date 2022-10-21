@@ -127,89 +127,91 @@ class LayoutFreePlaceholdersNormalizer : public StmtMutator {
   String topi_attr = "layout_free_placeholders";
 };
 
-class DataTypeNormalizer : public IndexDataTypeRewriter {
- public:
-  Stmt VisitStmt_(const BlockNode* op) final {
-    auto new_iters = op->iter_vars.Map([&](const IterVar& iter) {
-      if (iter->var->dtype != target_data_type_) {
-        IterVar new_iter = iter;
-        IterVarNode* new_iter_node = new_iter.CopyOnWrite();
-        new_iter_node->var = iter->var.copy_with_dtype(target_data_type_);
-        var_remap_.Set(iter->var, new_iter->var);
-        new_iter_node->dom = Range::FromMinExtent(cast(target_data_type_, iter->dom->min),
-                                                  cast(target_data_type_, iter->dom->extent));
-        return new_iter;
-      }
-      return iter;
-    });
-    // Block access region is not handled. It assumes block access region will be added by later and
-    // they should be empty at this point.
-    ICHECK(op->reads.empty());
-    ICHECK(op->writes.empty());
+// class DataTypeNormalizer : public IndexDataTypeRewriter {
+//  public:
+//   Stmt VisitStmt_(const BlockNode* op) final {
+//     auto new_iters = op->iter_vars.Map([&](const IterVar& iter) {
+//       if (iter->var->dtype != target_data_type_) {
+//         IterVar new_iter = iter;
+//         IterVarNode* new_iter_node = new_iter.CopyOnWrite();
+//         new_iter_node->var = iter->var.copy_with_dtype(target_data_type_);
+//         var_remap_.Set(iter->var, new_iter->var);
+//         new_iter_node->dom = Range::FromMinExtent(cast(target_data_type_, iter->dom->min),
+//                                                   cast(target_data_type_, iter->dom->extent));
+//         return new_iter;
+//       }
+//       return iter;
+//     });
+//     // Block access region is not handled. It assumes block access region will be added by later
+//     and
+//     // they should be empty at this point.
+//     ICHECK(op->reads.empty());
+//     ICHECK(op->writes.empty());
 
-    if (!new_iters.same_as(op->iter_vars)) {
-      Block new_block = GetRef<Block>(op);
-      new_block.CopyOnWrite()->iter_vars = std::move(new_iters);
-      return IndexDataTypeRewriter::VisitStmt_(new_block.get());
-    }
-    return IndexDataTypeRewriter::VisitStmt_(op);
-  }
+//     if (!new_iters.same_as(op->iter_vars)) {
+//       Block new_block = GetRef<Block>(op);
+//       new_block.CopyOnWrite()->iter_vars = std::move(new_iters);
+//       return IndexDataTypeRewriter::VisitStmt_(new_block.get());
+//     }
+//     return IndexDataTypeRewriter::VisitStmt_(op);
+//   }
 
-  Stmt VisitStmt_(const ForNode* op) final {
-    if (op->loop_var->dtype != target_data_type_) {
-      auto new_loop_var = op->loop_var.copy_with_dtype(target_data_type_);
-      var_remap_.Set(op->loop_var, new_loop_var);
-    }
-    return IndexDataTypeRewriter::VisitStmt_(op);
-  }
+//   Stmt VisitStmt_(const ForNode* op) final {
+//     if (op->loop_var->dtype != target_data_type_) {
+//       auto new_loop_var = op->loop_var.copy_with_dtype(target_data_type_);
+//       var_remap_.Set(op->loop_var, new_loop_var);
+//     }
+//     return IndexDataTypeRewriter::VisitStmt_(op);
+//   }
 
-  PrimExpr VisitExpr_(const VarNode* op) final {
-    if (auto it = var_remap_.find(GetRef<Var>(op)); it != var_remap_.end()) {
-      return (*it).second;
-    }
-    return GetRef<Var>(op);
-  }
+//   PrimExpr VisitExpr_(const VarNode* op) final {
+//     if (auto it = var_remap_.find(GetRef<Var>(op)); it != var_remap_.end()) {
+//       return (*it).second;
+//     }
+//     return GetRef<Var>(op);
+//   }
 
-  PrimExpr VisitExpr_(const IntImmNode* op) final {
-    if (is_index_) {
-      return cast(target_data_type_, GetRef<IntImm>(op));
-    }
-    return GetRef<IntImm>(op);
-  }
+//   PrimExpr VisitExpr_(const IntImmNode* op) final {
+//     if (is_index_) {
+//       return cast(target_data_type_, GetRef<IntImm>(op));
+//     }
+//     return GetRef<IntImm>(op);
+//   }
 
-  // Buffer VisitBuffer(const Buffer& buffer) {
-  //   auto new_shape = buffer->shape.Map([this](const PrimExpr& e) { return cast(target_data_type_,
-  //   e); }); if (!new_shape.same_as(buffer->shape)) {
-  //     Buffer new_buffer = buffer;
-  //     new_buffer.CopyOnWrite()->shape = std::move(new_shape);
-  //     return new_buffer;
-  //   }
-  //   return buffer;
-  // }
+//   // Buffer VisitBuffer(const Buffer& buffer) {
+//   //   auto new_shape = buffer->shape.Map([this](const PrimExpr& e) { return
+//   cast(target_data_type_,
+//   //   e); }); if (!new_shape.same_as(buffer->shape)) {
+//   //     Buffer new_buffer = buffer;
+//   //     new_buffer.CopyOnWrite()->shape = std::move(new_shape);
+//   //     return new_buffer;
+//   //   }
+//   //   return buffer;
+//   // }
 
-  // PrimExpr VisitExpr_(const BufferLoadNode* op) final {
-  //   auto new_buffer = VisitBuffer(op->buffer);
-  //   if (!new_buffer.same_as(op->buffer)) {
-  //     BufferLoad new_load = GetRef<BufferLoad>(op);
-  //     new_load.CopyOnWrite()->buffer = std::move(new_buffer);
-  //     return IndexDataTypeRewriter::VisitExpr_(new_load.get());
-  //   }
-  //   return IndexDataTypeRewriter::VisitExpr_(op);
-  // }
+//   // PrimExpr VisitExpr_(const BufferLoadNode* op) final {
+//   //   auto new_buffer = VisitBuffer(op->buffer);
+//   //   if (!new_buffer.same_as(op->buffer)) {
+//   //     BufferLoad new_load = GetRef<BufferLoad>(op);
+//   //     new_load.CopyOnWrite()->buffer = std::move(new_buffer);
+//   //     return IndexDataTypeRewriter::VisitExpr_(new_load.get());
+//   //   }
+//   //   return IndexDataTypeRewriter::VisitExpr_(op);
+//   // }
 
-  // Stmt VisitStmt_(const BufferStoreNode* op) final {
-  //   auto new_buffer = VisitBuffer(op->buffer);
-  //   if (!new_buffer.same_as(op->buffer)) {
-  //     BufferStore new_store = GetRef<BufferStore>(op);
-  //     new_store.CopyOnWrite()->buffer = std::move(new_buffer);
-  //     return IndexDataTypeRewriter::VisitStmt_(new_store.get());
-  //   }
-  //   return IndexDataTypeRewriter::VisitStmt_(op);
-  // }
+//   // Stmt VisitStmt_(const BufferStoreNode* op) final {
+//   //   auto new_buffer = VisitBuffer(op->buffer);
+//   //   if (!new_buffer.same_as(op->buffer)) {
+//   //     BufferStore new_store = GetRef<BufferStore>(op);
+//   //     new_store.CopyOnWrite()->buffer = std::move(new_buffer);
+//   //     return IndexDataTypeRewriter::VisitStmt_(new_store.get());
+//   //   }
+//   //   return IndexDataTypeRewriter::VisitStmt_(op);
+//   // }
 
-  DataType target_data_type_{DataType::Int(64)};
-  Map<Var, Var> var_remap_;
-};
+//   DataType target_data_type_{DataType::Int(64)};
+//   Map<Var, Var> var_remap_;
+// };
 
 BlockRealize GenerateBlockFromTensors(const te::ComputeOp& compute_op,
                                       const Array<te::Tensor>& tensors, Array<PrimExpr> bindings,
@@ -427,7 +429,7 @@ Stmt GenerateStmtFromCompute(const te::ComputeOp& compute_op, CreateFuncInfo* in
     body = For(loop_var, dom_min, dom_extent, ForKind::kSerial, body);
   }
 
-  body = DataTypeNormalizer()(body);
+  // body = DataTypeNormalizer()(body);
 
   return body;
 }
@@ -564,10 +566,103 @@ PrimFunc GenerateAndCompletePrimFunc(const Array<te::Tensor>& arg_list,
   return func;
 }
 
-class BufferShapeDtypeNormalizer : public StmtExprMutator {
+// class BufferShapeDtypeNormalizer : public StmtExprMutator {
+//  public:
+//   static PrimFunc Rewrite(PrimFunc func) {
+//     BufferShapeDtypeNormalizer normalizer;
+//     Map<Var, Buffer> new_buffer_map = func->buffer_map;
+//     for (const auto& [var, buffer] : func->buffer_map) {
+//       new_buffer_map.Set(var, normalizer.VisitBuffer(buffer));
+//     }
+//     PrimFuncNode* new_func = func.CopyOnWrite();
+//     new_func->buffer_map = std::move(new_buffer_map);
+//     new_func->body = normalizer(std::move(new_func->body));
+//     return func;
+//   }
+
+//   Buffer VisitBuffer(const Buffer& buffer) {
+//     Array<PrimExpr> new_shape =
+//         buffer->shape.Map([this](const PrimExpr& expr) { return cast(target_dtype_, expr); });
+//     if (!new_shape.same_as(buffer->shape)) {
+//       Buffer new_buffer = buffer;
+//       new_buffer.CopyOnWrite()->shape = new_shape;
+//       buffer_remap_.Set(buffer, new_buffer);
+//       return new_buffer;
+//       // rewrite stride?
+//     }
+//     return buffer;
+//   }
+
+//   PrimExpr VisitExpr_(const BufferLoadNode* op) final {
+//     BufferLoad load = Downcast<BufferLoad>(StmtExprMutator::VisitExpr_(op));
+//     if (auto it = buffer_remap_.find(load->buffer); it != buffer_remap_.end()) {
+//       load.CopyOnWrite()->buffer = (*it).second;
+//     }
+//     return std::move(load);
+//   }
+
+//   Stmt VisitStmt_(const BufferStoreNode* op) final {
+//     BufferStore store = Downcast<BufferStore>(StmtExprMutator::VisitStmt_(op));
+//     if (auto it = buffer_remap_.find(store->buffer); it != buffer_remap_.end()) {
+//       store.CopyOnWrite()->buffer = (*it).second;
+//     }
+//     return std::move(store);
+//   }
+
+//   Stmt VisitStmt_(const BlockNode* op) final {
+//     Array<Buffer> new_alloc_buffers =
+//         op->alloc_buffers.Map([this](const Buffer& buffer) { return VisitBuffer(buffer); });
+//     ICHECK(op->match_buffers.empty());  // not supported
+//     Block new_block = Downcast<Block>(StmtExprMutator::VisitStmt_(op));
+//     auto f_mutate_buffer_region = [this](const BufferRegion& region) {
+//       if (auto it = buffer_remap_.find(region->buffer); it != buffer_remap_.end()) {
+//         BufferRegion new_region = region;
+//         new_region.CopyOnWrite()->buffer = (*it).second;
+//         return std::move(new_region);
+//       }
+//       return region;
+//     };
+//     BlockNode* new_block_node = new_block.CopyOnWrite();
+//     new_block_node->alloc_buffers = std::move(new_alloc_buffers);
+//     new_block_node->reads = new_block_node->reads.Map(f_mutate_buffer_region);
+//     new_block_node->writes = new_block_node->writes.Map(f_mutate_buffer_region);
+//     new_block_node->annotations = VisitBlockAnnotations(new_block_node->annotations);
+//     return new_block;
+//   }
+
+//   Map<String, ObjectRef> VisitBlockAnnotations(const Map<String, ObjectRef>& annotations) {
+//     auto new_annotations = annotations;
+
+//     std::function<ObjectRef(const ObjectRef&)> f_mutate_obj =
+//         [this, &f_mutate_obj](const ObjectRef& obj) -> ObjectRef {
+//       if (obj->IsInstance<BufferNode>()) {
+//         if (auto it = buffer_remap_.find(Downcast<Buffer>(obj)); it != buffer_remap_.end()) {
+//           return (*it).second;
+//         }
+//         return obj;
+//       } else if (obj->IsInstance<ArrayNode>()) {
+//         return Downcast<Array<ObjectRef>>(obj).Map(f_mutate_obj);
+//       }
+//       return obj;
+//     };
+//     for (const auto& [key, value] : annotations) {
+//       auto new_value = f_mutate_obj(value);
+//       if (!new_value.same_as(value)) {
+//         new_annotations.Set(key, new_value);
+//       }
+//     }
+//     return new_annotations;
+//   }
+
+//  private:
+//   DataType target_dtype_{DataType::Int(64)};
+//   Map<Buffer, Buffer> buffer_remap_;
+// };
+
+class Normalizer : public IndexDataTypeRewriter {
  public:
   static PrimFunc Rewrite(PrimFunc func) {
-    BufferShapeDtypeNormalizer normalizer;
+    Normalizer normalizer;
     Map<Var, Buffer> new_buffer_map = func->buffer_map;
     for (const auto& [var, buffer] : func->buffer_map) {
       new_buffer_map.Set(var, normalizer.VisitBuffer(buffer));
@@ -578,54 +673,13 @@ class BufferShapeDtypeNormalizer : public StmtExprMutator {
     return func;
   }
 
-  Buffer VisitBuffer(const Buffer& buffer) {
-    Array<PrimExpr> new_shape =
-        buffer->shape.Map([this](const PrimExpr& expr) { return cast(target_dtype_, expr); });
-    if (!new_shape.same_as(buffer->shape)) {
-      Buffer new_buffer = buffer;
-      new_buffer.CopyOnWrite()->shape = new_shape;
-      buffer_remap_.Set(buffer, new_buffer);
-      return new_buffer;
-      // rewrite stride?
-    }
-    return buffer;
-  }
-
-  PrimExpr VisitExpr_(const BufferLoadNode* op) final {
-    BufferLoad load = Downcast<BufferLoad>(StmtExprMutator::VisitExpr_(op));
-    if (auto it = buffer_remap_.find(load->buffer); it != buffer_remap_.end()) {
-      load.CopyOnWrite()->buffer = (*it).second;
-    }
-    return std::move(load);
-  }
-
-  Stmt VisitStmt_(const BufferStoreNode* op) final {
-    BufferStore store = Downcast<BufferStore>(StmtExprMutator::VisitStmt_(op));
-    if (auto it = buffer_remap_.find(store->buffer); it != buffer_remap_.end()) {
-      store.CopyOnWrite()->buffer = (*it).second;
-    }
-    return std::move(store);
-  }
-
   Stmt VisitStmt_(const BlockNode* op) final {
-    Array<Buffer> new_alloc_buffers =
-        op->alloc_buffers.Map([this](const Buffer& buffer) { return VisitBuffer(buffer); });
-    ICHECK(op->match_buffers.empty());  // not supported
-    Block new_block = Downcast<Block>(StmtExprMutator::VisitStmt_(op));
-    auto f_mutate_buffer_region = [this](const BufferRegion& region) {
-      if (auto it = buffer_remap_.find(region->buffer); it != buffer_remap_.end()) {
-        BufferRegion new_region = region;
-        new_region.CopyOnWrite()->buffer = (*it).second;
-        return std::move(new_region);
-      }
-      return region;
-    };
-    BlockNode* new_block_node = new_block.CopyOnWrite();
-    new_block_node->alloc_buffers = std::move(new_alloc_buffers);
-    new_block_node->reads = new_block_node->reads.Map(f_mutate_buffer_region);
-    new_block_node->writes = new_block_node->writes.Map(f_mutate_buffer_region);
-    new_block_node->annotations = VisitBlockAnnotations(new_block_node->annotations);
-    return new_block;
+    Block new_block = Downcast<Block>(IndexDataTypeRewriter::VisitStmt_(op));
+    auto new_annotations = VisitBlockAnnotations(new_block->annotations);
+    if (!new_annotations.same_as(new_block->annotations)) {
+      new_block.CopyOnWrite()->annotations = std::move(new_annotations);
+    }
+    return std::move(new_block);
   }
 
   Map<String, ObjectRef> VisitBlockAnnotations(const Map<String, ObjectRef>& annotations) {
@@ -633,11 +687,14 @@ class BufferShapeDtypeNormalizer : public StmtExprMutator {
 
     std::function<ObjectRef(const ObjectRef&)> f_mutate_obj =
         [this, &f_mutate_obj](const ObjectRef& obj) -> ObjectRef {
-      if (obj->IsInstance<BufferNode>()) {
-        if (auto it = buffer_remap_.find(Downcast<Buffer>(obj)); it != buffer_remap_.end()) {
-          return (*it).second;
-        }
+      if (!obj.defined()) {
         return obj;
+      }
+      if (obj->IsInstance<BufferNode>()) {
+        Buffer buffer = Downcast<Buffer>(obj);
+        if (Buffer new_buffer = GetRemappedBuffer(buffer); !new_buffer.same_as(buffer)) {
+          return new_buffer;
+        }
       } else if (obj->IsInstance<ArrayNode>()) {
         return Downcast<Array<ObjectRef>>(obj).Map(f_mutate_obj);
       }
@@ -652,9 +709,14 @@ class BufferShapeDtypeNormalizer : public StmtExprMutator {
     return new_annotations;
   }
 
- private:
-  DataType target_dtype_{DataType::Int(64)};
-  Map<Buffer, Buffer> buffer_remap_;
+  PrimExpr VisitExpr_(const IntImmNode* op) final {
+    if (is_index_) {
+      return cast(target_data_type_, GetRef<IntImm>(op));
+    }
+    return GetRef<IntImm>(op);
+  }
+
+  DataType target_data_type_ = DataType::Int(64);
 };
 
 PrimFunc CreatePrimFuncWithConstants(const Array<te::Tensor>& arg_list,
@@ -681,7 +743,8 @@ PrimFunc CreatePrimFuncWithConstants(const Array<te::Tensor>& arg_list,
   auto func = GenerateAndCompletePrimFunc(arg_list, root_stmts, &info);
   func = tir::BindParams(func, constants);
   // LOG(INFO)  <<"Rewrite";
-  func = BufferShapeDtypeNormalizer::Rewrite(std::move(func));
+  // func = BufferShapeDtypeNormalizer::Rewrite(std::move(func));
+  func = Normalizer::Rewrite(std::move(func));
   // LOG(INFO) << "OK";
   // LOG(INFO) << func;
   auto result = LayoutFreePlaceholdersNormalizer().Process(std::move(func));

@@ -548,11 +548,13 @@ class IndexDataTypeRewriter : public DataTypeLegalizer {
   using Parent = DataTypeLegalizer;
 
  public:
-  // Stmt VisitStmt_(const BlockNode* op) override;
+  Stmt VisitStmt_(const BlockNode* op) override;
   Stmt VisitStmt_(const BufferStoreNode* op) override;
   PrimExpr VisitExpr_(const BufferLoadNode* op) override;
   Array<PrimExpr> VisitIndices(Array<PrimExpr> indices);
   Stmt VisitStmt_(const IfThenElseNode* op) override;
+  Stmt VisitStmt_(const DeclBufferNode* op) override;
+  Stmt VisitStmt_(const AllocateNode* op) override;
   PrimExpr VisitExpr_(const EQNode* op) override;
   PrimExpr VisitExpr_(const NENode* op) override;
   PrimExpr VisitExpr_(const LTNode* op) override;
@@ -560,14 +562,21 @@ class IndexDataTypeRewriter : public DataTypeLegalizer {
   PrimExpr VisitExpr_(const GTNode* op) override;
   PrimExpr VisitExpr_(const GENode* op) override;
   PrimExpr VisitExpr_(const CallNode* op) override;
+  Stmt VisitStmt_(const ForNode* op) override;
+
   using DataTypeLegalizer::VisitExpr_;
   using DataTypeLegalizer::VisitStmt_;
 
  protected:
+  Buffer VisitBuffer(const Buffer& buffer);
+  Buffer GetRemappedBuffer(const Buffer& buffer);
+  BufferRegion VisitBufferRegion(const BufferRegion& region);
   // indicator of index expr to rewrite
   bool is_index_{false};
   // indicator of condition
   bool is_condition_{false};
+
+  Map<Buffer, Buffer> buffer_remap_;
 };
 
 }  // namespace tir

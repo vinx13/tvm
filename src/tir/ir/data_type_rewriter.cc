@@ -191,5 +191,211 @@ PrimExpr DataTypeLegalizer::VisitExpr_(const CallNode* op) {
   return e;
 }
 
+Stmt IndexDataTypeRewriter::VisitStmt_(const AllocateNode* op) {
+  bool is_index = is_index_;
+  is_index_ = true;
+  Stmt new_stmt = StmtMutator::VisitStmt_(op);
+  is_index_ = is_index;
+  return new_stmt;
+}
+
+Stmt IndexDataTypeRewriter::VisitStmt_(const DeclBufferNode* op) {
+  Buffer new_buffer = VisitBuffer(op->buffer);
+  DeclBuffer decl_buffer = Downcast<DeclBuffer>(StmtExprMutator::VisitStmt_(op));
+  if (!new_buffer.same_as(op->buffer)) {
+    decl_buffer.CopyOnWrite()->buffer = new_buffer;
+  }
+  return std::move(decl_buffer);
+}
+
+Stmt IndexDataTypeRewriter::VisitStmt_(const BlockNode* op) {
+  Array<Buffer> new_alloc_buffers =
+      op->alloc_buffers.Map([this](const Buffer& buffer) { return this->VisitBuffer(buffer); });
+  Array<MatchBufferRegion> new_match_buffers =
+      op->match_buffers.Map([this](const MatchBufferRegion& match_buffer_region) {
+        Buffer new_buffer = this->VisitBuffer(match_buffer_region->buffer);
+        BufferRegion new_buffer_region = this->VisitBufferRegion(match_buffer_region->source);
+        if (!new_buffer.same_as(match_buffer_region->buffer) ||
+            !new_buffer_region.same_as(match_buffer_region->source)) {
+          return MatchBufferRegion(new_buffer, new_buffer_region);
+        } else {
+          return match_buffer_region;
+        }
+      });
+  Array<BufferRegion> new_reads = op->reads.Map(
+      [this](const BufferRegion& buffer_region) { return this->VisitBufferRegion(buffer_region); });
+  Array<BufferRegion> new_writes = op->writes.Map(
+      [this](const BufferRegion& buffer_region) { return this->VisitBufferRegion(buffer_region); });
+
+  Block new_block = Downcast<Block>(Parent::VisitStmt_(op));
+  if (!new_block.same_as(GetRef<Block>(op)) || !new_alloc_buffers.same_as(op->alloc_buffers) ||
+      !new_match_buffers.same_as(op->match_buffers) || !new_reads.same_as(op->reads) ||
+      !new_writes.same_as(op->writes)) {
+    BlockNode* n = new_block.CopyOnWrite();
+    n->alloc_buffers = std::move(new_alloc_buffers);
+    n->match_buffers = std::move(new_match_buffers);
+    n->reads = std::move(new_reads);
+    n->writes = std::move(new_writes);
+  }
+  return std::move(new_block);
+}
+
+Buffer IndexDataTypeRewriter::GetRemappedBuffer(const Buffer& buffer) {
+  if (auto it = buffer_remap_.find(buffer); it != buffer_remap_.end()) {
+    return (*it).second;
+  }
+  return buffer;
+}
+
+Buffer IndexDataTypeRewriter::VisitBuffer(const Buffer& buffer) {
+  bool is_index = is_index_;
+
+  is_index_ = true;
+  Array<PrimExpr> new_shape =
+      buffer->shape.Map([&](const PrimExpr& e) { return this->VisitExpr(e); });
+  Array<PrimExpr> new_strides =
+      buffer->strides.Map([&](const PrimExpr& e) { return this->VisitExpr(e); });
+  is_index_ = is_index;
+
+  if (!buffer->shape.same_as(new_shape) || !buffer->strides.same_as(new_strides)) {
+    Buffer new_buffer = buffer;
+    BufferNode* new_buffer_node = new_buffer.CopyOnWrite();
+    new_buffer_node->shape = std::move(new_shape);
+    new_buffer_node->strides = std::move(new_strides);
+    buffer_remap_.Set(buffer, new_buffer);
+    return new_buffer;
+  } else {
+    return buffer;
+  }
+}
+
+BufferRegion IndexDataTypeRewriter::VisitBufferRegion(const BufferRegion& buffer_region) {
+  Buffer remapped_buffer = GetRemappedBuffer(buffer_region->buffer);
+
+  bool is_index = is_index_;
+  is_index_ = true;
+  auto new_region = buffer_region->region.Map([&](const Range& range) {
+    return Range::FromMinExtent(this->VisitExpr(range->min), this->VisitExpr(range->extent));
+  });
+  is_index_ = is_index;
+
+  if (!remapped_buffer.same_as(buffer_region->buffer) ||
+      !new_region.same_as(buffer_region->region)) {
+    return BufferRegion(remapped_buffer, new_region);
+  } else {
+    return buffer_region;
+  }
+}
+
+Stmt IndexDataTypeRewriter::VisitStmt_(const BufferStoreNode* op) {
+  BufferStore store = GetRef<BufferStore>(op);
+
+  Buffer new_buffer = GetRemappedBuffer(op->buffer);
+  auto value = this->VisitExpr(op->value);
+  auto indices = VisitIndices(op->indices);
+
+  if (!new_buffer.same_as(op->buffer) || !value.same_as(op->value) ||
+      !indices.same_as(op->indices)) {
+    auto writer = store.CopyOnWrite();
+    writer->buffer = new_buffer;
+    writer->value = value;
+    writer->indices = indices;
+  }
+
+  return std::move(store);
+}
+
+PrimExpr IndexDataTypeRewriter::VisitExpr_(const BufferLoadNode* op) {
+  BufferLoad load = GetRef<BufferLoad>(op);
+
+  Buffer new_buffer = GetRemappedBuffer(op->buffer);
+  auto indices = VisitIndices(op->indices);
+
+  if (!new_buffer.same_as(op->buffer) || !indices.same_as(op->indices)) {
+    auto writer = load.CopyOnWrite();
+    writer->indices = indices;
+    writer->buffer = new_buffer;
+  }
+
+  return std::move(load);
+}
+
+Array<PrimExpr> IndexDataTypeRewriter::VisitIndices(Array<PrimExpr> indices) {
+  bool is_index = is_index_;
+  is_index_ = true;
+
+  auto fmutate = [this](const PrimExpr& index) { return this->VisitExpr(index); };
+  indices.MutateByApply(fmutate);
+
+  is_index_ = is_index;
+
+  return indices;
+}
+
+Stmt IndexDataTypeRewriter::VisitStmt_(const IfThenElseNode* op) {
+  IfThenElse updated = Downcast<IfThenElse>(Parent::VisitStmt_(op));
+  is_condition_ = true;
+  PrimExpr cond = VisitExpr(op->condition);
+  is_condition_ = false;
+  if (!cond.same_as(op->condition)) {
+    return std::move(IfThenElse(cond, updated->then_case, updated->else_case));
+  }
+  return std::move(updated);
+}
+
+Stmt IndexDataTypeRewriter::VisitStmt_(const ForNode* op) {
+  bool is_index = is_index_;
+  is_index_ = true;
+  Var new_loop_var = Downcast<Var>(VisitExpr(op->loop_var));
+  PrimExpr min = VisitExpr(op->min);
+  PrimExpr extent = VisitExpr(op->extent);
+  is_index_ = is_index;
+
+  if (!new_loop_var.same_as(op->loop_var) || !min.same_as(op->min) ||
+      !extent.same_as(op->extent)) {
+    For new_for = GetRef<For>(op);
+    auto* n = new_for.CopyOnWrite();
+    n->loop_var = new_loop_var;
+    n->min = min;
+    n->extent = extent;
+    return std::move(new_for);
+  } else {
+    return Parent::VisitStmt_(op);
+  }
+}
+
+#define DEFINE_CMPOP_EXPR_MUTATE_WITH_TYPE_MATCH(OP, FUNC)                          \
+  PrimExpr IndexDataTypeRewriter::VisitExpr_(const OP* op) {                        \
+    bool is_index = is_index_;                                                      \
+    bool rewrite = is_condition_ && op->a->dtype.is_int() && op->b->dtype.is_int(); \
+    if (rewrite) {                                                                  \
+      is_index_ = true;                                                             \
+    }                                                                               \
+    auto result = Parent::VisitExpr_(op);                                           \
+    is_index_ = is_index;                                                           \
+    return std::move(result);                                                       \
+  }
+
+DEFINE_CMPOP_EXPR_MUTATE_WITH_TYPE_MATCH(EQNode, operator==);
+DEFINE_CMPOP_EXPR_MUTATE_WITH_TYPE_MATCH(NENode, operator!=);
+DEFINE_CMPOP_EXPR_MUTATE_WITH_TYPE_MATCH(LENode, operator<=);
+DEFINE_CMPOP_EXPR_MUTATE_WITH_TYPE_MATCH(LTNode, operator<);  // NOLINT(*)
+DEFINE_CMPOP_EXPR_MUTATE_WITH_TYPE_MATCH(GTNode, operator>);  // NOLINT(*)
+DEFINE_CMPOP_EXPR_MUTATE_WITH_TYPE_MATCH(GENode, operator>=);
+
+PrimExpr IndexDataTypeRewriter::VisitExpr_(const CallNode* op) {
+  // handle if_then_else condition
+  if (op->op.same_as(builtin::if_then_else())) {
+    bool is_condition = is_condition_;
+    is_condition_ = true;
+    PrimExpr cond = VisitExpr(op->args[0]);
+    is_condition_ = is_condition;
+    return if_then_else(cond, VisitExpr(op->args[1]), VisitExpr(op->args[2]));
+  }
+  return Parent::VisitExpr_(op);
+}
+
+#undef DEFINE_CMPOP_EXPR_MUTATE_WITH_TYPE_MATCH
+
 }  // namespace tir
 }  // namespace tvm
