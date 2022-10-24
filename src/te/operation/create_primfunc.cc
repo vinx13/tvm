@@ -668,15 +668,15 @@ PrimFunc GenerateAndCompletePrimFunc(const Array<te::Tensor>& arg_list,
 
 class Normalizer : public IndexDataTypeRewriter {
  public:
-  static PrimFunc Rewrite(PrimFunc func) {
-    Normalizer normalizer;
+  Normalizer(DataType target_data_type) : target_data_type_(std::move(target_data_type)) {}
+  PrimFunc Rewrite(PrimFunc func) {
     Map<Var, Buffer> new_buffer_map = func->buffer_map;
     for (const auto& [var, buffer] : func->buffer_map) {
-      new_buffer_map.Set(var, normalizer.VisitBuffer(buffer));
+      new_buffer_map.Set(var, VisitBuffer(buffer));
     }
     PrimFuncNode* new_func = func.CopyOnWrite();
     new_func->buffer_map = std::move(new_buffer_map);
-    new_func->body = normalizer(std::move(new_func->body));
+    new_func->body = VisitStmt(std::move(new_func->body));
     return func;
   }
 
@@ -723,11 +723,24 @@ class Normalizer : public IndexDataTypeRewriter {
     return GetRef<IntImm>(op);
   }
 
+  PrimExpr VisitExpr_(const VarNode* op) final {
+    if (auto it = var_remap_.find(GetRef<Var>(op)); it != var_remap_.end()) {
+      return (*it).second;
+    }
+    if (is_index_) {
+      Var new_var = GetRef<Var>(op).copy_with_dtype(target_data_type_);
+      var_remap_.Set(GetRef<Var>(op), new_var);
+      return std::move(new_var);
+    }
+    return GetRef<PrimExpr>(op);
+  }
+
   DataType target_data_type_ = DataType::Int(64);
 };
 
 PrimFunc CreatePrimFuncWithConstants(const Array<te::Tensor>& arg_list,
-                                     const Array<runtime::NDArray>& constants) {
+                                     const Array<runtime::NDArray>& constants,
+                                     std::optional<DataType> index_dtype_override) {
   // Infomations used in CreatePrimFunc and its sub-functions.
   CreateFuncInfo info(arg_list);
   // Root body stmts.
@@ -751,7 +764,10 @@ PrimFunc CreatePrimFuncWithConstants(const Array<te::Tensor>& arg_list,
   func = tir::BindParams(func, constants);
   // LOG(INFO)  <<"Rewrite";
   // func = BufferShapeDtypeNormalizer::Rewrite(std::move(func));
-  func = Normalizer::Rewrite(std::move(func));
+  if (index_dtype_override.has_value()) {
+    LOG(INFO) << index_dtype_override.value();
+    func = Normalizer(index_dtype_override.value()).Rewrite(std::move(func));
+  }
   // LOG(INFO) << "OK";
   // LOG(INFO) << func;
   auto result = LayoutFreePlaceholdersNormalizer().Process(std::move(func));
@@ -759,11 +775,22 @@ PrimFunc CreatePrimFuncWithConstants(const Array<te::Tensor>& arg_list,
   return result;
 }
 
-PrimFunc CreatePrimFunc(const Array<te::Tensor>& arg_list) {
-  return CreatePrimFuncWithConstants(arg_list, {});
+PrimFunc CreatePrimFunc(const Array<te::Tensor>& arg_list,
+                        std::optional<DataType> index_dtype_override) {
+  return CreatePrimFuncWithConstants(arg_list, {}, index_dtype_override);
 }
 
-TVM_REGISTER_GLOBAL("te.CreatePrimFunc").set_body_typed(CreatePrimFunc);
+TVM_REGISTER_GLOBAL("te.CreatePrimFunc").set_body([](TVMArgs args, TVMRetValue* ret) {
+  Array<te::Tensor> arg_list = args[0];
+  std::optional<DataType> index_dtype_override{std::nullopt};
+  // Add conversion to make std::optional compatible with FFI.
+  if (args[1].type_code() != kTVMNullptr) {
+    LOG(INFO) << args[1].type_code();
+    index_dtype_override = args[1].operator DataType();
+  }
+  LOG(INFO) << runtime::ArgTypeCode2Str(args[1].type_code());
+  *ret = CreatePrimFunc(arg_list, index_dtype_override);
+});
 
 }  // namespace tir
 }  // namespace tvm

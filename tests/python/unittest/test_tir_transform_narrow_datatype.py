@@ -324,14 +324,43 @@ def test_condition():
     tvm.ir.assert_structural_equal(after, expected_after)
 
 
-if __name__ == "__main__":
-    test_basic()
-    test_thread_axis()
-    test_thread_axis_2()
-    test_multilanes()
-    test_reduce()
-    test_slice()
-    test_relay_basic()
-    test_relay_take()
-    test_ramp_dtype_consistency()
-    test_condition()
+def test_block():
+    @T.prim_func
+    def before(A: T.Buffer[(128,), "float32"], B: T.Buffer[(128,), "float32"]):
+        for i in T.serial(0, T.int64(16)):
+            for j in T.serial(0, T.int64(8)):
+                with T.block():
+                    vi = T.axis.spatial(T.int64(128), i * T.int64(8) + j)
+                    B[vi] = A[vi] + T.float32(1)
+    @T.prim_func
+    def expected_after(A: T.Buffer[(128,), "float32"], B: T.Buffer[(128,), "float32"]):
+        for i in T.serial(0, T.int32(16)):
+            for j in T.serial(0, T.int32(8)):
+                with T.block():
+                    vi = T.axis.spatial(T.int32(128), i * T.int32(8) + j)
+                    B[vi] = A[vi] + T.float32(1)
+    after = tvm.tir.transform.NarrowDataType(32)(tvm.IRModule.from_expr(before))["main"]
+    tvm.ir.assert_structural_equal(after, expected_after)
+
+
+# def test_loop():
+#     import tvm.topi
+#     a = tvm.te.placeholder((1,), name="a", dtype="int32")
+#     f = tvm.topi.full((tvm.runtime.const(128, "int64"),), "int32", a[0])
+#     func = tvm.te.create_prim_func([f])
+#     print(func.script())
+
+    # after = tvm.tir.transform.NarrowDataType(32)(tvm.IRModule.from_expr(before))["main"]
+    # tvm.ir.assert_structural_equal(after, expected_after)
+# if __name__ == "__main__":
+    # test_basic()
+    # test_thread_axis()
+    # test_thread_axis_2()
+    # test_multilanes()
+    # test_reduce()
+    # test_slice()
+    # test_relay_basic()
+    # test_relay_take()
+    # test_ramp_dtype_consistency()
+    # test_condition()
+    # test_loop()

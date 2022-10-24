@@ -102,6 +102,14 @@ class DataTypeVisitor final : public StmtExprVisitor {
     return StmtExprVisitor::VisitStmt_(op);
   }
 
+  // void VisitStmt_(const BlockNode* op) {
+  //   for (const IterVar& iter : op->iter_vars) {
+  //     analyzer_.Bind(iter->var, Range::FromMinExtent(iter->dom->min, iter->dom->extent));
+  //     vextent_[iter->var.as<VarNode>()] = iter->dom->extent.dtype();
+  //   }
+  //   StmtExprVisitor::VisitStmt_(op);
+  // }
+
   void VisitStmt_(const AttrStmtNode* op) {
     if (op->attr_key == attr::thread_extent || op->attr_key == attr::virtual_thread) {
       IterVar iv = Downcast<IterVar>(op->node);

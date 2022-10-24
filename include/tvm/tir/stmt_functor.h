@@ -562,6 +562,8 @@ class IndexDataTypeRewriter : public DataTypeLegalizer {
   PrimExpr VisitExpr_(const GENode* op) override;
   PrimExpr VisitExpr_(const CallNode* op) override;
   Stmt VisitStmt_(const ForNode* op) override;
+  // PrimExpr VisitExpr_(const VarNode* op) override;
+  // PrimExpr VisitExpr_(const SizeVarNode* op) override;
 
   using DataTypeLegalizer::VisitExpr_;
   using DataTypeLegalizer::VisitStmt_;
@@ -570,11 +572,13 @@ class IndexDataTypeRewriter : public DataTypeLegalizer {
   Buffer VisitBuffer(const Buffer& buffer);
   Buffer GetRemappedBuffer(const Buffer& buffer);
   BufferRegion VisitBufferRegion(const BufferRegion& region);
+  IterVar VisitIterVar(const IterVar& iter_var);
   // indicator of index expr to rewrite
   bool is_index_{false};
   // indicator of condition
   bool is_condition_{false};
 
+  Map<Var, Var> var_remap_;
   Map<Buffer, Buffer> buffer_remap_;
 };
 
