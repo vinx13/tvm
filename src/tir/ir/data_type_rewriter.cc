@@ -192,11 +192,11 @@ PrimExpr DataTypeLegalizer::VisitExpr_(const CallNode* op) {
 }
 
 Stmt IndexDataTypeRewriter::VisitStmt_(const AllocateNode* op) {
-  bool is_index = is_index_;
-  is_index_ = true;
+  bool is_enabled = is_enabled_;
+  is_enabled_ = true;
   auto new_extents = op->extents.Map([this](const PrimExpr& e) { return this->VisitExpr(e); });
   auto new_cond = VisitExpr(op->condition);
-  is_index_ = is_index;
+  is_enabled_ = is_enabled;
   auto new_body = this->VisitStmt(op->body);
   if (!new_extents.same_as(op->extents) || !new_cond.same_as(op->condition) ||
       !new_body.same_as(op->body)) {
@@ -220,6 +220,27 @@ Stmt IndexDataTypeRewriter::VisitStmt_(const DeclBufferNode* op) {
   return std::move(decl_buffer);
 }
 
+Stmt IndexDataTypeRewriter::VisitStmt_(const BlockRealizeNode* op) {
+  bool is_enabled = is_enabled_;
+  is_enabled_ = true;
+  auto new_predicate = VisitExpr(op->predicate);
+  auto new_iter_values =
+      op->iter_values.Map([this](const PrimExpr& e) { return this->VisitExpr(e); });
+  is_enabled_ = is_enabled;
+  Block new_body = Downcast<Block>(this->VisitStmt(op->block));
+  if (!new_predicate.same_as(op->predicate) || !new_iter_values.same_as(op->iter_values) ||
+      !new_body.same_as(op->block)) {
+    BlockRealize new_block_realize = GetRef<BlockRealize>(op);
+    auto* n = new_block_realize.CopyOnWrite();
+    n->predicate = std::move(new_predicate);
+    n->iter_values = std::move(new_iter_values);
+    n->block = std::move(new_body);
+    return std::move(new_block_realize);
+  } else {
+    return GetRef<Stmt>(op);
+  }
+}
+
 Stmt IndexDataTypeRewriter::VisitStmt_(const BlockNode* op) {
   Array<Buffer> new_alloc_buffers =
       op->alloc_buffers.Map([this](const Buffer& buffer) { return this->VisitBuffer(buffer); });
@@ -240,19 +261,22 @@ Stmt IndexDataTypeRewriter::VisitStmt_(const BlockNode* op) {
       [this](const BufferRegion& buffer_region) { return this->VisitBufferRegion(buffer_region); });
   Array<IterVar> new_iter_vars =
       op->iter_vars.Map([this](const IterVar& iter_var) { return this->VisitIterVar(iter_var); });
+  Stmt new_body = this->VisitStmt(op->body);
 
-  Block new_block = Downcast<Block>(Parent::VisitStmt_(op));
-  if (!new_block.same_as(GetRef<Block>(op)) || !new_alloc_buffers.same_as(op->alloc_buffers) ||
+  if (!new_body.same_as(op->body) || !new_alloc_buffers.same_as(op->alloc_buffers) ||
       !new_match_buffers.same_as(op->match_buffers) || !new_reads.same_as(op->reads) ||
       !new_writes.same_as(op->writes) | new_iter_vars.same_as(op->iter_vars)) {
+    Block new_block = GetRef<Block>(op);
     BlockNode* n = new_block.CopyOnWrite();
     n->alloc_buffers = std::move(new_alloc_buffers);
     n->match_buffers = std::move(new_match_buffers);
     n->reads = std::move(new_reads);
     n->writes = std::move(new_writes);
     n->iter_vars = std::move(new_iter_vars);
+    n->body = std::move(new_body);
+    return std::move(new_block);
   }
-  return std::move(new_block);
+  return GetRef<Stmt>(op);
 }
 
 Buffer IndexDataTypeRewriter::GetRemappedBuffer(const Buffer& buffer) {
@@ -263,12 +287,12 @@ Buffer IndexDataTypeRewriter::GetRemappedBuffer(const Buffer& buffer) {
 }
 
 IterVar IndexDataTypeRewriter::VisitIterVar(const IterVar& iter_var) {
-  bool is_index = is_index_;
-  is_index_ = true;
+  bool is_enabled = is_enabled_;
+  is_enabled_ = true;
   Var new_var = Downcast<Var>(VisitExpr(iter_var->var));
   PrimExpr min = VisitExpr(iter_var->dom->min);
   PrimExpr extent = VisitExpr(iter_var->dom->extent);
-  is_index_ = is_index;
+  is_enabled_ = is_enabled;
   if (!new_var.same_as(iter_var->var) || !min.same_as(iter_var->dom->min) ||
       !extent.same_as(iter_var->dom->extent)) {
     IterVar new_iter_var = iter_var;
@@ -281,17 +305,18 @@ IterVar IndexDataTypeRewriter::VisitIterVar(const IterVar& iter_var) {
 }
 
 Buffer IndexDataTypeRewriter::VisitBuffer(const Buffer& buffer) {
-  bool is_index = is_index_;
+  bool is_enabled = is_enabled_;
 
-  is_index_ = true;
+  is_enabled_ = true;
   Array<PrimExpr> new_shape =
       buffer->shape.Map([&](const PrimExpr& e) { return this->VisitExpr(e); });
   Array<PrimExpr> new_strides =
       buffer->strides.Map([&](const PrimExpr& e) { return this->VisitExpr(e); });
   auto new_elem_offset = VisitExpr(buffer->elem_offset);
-  is_index_ = is_index;
+  is_enabled_ = is_enabled;
 
-  if (!buffer->shape.same_as(new_shape) || !buffer->strides.same_as(new_strides) || !buffer->elem_offset.same_as(new_elem_offset)) {
+  if (!buffer->shape.same_as(new_shape) || !buffer->strides.same_as(new_strides) ||
+      !buffer->elem_offset.same_as(new_elem_offset)) {
     Buffer new_buffer = buffer;
     BufferNode* new_buffer_node = new_buffer.CopyOnWrite();
     new_buffer_node->shape = std::move(new_shape);
@@ -307,12 +332,12 @@ Buffer IndexDataTypeRewriter::VisitBuffer(const Buffer& buffer) {
 BufferRegion IndexDataTypeRewriter::VisitBufferRegion(const BufferRegion& buffer_region) {
   Buffer remapped_buffer = GetRemappedBuffer(buffer_region->buffer);
 
-  bool is_index = is_index_;
-  is_index_ = true;
+  bool is_enabled = is_enabled_;
+  is_enabled_ = true;
   auto new_region = buffer_region->region.Map([&](const Range& range) {
     return Range::FromMinExtent(this->VisitExpr(range->min), this->VisitExpr(range->extent));
   });
-  is_index_ = is_index;
+  is_enabled_ = is_enabled;
 
   if (!remapped_buffer.same_as(buffer_region->buffer) ||
       !new_region.same_as(buffer_region->region)) {
@@ -356,13 +381,13 @@ PrimExpr IndexDataTypeRewriter::VisitExpr_(const BufferLoadNode* op) {
 }
 
 Array<PrimExpr> IndexDataTypeRewriter::VisitIndices(Array<PrimExpr> indices) {
-  bool is_index = is_index_;
-  is_index_ = true;
+  bool is_enabled = is_enabled_;
+  is_enabled_ = true;
 
   auto fmutate = [this](const PrimExpr& index) { return this->VisitExpr(index); };
   indices.MutateByApply(fmutate);
 
-  is_index_ = is_index;
+  is_enabled_ = is_enabled;
 
   return indices;
 }
@@ -379,23 +404,25 @@ Stmt IndexDataTypeRewriter::VisitStmt_(const IfThenElseNode* op) {
 }
 
 Stmt IndexDataTypeRewriter::VisitStmt_(const ForNode* op) {
-  bool is_index = is_index_;
-  is_index_ = true;
+  bool is_enabled = is_enabled_;
+  is_enabled_ = true;
   Var new_loop_var = Downcast<Var>(VisitExpr(op->loop_var));
   PrimExpr min = VisitExpr(op->min);
   PrimExpr extent = VisitExpr(op->extent);
-  is_index_ = is_index;
+  Stmt new_body = VisitStmt(op->body);
+  is_enabled_ = is_enabled;
 
-  if (!new_loop_var.same_as(op->loop_var) || !min.same_as(op->min) || !extent.same_as(op->extent)) {
+  if (!new_loop_var.same_as(op->loop_var) || !min.same_as(op->min) || !extent.same_as(op->extent) ||
+      !new_body.same_as(op->body)) {
     For new_for = GetRef<For>(op);
     auto* n = new_for.CopyOnWrite();
     n->loop_var = new_loop_var;
     n->min = min;
     n->extent = extent;
-    n->body = this->VisitStmt(op->body);
+    n->body = new_body;
     return std::move(new_for);
   } else {
-    return Parent::VisitStmt_(op);
+    return GetRef<Stmt>(op);
   }
 }
 
@@ -421,16 +448,13 @@ Stmt IndexDataTypeRewriter::VisitStmt_(const ForNode* op) {
 //   return std::move(new_var);
 // }
 
-#define DEFINE_CMPOP_EXPR_MUTATE_WITH_TYPE_MATCH(OP, FUNC)                          \
-  PrimExpr IndexDataTypeRewriter::VisitExpr_(const OP* op) {                        \
-    bool is_index = is_index_;                                                      \
-    bool rewrite = is_condition_ && op->a->dtype.is_int() && op->b->dtype.is_int(); \
-    if (rewrite) {                                                                  \
-      is_index_ = true;                                                             \
-    }                                                                               \
-    auto result = Parent::VisitExpr_(op);                                           \
-    is_index_ = is_index;                                                           \
-    return std::move(result);                                                       \
+#define DEFINE_CMPOP_EXPR_MUTATE_WITH_TYPE_MATCH(OP, FUNC)                         \
+  PrimExpr IndexDataTypeRewriter::VisitExpr_(const OP* op) {                       \
+    bool is_enabled = is_enabled_;                                                 \
+    is_enabled_ = is_condition_ && op->a->dtype.is_int() && op->b->dtype.is_int(); \
+    auto result = Parent::VisitExpr_(op);                                          \
+    is_enabled_ = is_enabled;                                                      \
+    return std::move(result);                                                      \
   }
 
 DEFINE_CMPOP_EXPR_MUTATE_WITH_TYPE_MATCH(EQNode, operator==);
