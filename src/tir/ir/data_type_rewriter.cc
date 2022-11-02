@@ -409,7 +409,8 @@ Stmt IndexDataTypeRewriter::VisitStmt_(const IfThenElseNode* op) {
   is_condition_ = is_condition;
 
   Stmt then_case = VisitStmt(op->then_case);
-  Stmt else_case = VisitStmt(op->else_case);
+  Optional<Stmt> else_case =
+      op->else_case.defined() ? Optional<Stmt>{VisitStmt(op->else_case.value())} : NullOpt;
   if (!cond.same_as(op->condition) || !then_case.same_as(op->then_case) ||
       !else_case.same_as(op->else_case)) {
     IfThenElse new_stmt = GetRef<IfThenElse>(op);
@@ -417,6 +418,7 @@ Stmt IndexDataTypeRewriter::VisitStmt_(const IfThenElseNode* op) {
     n->condition = std::move(cond);
     n->then_case = std::move(then_case);
     n->else_case = std::move(else_case);
+    return std::move(new_stmt);
   }
   return GetRef<Stmt>(op);
 }

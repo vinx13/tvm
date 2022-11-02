@@ -302,23 +302,23 @@ def test_condition():
         for i, j in T.grid(T.int64(2), T.int64(65)):
             if i * T.int64(65) + j >= T.int64(0) and i * T.int64(65) + j < T.int64(128):
                 A[i * T.int64(65) + j] = 0.0
-        for i, j in T.grid(T.int64(2), T.int64(65)):
-            B[i * T.int64(65) + j] = T.if_then_else(
-                i * T.int64(65) + j >= T.int64(0) and i * T.int64(65) + j < T.int64(128),
-                A[i * T.int64(65) + j],
-                0.0,
-                dtype="float32",
-            )
+        # for i, j in T.grid(T.int64(2), T.int64(65)):
+        #     B[i * T.int64(65) + j] = T.if_then_else(
+        #         i * T.int64(65) + j >= T.int64(0) and i * T.int64(65) + j < T.int64(128),
+        #         A[i * T.int64(65) + j],
+        #         0.0,
+        #         dtype="float32",
+        #     )
 
     @T.prim_func
     def expected_after(A: T.Buffer[128, "float32"], B: T.Buffer[130, "float32"]):
         for i, j in T.grid(2, 65):
             if i * 65 + j >= 0 and i * 65 + j < 128:
                 A[i * 65 + j] = T.float32(0)
-        for i, j in T.grid(2, 65):
-            B[i * 65 + j] = T.if_then_else(
-                i * 65 + j >= 0 and i * 65 + j < 128, A[i * 65 + j], T.float32(0), dtype="float32"
-            )
+        # for i, j in T.grid(2, 65):
+        #     B[i * 65 + j] = T.if_then_else(
+        #         i * 65 + j >= 0 and i * 65 + j < 128, A[i * 65 + j], T.float32(0), dtype="float32"
+        #     )
 
     after = tvm.tir.transform.NarrowDataType(32)(tvm.IRModule.from_expr(before))["main"]
     tvm.ir.assert_structural_equal(after, expected_after)
@@ -332,6 +332,7 @@ def test_block():
                 with T.block():
                     vi = T.axis.spatial(T.int64(128), i * T.int64(8) + j)
                     B[vi] = A[vi] + T.float32(1)
+
     @T.prim_func
     def expected_after(A: T.Buffer[(128,), "float32"], B: T.Buffer[(128,), "float32"]):
         for i in T.serial(0, T.int32(16)):
@@ -339,9 +340,33 @@ def test_block():
                 with T.block():
                     vi = T.axis.spatial(T.int32(128), i * T.int32(8) + j)
                     B[vi] = A[vi] + T.float32(1)
+
     after = tvm.tir.transform.NarrowDataType(32)(tvm.IRModule.from_expr(before))["main"]
     tvm.ir.assert_structural_equal(after, expected_after)
 
+
+# def test_full():
+#     @T.prim_func
+#     def before(p0: T.Buffer[(1,), "float32"], T_full: T.Buffer[(T.int64(197),), "float32"]) -> None:
+#         T.preflattened_buffer(p0, [], dtype="float32", data=p0.data)
+#         T.preflattened_buffer(T_full, [T.int64(1), T.int64(197)], dtype="float32", data=T_full.data)
+#         # body
+#         for ax1_outer in T.serial(T.int64(13)):
+#             for ax1_inner in T.vectorized(T.int64(16)):
+#                 if T.likely(ax1_inner + ax1_outer * T.int64(16) < T.int64(197), dtype="bool"):
+#                     T_full[ax1_outer * T.int64(16) + ax1_inner] = p0[0]
+#     @T.prim_func
+#     def expected_after(p0: T.Buffer[(1,), "float32"], T_full: T.Buffer[(T.int64(197),), "float32"]) -> None:
+#         T.preflattened_buffer(p0, [], dtype="float32", data=p0.data)
+#         T.preflattened_buffer(T_full, [T.int64(1), T.int64(197)], dtype="float32", data=T_full.data)
+#         # body
+#         for ax1_outer in T.serial(T.int32(13)):
+#             for ax1_inner in T.vectorized(T.int32(16)):
+#                 if T.likely(ax1_inner + ax1_outer * T.int32(16) < T.int32(197), dtype="bool"):
+#                     T_full[ax1_outer * T.int32(16) + ax1_inner] = p0[0]
+
+#     after = tvm.tir.transform.NarrowDataType(32)(tvm.IRModule.from_expr(before))["main"]
+#     tvm.ir.assert_structural_equal(after, expected_after)
 
 # def test_loop():
 #     import tvm.topi
@@ -350,17 +375,17 @@ def test_block():
 #     func = tvm.te.create_prim_func([f])
 #     print(func.script())
 
-    # after = tvm.tir.transform.NarrowDataType(32)(tvm.IRModule.from_expr(before))["main"]
-    # tvm.ir.assert_structural_equal(after, expected_after)
+# after = tvm.tir.transform.NarrowDataType(32)(tvm.IRModule.from_expr(before))["main"]
+# tvm.ir.assert_structural_equal(after, expected_after)
 # if __name__ == "__main__":
-    # test_basic()
-    # test_thread_axis()
-    # test_thread_axis_2()
-    # test_multilanes()
-    # test_reduce()
-    # test_slice()
-    # test_relay_basic()
-    # test_relay_take()
-    # test_ramp_dtype_consistency()
-    # test_condition()
-    # test_loop()
+# test_basic()
+# test_thread_axis()
+# test_thread_axis_2()
+# test_multilanes()
+# test_reduce()
+# test_slice()
+# test_relay_basic()
+# test_relay_take()
+# test_ramp_dtype_consistency()
+# test_condition()
+# test_loop()

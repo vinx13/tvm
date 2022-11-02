@@ -225,27 +225,23 @@ class NarrowDataTypeRewriter : public IndexDataTypeRewriter {
   }
 
   PrimExpr VisitExpr_(const VarNode* op) final {
-    if (visitor_.vmap.find(op) != visitor_.vmap.end()) {
-      if (auto it = var_remap_.find(GetRef<Var>(op)); it != var_remap_.end()) {
-        return (*it).second;
-      } else {
-        Var v = Var(op->name_hint, visitor_.vmap[op]);
-        var_remap_.Set(GetRef<Var>(op), v);
-        return v;
-      }
+    if (auto it = var_remap_.find(GetRef<Var>(op)); it != var_remap_.end()) {
+      return (*it).second;
+    } else if (visitor_.vmap.find(op) != visitor_.vmap.end()) {
+      Var v = Var(op->name_hint, visitor_.vmap[op]);
+      var_remap_.Set(GetRef<Var>(op), v);
+      return v;
     }
     return Parent::VisitExpr_(op);
   }
 
   PrimExpr VisitExpr_(const SizeVarNode* op) final {
-    if (visitor_.vmap.find(op) != visitor_.vmap.end()) {
-      if (auto it = var_remap_.find(GetRef<Var>(op)); it != var_remap_.end()) {
-        return (*it).second;
-      } else {
-        SizeVar v = SizeVar(op->name_hint, visitor_.vmap[op]);
-        var_remap_.Set(GetRef<Var>(op), v);
-        return v;
-      }
+    if (auto it = var_remap_.find(GetRef<Var>(op)); it != var_remap_.end()) {
+      return (*it).second;
+    } else if (visitor_.vmap.find(op) != visitor_.vmap.end()) {
+      SizeVar v = SizeVar(op->name_hint, visitor_.vmap[op]);
+      var_remap_.Set(GetRef<Var>(op), v);
+      return v;
     }
     return Parent::VisitExpr_(op);
   }
