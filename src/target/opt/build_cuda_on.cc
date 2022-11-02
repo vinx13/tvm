@@ -35,6 +35,7 @@
 #include "../../runtime/cuda/cuda_module.h"
 #include "../build_common.h"
 #include "../source/codegen_cuda.h"
+#include "../../printer/text_printer.h"
 
 namespace tvm {
 namespace codegen {
@@ -126,6 +127,7 @@ std::string NVRTCCompile(const std::string& code, bool include_path = false) {
 }
 
 runtime::Module BuildCUDA(IRModule mod, Target target) {
+  // LOG(INFO) << tir::AsTVMScript(mod);
   using tvm::runtime::Registry;
   bool output_ssa = false;
   CodeGenCUDA cg;

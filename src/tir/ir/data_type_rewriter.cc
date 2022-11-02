@@ -221,9 +221,13 @@ Stmt IndexDataTypeRewriter::VisitStmt_(const DeclBufferNode* op) {
 }
 
 Stmt IndexDataTypeRewriter::VisitStmt_(const BlockRealizeNode* op) {
+  bool is_condition = is_condition_;
+  is_condition_ = true;
+  auto new_predicate = VisitExpr(op->predicate);
+  is_condition_ = is_condition;
+
   bool is_enabled = is_enabled_;
   is_enabled_ = true;
-  auto new_predicate = VisitExpr(op->predicate);
   auto new_iter_values =
       op->iter_values.Map([this](const PrimExpr& e) { return this->VisitExpr(e); });
   is_enabled_ = is_enabled;
@@ -261,9 +265,14 @@ Stmt IndexDataTypeRewriter::VisitStmt_(const BlockNode* op) {
       [this](const BufferRegion& buffer_region) { return this->VisitBufferRegion(buffer_region); });
   Array<IterVar> new_iter_vars =
       op->iter_vars.Map([this](const IterVar& iter_var) { return this->VisitIterVar(iter_var); });
+  Optional<Stmt> new_init = NullOpt;
+  if (op->init.defined()) {
+    new_init = this->VisitStmt(op->init.value());
+  }
   Stmt new_body = this->VisitStmt(op->body);
 
-  if (!new_body.same_as(op->body) || !new_alloc_buffers.same_as(op->alloc_buffers) ||
+  if (!new_init.same_as(op->init) || !new_body.same_as(op->body) ||
+      !new_alloc_buffers.same_as(op->alloc_buffers) ||
       !new_match_buffers.same_as(op->match_buffers) || !new_reads.same_as(op->reads) ||
       !new_writes.same_as(op->writes) | new_iter_vars.same_as(op->iter_vars)) {
     Block new_block = GetRef<Block>(op);
@@ -273,6 +282,7 @@ Stmt IndexDataTypeRewriter::VisitStmt_(const BlockNode* op) {
     n->reads = std::move(new_reads);
     n->writes = std::move(new_writes);
     n->iter_vars = std::move(new_iter_vars);
+    n->init = std::move(new_init);
     n->body = std::move(new_body);
     return std::move(new_block);
   }
@@ -393,14 +403,22 @@ Array<PrimExpr> IndexDataTypeRewriter::VisitIndices(Array<PrimExpr> indices) {
 }
 
 Stmt IndexDataTypeRewriter::VisitStmt_(const IfThenElseNode* op) {
-  IfThenElse updated = Downcast<IfThenElse>(Parent::VisitStmt_(op));
+  bool is_condition = is_condition_;
   is_condition_ = true;
   PrimExpr cond = VisitExpr(op->condition);
-  is_condition_ = false;
-  if (!cond.same_as(op->condition)) {
-    return std::move(IfThenElse(cond, updated->then_case, updated->else_case));
+  is_condition_ = is_condition;
+
+  Stmt then_case = VisitStmt(op->then_case);
+  Stmt else_case = VisitStmt(op->else_case);
+  if (!cond.same_as(op->condition) || !then_case.same_as(op->then_case) ||
+      !else_case.same_as(op->else_case)) {
+    IfThenElse new_stmt = GetRef<IfThenElse>(op);
+    auto* n = new_stmt.CopyOnWrite();
+    n->condition = std::move(cond);
+    n->then_case = std::move(then_case);
+    n->else_case = std::move(else_case);
   }
-  return std::move(updated);
+  return GetRef<Stmt>(op);
 }
 
 Stmt IndexDataTypeRewriter::VisitStmt_(const ForNode* op) {
@@ -409,8 +427,9 @@ Stmt IndexDataTypeRewriter::VisitStmt_(const ForNode* op) {
   Var new_loop_var = Downcast<Var>(VisitExpr(op->loop_var));
   PrimExpr min = VisitExpr(op->min);
   PrimExpr extent = VisitExpr(op->extent);
-  Stmt new_body = VisitStmt(op->body);
   is_enabled_ = is_enabled;
+
+  Stmt new_body = VisitStmt(op->body);
 
   if (!new_loop_var.same_as(op->loop_var) || !min.same_as(op->min) || !extent.same_as(op->extent) ||
       !new_body.same_as(op->body)) {
