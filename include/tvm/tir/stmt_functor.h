@@ -547,6 +547,7 @@ class IndexDataTypeRewriter : public DataTypeLegalizer {
   using Parent = DataTypeLegalizer;
 
  public:
+ Stmt VisitStmt_(const BlockRealizeNode* op) override;
   Stmt VisitStmt_(const BlockNode* op) override;
   Stmt VisitStmt_(const BufferStoreNode* op) override;
   PrimExpr VisitExpr_(const BufferLoadNode* op) override;
@@ -574,7 +575,7 @@ class IndexDataTypeRewriter : public DataTypeLegalizer {
   BufferRegion VisitBufferRegion(const BufferRegion& region);
   IterVar VisitIterVar(const IterVar& iter_var);
   // indicator of index expr to rewrite
-  bool is_index_{false};
+  bool is_enabled_{false};
   // indicator of condition
   bool is_condition_{false};
 

@@ -717,7 +717,8 @@ class Normalizer : public IndexDataTypeRewriter {
   }
 
   PrimExpr VisitExpr_(const IntImmNode* op) final {
-    if (is_index_) {
+    if (is_enabled_) {
+      ICHECK_LE(op->value, Downcast<Integer>(max_value(target_data_type_))->value);
       return cast(target_data_type_, GetRef<IntImm>(op));
     }
     return GetRef<IntImm>(op);
@@ -727,7 +728,20 @@ class Normalizer : public IndexDataTypeRewriter {
     if (auto it = var_remap_.find(GetRef<Var>(op)); it != var_remap_.end()) {
       return (*it).second;
     }
-    if (is_index_) {
+    if (is_enabled_) {
+      Var new_var = GetRef<Var>(op).copy_with_dtype(target_data_type_);
+      var_remap_.Set(GetRef<Var>(op), new_var);
+      return std::move(new_var);
+    }
+    return GetRef<PrimExpr>(op);
+  }
+
+  PrimExpr VisitExpr_(const SizeVarNode* op) final {
+    if (auto it = var_remap_.find(GetRef<Var>(op)); it != var_remap_.end()) {
+      return (*it).second;
+    }
+    if (is_enabled_) {
+      ICHECK_LE(op->dtype.bits(), target_data_type_.bits());
       Var new_var = GetRef<Var>(op).copy_with_dtype(target_data_type_);
       var_remap_.Set(GetRef<Var>(op), new_var);
       return std::move(new_var);

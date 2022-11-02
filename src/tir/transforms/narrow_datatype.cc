@@ -29,6 +29,7 @@
 
 #include "../../arith/ir_mutator_with_analyzer.h"
 #include "../../arith/ir_visitor_with_analyzer.h"
+#include "../../printer/text_printer.h"
 
 namespace tvm {
 namespace tir {
@@ -102,13 +103,13 @@ class DataTypeVisitor final : public StmtExprVisitor {
     return StmtExprVisitor::VisitStmt_(op);
   }
 
-  // void VisitStmt_(const BlockNode* op) {
-  //   for (const IterVar& iter : op->iter_vars) {
-  //     analyzer_.Bind(iter->var, Range::FromMinExtent(iter->dom->min, iter->dom->extent));
-  //     vextent_[iter->var.as<VarNode>()] = iter->dom->extent.dtype();
-  //   }
-  //   StmtExprVisitor::VisitStmt_(op);
-  // }
+  void VisitStmt_(const BlockNode* op) {
+    for (const IterVar& iter : op->iter_vars) {
+      analyzer_.Bind(iter->var, Range::FromMinExtent(iter->dom->min, iter->dom->extent));
+      vextent_[iter->var.as<VarNode>()] = iter->dom->extent.dtype();
+    }
+    StmtExprVisitor::VisitStmt_(op);
+  }
 
   void VisitStmt_(const AttrStmtNode* op) {
     if (op->attr_key == attr::thread_extent || op->attr_key == attr::virtual_thread) {
@@ -225,26 +226,32 @@ class NarrowDataTypeRewriter : public IndexDataTypeRewriter {
 
   PrimExpr VisitExpr_(const VarNode* op) final {
     if (visitor_.vmap.find(op) != visitor_.vmap.end()) {
-      if (vmap_.find(op) == vmap_.end()) {
-        vmap_[op] = Var(op->name_hint, visitor_.vmap[op]);
+      if (auto it = var_remap_.find(GetRef<Var>(op)); it != var_remap_.end()) {
+        return (*it).second;
+      } else {
+        Var v = Var(op->name_hint, visitor_.vmap[op]);
+        var_remap_.Set(GetRef<Var>(op), v);
+        return v;
       }
-      return vmap_[op];
     }
     return Parent::VisitExpr_(op);
   }
 
   PrimExpr VisitExpr_(const SizeVarNode* op) final {
     if (visitor_.vmap.find(op) != visitor_.vmap.end()) {
-      if (vmap_.find(op) == vmap_.end()) {
-        vmap_[op] = SizeVar(op->name_hint, visitor_.vmap[op]);
+      if (auto it = var_remap_.find(GetRef<Var>(op)); it != var_remap_.end()) {
+        return (*it).second;
+      } else {
+        SizeVar v = SizeVar(op->name_hint, visitor_.vmap[op]);
+        var_remap_.Set(GetRef<Var>(op), v);
+        return v;
       }
-      return vmap_[op];
     }
     return Parent::VisitExpr_(op);
   }
 
   PrimExpr VisitExpr_(const IntImmNode* op) final {
-    if (is_index_) {
+    if (is_enabled_) {
       if (visitor_.vmap.find(op) != visitor_.vmap.end()) {
         return IntImm(visitor_.vmap[op], op->value);
       }
@@ -253,7 +260,7 @@ class NarrowDataTypeRewriter : public IndexDataTypeRewriter {
   }
 
   PrimExpr VisitExpr_(const CastNode* op) final {
-    if (is_index_ && visitor_.vmap.find(op) != visitor_.vmap.end()) {
+    if (is_enabled_ && visitor_.vmap.find(op) != visitor_.vmap.end()) {
       PrimExpr e = Parent::VisitExpr_(op);
       const CastNode* new_op = e.as<CastNode>();
       ICHECK(new_op != nullptr) << "Expected type to be CastNode"
@@ -281,6 +288,7 @@ Pass NarrowDataType(int target_bits) {
   auto pass_func = [target_bits](PrimFunc f, IRModule m, PassContext ctx) {
     auto* n = f.CopyOnWrite();
     n->body = NarrowDataTypeRewriter(target_bits)(std::move(n->body));
+    // LOG(INFO) << "AfterNarrow: " << tir::AsTVMScript(f);
     return f;
   };
   return CreatePrimFuncPass(pass_func, 0, "tir.NarrowDataType", {});
