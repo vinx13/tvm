@@ -769,16 +769,10 @@ PrimFunc CreatePrimFuncWithConstants(const Array<te::Tensor>& arg_list,
   // Step 4. Create func and complete prim func.
   auto func = GenerateAndCompletePrimFunc(arg_list, root_stmts, &info);
   func = tir::BindParams(func, constants);
-  // LOG(INFO)  <<"Rewrite";
-  // func = BufferShapeDtypeNormalizer::Rewrite(std::move(func));
   if (index_dtype_override.has_value()) {
-    LOG(INFO) << index_dtype_override.value();
     func = Normalizer(index_dtype_override.value()).Rewrite(std::move(func));
   }
-  // LOG(INFO) << "OK";
-  // LOG(INFO) << func;
   auto result = LayoutFreePlaceholdersNormalizer().Process(std::move(func));
-  // LOG(INFO) << "OK";/
   return result;
 }
 
@@ -792,10 +786,8 @@ TVM_REGISTER_GLOBAL("te.CreatePrimFunc").set_body([](TVMArgs args, TVMRetValue* 
   std::optional<DataType> index_dtype_override{std::nullopt};
   // Add conversion to make std::optional compatible with FFI.
   if (args[1].type_code() != kTVMNullptr) {
-    LOG(INFO) << args[1].type_code();
     index_dtype_override = args[1].operator DataType();
   }
-  LOG(INFO) << runtime::ArgTypeCode2Str(args[1].type_code());
   *ret = CreatePrimFunc(arg_list, index_dtype_override);
 });
 
