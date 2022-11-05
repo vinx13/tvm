@@ -296,9 +296,9 @@ PrimExpr cast(const DataType& t, PrimExpr value, Span span) {
     ICHECK(!value.dtype().is_handle()) << "Can't cast a handle to other types.";
     return tir::Cast(t, value, span);
   } else {
+    DataType vtype = t.element_of();
     if (value.dtype().lanes() == 1) {
       // manually unroll cast
-      DataType vtype = t.element_of();
       if (value.dtype() != vtype) {
         if (const IntImmNode* op = value.as<IntImmNode>()) {
           value = make_const(vtype, op->value, op->span);
@@ -311,6 +311,12 @@ PrimExpr cast(const DataType& t, PrimExpr value, Span span) {
       return tir::Broadcast(value, t.lanes(), span);
     } else {
       ICHECK(value.dtype().lanes() == t.lanes());
+      if (const auto* broadcast = value.as<tir::BroadcastNode>()) {
+        return tir::Broadcast(cast(vtype, broadcast->value), t.lanes(), span);
+      } else if (const auto* ramp = value.as<tir::RampNode>()) {
+        ICHECK(t.is_int() || t.is_uint());
+        return tir::Ramp(cast(vtype, ramp->base), ramp->stride, ramp->lanes, span);
+      }
       return tir::Cast(t, value, span);
     }
   }
