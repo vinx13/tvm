@@ -87,6 +87,7 @@ static const Op& stop_fusion_op = Op::Get("annotation.stop_fusion");
 
 TVM_REGISTER_PASS_CONFIG_OPTION("relay.FuseOps.max_depth", Integer);
 TVM_REGISTER_PASS_CONFIG_OPTION("relay.FuseOps.link_params", Bool);
+TVM_REGISTER_PASS_CONFIG_OPTION("relay.FuseOps.fuse_injective", Bool);
 
 /*!
  * \brief Indexed data flow graph in forward direction.
@@ -510,8 +511,8 @@ DominatorTree DominatorTree::PostDom(support::Arena* arena, const IndexedForward
  */
 class GraphPartitioner {
  public:
-  explicit GraphPartitioner(support::Arena* arena, int opt_level, size_t max_fuse_depth)
-      : arena_(arena), opt_level_(opt_level), max_fuse_depth_(max_fuse_depth) {}
+  explicit GraphPartitioner(support::Arena* arena, int opt_level, size_t max_fuse_depth, bool fuse_injective)
+      : arena_(arena), opt_level_(opt_level), max_fuse_depth_(max_fuse_depth), fuse_injective_(fuse_injective) {}
   /*!
    * \brief Group as a union find data structure.
    */
@@ -565,6 +566,7 @@ class GraphPartitioner {
   int opt_level_;
   /*! \brief The maximum number of operations in one fused function */
   size_t max_fuse_depth_;
+  bool fuse_injective_;
   /*! \brief The internal groups. */
   std::vector<Group*> groups_;
   /*! \brief internal field used for deduplication */
@@ -607,8 +609,8 @@ class GraphPartitioner {
     return true;
   }
   // Combine two patterns together.
-  static OpPatternKind CombinePattern(OpPatternKind lhs, OpPatternKind rhs) {
-    if (lhs > kBroadcast && rhs > kBroadcast) {
+  OpPatternKind CombinePattern(OpPatternKind lhs, OpPatternKind rhs) {
+    if (!fuse_injective_ && lhs > kBroadcast && rhs > kBroadcast) {
       LOG(FATAL) << "Cannot merge two complex group together";
     }
     if (lhs > rhs) return lhs;
@@ -751,12 +753,20 @@ class GraphPartitioner {
         if (phase != 0) continue;
         // Path for OutEWiseFusable: conv2d
         // Check if the dominator relation is elemwise.
-        if (dom_node->parent != nullptr && dom_node->pattern == kElemWise) {
-          ICHECK(dom_node->parent->gnode != nullptr);
-          // The fuse can be executed if all the intermediate ops are still broadcast.
-          auto fcond = [](OpPatternKind kind, bool is_sink) { return kind <= kBroadcast; };
-          if (CheckPath(graph_node, dom_node->parent->gnode, fcond)) {
-            CommitFuse(graph_node, dom_node->parent->gnode);
+        if (dom_node->parent != nullptr) {
+          if (fuse_injective_ && dom_node->pattern <= kInjective) {
+            ICHECK(dom_node->parent->gnode != nullptr);
+            auto fcond = [](OpPatternKind kind, bool is_sink) { return kind <= kInjective; };
+            if (CheckPath(graph_node, dom_node->parent->gnode, fcond)) {
+              CommitFuse(graph_node, dom_node->parent->gnode);
+            }
+          } else if (dom_node->pattern == kElemWise) {
+            ICHECK(dom_node->parent->gnode != nullptr);
+            // The fuse can be executed if all the intermediate ops are still broadcast.
+            auto fcond = [](OpPatternKind kind, bool is_sink) { return kind <= kBroadcast; };
+            if (CheckPath(graph_node, dom_node->parent->gnode, fcond)) {
+              CommitFuse(graph_node, dom_node->parent->gnode);
+            }
           }
         }
       } else if (group_node->pattern <= kBroadcast) {
@@ -811,22 +821,23 @@ std::vector<GraphPartitioner::Group*> GraphPartitioner::Partition(
 
 class FuseMutator : private MixedModeMutator {
  public:
-  FuseMutator(int fuse_opt_level, size_t max_fuse_depth, bool link_params)
+  FuseMutator(int fuse_opt_level, size_t max_fuse_depth, bool link_params, bool fuse_injective)
       : fuse_opt_level_(fuse_opt_level),
         max_fuse_depth_(max_fuse_depth),
-        link_params_(link_params) {}
+        link_params_(link_params),
+        fuse_injective_(fuse_injective) {}
 
   // Run the transform
   Expr Transform(const Expr& body) {
-    return Transform(body, fuse_opt_level_, max_fuse_depth_, link_params_);
+    return Transform(body, fuse_opt_level_, max_fuse_depth_, link_params_, fuse_injective_);
   }
 
  protected:
   // Run the transform
-  Expr Transform(const Expr& body, int fuse_opt_level, size_t max_fuse_depth, bool link_params) {
+  Expr Transform(const Expr& body, int fuse_opt_level, size_t max_fuse_depth, bool link_params, bool fuse_injective) {
     // setup the group map.
     auto graph = IndexedForwardGraph::Create(&arena_, body);
-    auto groups = GraphPartitioner(&arena_, fuse_opt_level, max_fuse_depth).Partition(graph);
+    auto groups = GraphPartitioner(&arena_, fuse_opt_level, max_fuse_depth, fuse_injective).Partition(graph);
     for (size_t nid = 0; nid < graph.post_dfs_order.size(); ++nid) {
       ICHECK(graph.post_dfs_order[nid]->ref != nullptr);
       gmap_[graph.post_dfs_order[nid]->ref] = groups[nid];
@@ -840,6 +851,7 @@ class FuseMutator : private MixedModeMutator {
   int fuse_opt_level_;
   size_t max_fuse_depth_;
   bool link_params_;
+  bool fuse_injective_;
 
   using MixedModeMutator::VisitExpr_;
 
@@ -1041,8 +1053,8 @@ class FuseMutator : private MixedModeMutator {
 };
 
 Expr FuseOps(const Expr& expr, int fuse_opt_level, size_t max_fuse_depth, bool link_params,
-             const IRModule& module) {
-  return FuseMutator(fuse_opt_level, max_fuse_depth, link_params).Transform(expr);
+bool fuse_injective, const IRModule& module) {
+  return FuseMutator(fuse_opt_level, max_fuse_depth, link_params, fuse_injective).Transform(expr);
 }
 
 namespace transform {
@@ -1059,8 +1071,9 @@ Pass FuseOps(int fuse_opt_level) {
         link_params = pc->GetConfig("relay.FuseOps.link_params", Bool(link_params)).value();
         int opt_level = fuse_opt_level == -1 ? pc->opt_level : fuse_opt_level;
         auto max_fuse_depth = pc->GetConfig("relay.FuseOps.max_depth", Integer(kMaxFusedOps));
+        auto fuse_injective = pc->GetConfig("relay.FuseOps.fuse_injective", Bool(false));
         return Downcast<Function>(
-            FuseOps(f, opt_level, max_fuse_depth.value().IntValue(), link_params, m));
+            FuseOps(f, opt_level, max_fuse_depth.value().IntValue(), link_params, fuse_injective.value(), m));
       };
   return CreateFunctionPass(pass_func, 0, "FuseOps", {"InferType"});
 }
