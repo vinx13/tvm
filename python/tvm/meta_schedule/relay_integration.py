@@ -116,6 +116,7 @@ def extract_tasks(
         {
             "relay.backend.use_meta_schedule": True,
             "relay.backend.tir_converter": "default",
+            "relay.FuseOps.fuse_injective": True,
         }
     ),
     executor: Optional["relay.backend.Executor"] = None,
@@ -338,6 +339,7 @@ def compile_relay(
         {
             "relay.backend.use_meta_schedule": True,
             "relay.backend.tir_converter": "default",
+            "relay.FuseOps.fuse_injective": True,
         }
     ),
     executor: Optional["relay.backend.Executor"] = None,
