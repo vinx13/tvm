@@ -302,23 +302,23 @@ def test_condition():
         for i, j in T.grid(T.int64(2), T.int64(65)):
             if i * T.int64(65) + j >= T.int64(0) and i * T.int64(65) + j < T.int64(128):
                 A[i * T.int64(65) + j] = 0.0
-        # for i, j in T.grid(T.int64(2), T.int64(65)):
-        #     B[i * T.int64(65) + j] = T.if_then_else(
-        #         i * T.int64(65) + j >= T.int64(0) and i * T.int64(65) + j < T.int64(128),
-        #         A[i * T.int64(65) + j],
-        #         0.0,
-        #         dtype="float32",
-        #     )
+        for i, j in T.grid(T.int64(2), T.int64(65)):
+            B[i * T.int64(65) + j] = T.if_then_else(
+                i * T.int64(65) + j >= T.int64(0) and i * T.int64(65) + j < T.int64(128),
+                A[i * T.int64(65) + j],
+                0.0,
+                dtype="float32",
+            )
 
     @T.prim_func
     def expected_after(A: T.Buffer[128, "float32"], B: T.Buffer[130, "float32"]):
         for i, j in T.grid(2, 65):
             if i * 65 + j >= 0 and i * 65 + j < 128:
                 A[i * 65 + j] = T.float32(0)
-        # for i, j in T.grid(2, 65):
-        #     B[i * 65 + j] = T.if_then_else(
-        #         i * 65 + j >= 0 and i * 65 + j < 128, A[i * 65 + j], T.float32(0), dtype="float32"
-        #     )
+        for i, j in T.grid(2, 65):
+            B[i * 65 + j] = T.if_then_else(
+                i * 65 + j >= 0 and i * 65 + j < 128, A[i * 65 + j], T.float32(0), dtype="float32"
+            )
 
     after = tvm.tir.transform.NarrowDataType(32)(tvm.IRModule.from_expr(before))["main"]
     tvm.ir.assert_structural_equal(after, expected_after)
@@ -344,6 +344,47 @@ def test_block():
     after = tvm.tir.transform.NarrowDataType(32)(tvm.IRModule.from_expr(before))["main"]
     tvm.ir.assert_structural_equal(after, expected_after)
 
+
+def test_vectorized_buffer_access():
+    # fmt: off
+    @T.prim_func
+    def before(p0: T.Buffer[(T.int64(151296),), "uint8"], p1: T.Buffer[(T.int64(589824),), "int8"], compute: T.Buffer[(T.int64(151296),), "int32"]) -> None:
+        # function attr dict
+        T.preflattened_buffer(p0, [T.int64(197), T.int64(768)], dtype="uint8", data=p0.data)
+        T.preflattened_buffer(p1, [T.int64(48), T.int64(192), T.int64(16), T.int64(4)], dtype="int8", data=p1.data)
+        T.preflattened_buffer(compute, [T.int64(197), T.int64(768)], dtype="int32", data=compute.data)
+        # body
+        for i0_0_i1_0_0_i0_1_i1_0_1_fused in T.parallel(T.int64(48)):
+            for i0_2_init in T.serial(T.int64(197)):
+                for i1_1 in T.vectorized(T.int64(16)):
+                    compute[i0_2_init * T.int64(768) + i0_0_i1_0_0_i0_1_i1_0_1_fused * T.int64(16) + i1_1] = 0
+            for i2_0_0, i0_2, i2_0_1 in T.grid(T.int64(8), T.int64(197), T.int64(24)):
+                A_u8x4: T.uint8x4 = p0[T.broadcast(i0_2 * T.int64(768), 4) + (T.broadcast(i2_0_0 * T.int64(96) + i2_0_1 * T.int64(4), 4) + T.cast(T.ramp(0, 1, 4), "int64x4"))]
+                A_i32: T.int32 = T.reinterpret(A_u8x4, dtype="int32")
+                B_i8x64: T.int8x64 = p1[T.broadcast(i0_0_i1_0_0_i0_1_i1_0_1_fused * T.int64(12288) + i2_0_0 * T.int64(1536) + i2_0_1 * T.int64(64), 64) + (T.broadcast(T.int64(0), 64) + T.cast(T.ramp(0, 1, 64), "int64x64"))]
+                B_i32x16: T.int32x16 = T.reinterpret(B_i8x64, dtype="int32x16")
+                compute[T.broadcast(i0_2 * T.int64(768), 16) + (T.broadcast(i0_0_i1_0_0_i0_1_i1_0_1_fused * T.int64(16), 16) + T.cast(T.ramp(0, 1, 16), "int64x16"))] = compute[T.broadcast(i0_2 * T.int64(768), 16) + (T.broadcast(i0_0_i1_0_0_i0_1_i1_0_1_fused * T.int64(16), 16) + T.cast(T.ramp(0, 1, 16), "int64x16"))] + T.call_llvm_pure_intrin(T.llvm_lookup_intrinsic_id("llvm.x86.avx512.vpdpbusd.512"), T.uint32(0), T.broadcast(0, 16), T.broadcast(A_i32, 16), B_i32x16, dtype="int32x16")
+
+    @T.prim_func
+    def expected_after(p0: T.Buffer[(T.int64(151296),), "uint8"], p1: T.Buffer[(T.int64(589824),), "int8"], compute: T.Buffer[(T.int64(151296),), "int32"]) -> None:
+        # function attr dict
+        T.preflattened_buffer(p0, [T.int64(197), T.int64(768)], dtype="uint8", data=p0.data)
+        T.preflattened_buffer(p1, [T.int64(48), T.int64(192), T.int64(16), T.int64(4)], dtype="int8", data=p1.data)
+        T.preflattened_buffer(compute, [T.int64(197), T.int64(768)], dtype="int32", data=compute.data)
+        # body
+        for i0_0_i1_0_0_i0_1_i1_0_1_fused in T.parallel(T.int32(48)):
+            for i0_2_init in T.serial(T.int32(197)):
+                for i1_1 in T.vectorized(T.int32(16)):
+                    compute[i0_2_init * T.int32(768) + i0_0_i1_0_0_i0_1_i1_0_1_fused * T.int32(16) + i1_1] = 0
+            for i2_0_0, i0_2, i2_0_1 in T.grid(T.int32(8), T.int32(197), T.int32(24)):
+                A_u8x4: T.uint8x4 = p0[T.broadcast(i0_2 * T.int32(768), 4) + (T.broadcast(i2_0_0 * T.int32(96) + i2_0_1 * T.int32(4), 4) + T.cast(T.ramp(0, 1, 4), "int32x4"))]
+                A_i32: T.int32 = T.reinterpret(A_u8x4, dtype="int32")
+                B_i8x64: T.int8x64 = p1[T.broadcast(i0_0_i1_0_0_i0_1_i1_0_1_fused * T.int32(12288) + i2_0_0 * T.int32(1536) + i2_0_1 * T.int32(64), 64) + (T.broadcast(T.int32(0), 64) + T.cast(T.ramp(0, 1, 64), "int32x64"))]
+                B_i32x16: T.int32x16 = T.reinterpret(B_i8x64, dtype="int32x16")
+                compute[T.broadcast(i0_2 * T.int32(768), 16) + (T.broadcast(i0_0_i1_0_0_i0_1_i1_0_1_fused * T.int32(16), 16) + T.cast(T.ramp(0, 1, 16), "int32x16"))] = compute[T.broadcast(i0_2 * T.int32(768), 16) + (T.broadcast(i0_0_i1_0_0_i0_1_i1_0_1_fused * T.int32(16), 16) + T.cast(T.ramp(0, 1, 16), "int32x16"))] + T.call_llvm_pure_intrin(T.llvm_lookup_intrinsic_id("llvm.x86.avx512.vpdpbusd.512"), T.uint32(0), T.broadcast(0, 16), T.broadcast(A_i32, 16), B_i32x16, dtype="int32x16")
+
+    after = tvm.tir.transform.NarrowDataType(32)(tvm.IRModule.from_expr(before))["main"]
+    tvm.ir.assert_structural_equal(after, expected_after)
 
 # def test_full():
 #     @T.prim_func

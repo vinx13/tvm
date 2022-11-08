@@ -312,10 +312,11 @@ PrimExpr cast(const DataType& t, PrimExpr value, Span span) {
     } else {
       ICHECK(value.dtype().lanes() == t.lanes());
       if (const auto* broadcast = value.as<tir::BroadcastNode>()) {
-        return tir::Broadcast(cast(vtype, broadcast->value), t.lanes(), span);
+        return tir::Broadcast(cast(vtype, broadcast->value, span), t.lanes(), span);
       } else if (const auto* ramp = value.as<tir::RampNode>()) {
         ICHECK(t.is_int() || t.is_uint());
-        return tir::Ramp(cast(vtype, ramp->base), cast(vtype, ramp->stride), ramp->lanes, span);
+        return tir::Ramp(cast(vtype, ramp->base, span), cast(vtype, ramp->stride, span),
+                         ramp->lanes, span);
       }
       return tir::Cast(t, value, span);
     }

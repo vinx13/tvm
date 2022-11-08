@@ -53,3 +53,22 @@ TEST(Simplify, Mod) {
   auto es = ana.canonical_simplify(mod - x);
   ICHECK(tvm::tir::is_zero(es));
 }
+
+TEST(ConstantFold, Broadcast) {
+  tvm::StructuralEqual checker;
+  auto i32x4 = tvm::tir::Broadcast(tvm::IntImm(tvm::DataType::Int(32), 10), 4);
+  auto i64x4 = tvm::cast(i32x4->dtype.with_bits(64), i32x4);
+  auto i64x4_expected = tvm::tir::Broadcast(tvm::IntImm(tvm::DataType::Int(64), 10), 4);
+  ASSERT_TRUE(checker(i64x4, i64x4_expected));
+}
+
+TEST(ConstantFold, Ramp) {
+  tvm::StructuralEqual checker;
+  auto i32x4 = tvm::tir::Ramp(tvm::IntImm(tvm::DataType::Int(32), 10),
+                              tvm::IntImm(tvm::DataType::Int(32), 1), 4);
+  auto i64x4 = tvm::cast(i32x4->dtype.with_bits(64), i32x4);
+  auto i64x4_expected = tvm::tir::Ramp(tvm::IntImm(tvm::DataType::Int(64), 10),
+                                       tvm::IntImm(tvm::DataType::Int(64), 1), 4);
+  ASSERT_TRUE(checker(i64x4, i64x4_expected));
+  EXPECT_THROW(tvm::cast(tvm::DataType::Float(32, 4), i32x4), tvm::Error);
+}

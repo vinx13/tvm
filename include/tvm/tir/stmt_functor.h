@@ -547,7 +547,7 @@ class IndexDataTypeRewriter : public DataTypeLegalizer {
   using Parent = DataTypeLegalizer;
 
  public:
- Stmt VisitStmt_(const BlockRealizeNode* op) override;
+  Stmt VisitStmt_(const BlockRealizeNode* op) override;
   Stmt VisitStmt_(const BlockNode* op) override;
   Stmt VisitStmt_(const BufferStoreNode* op) override;
   PrimExpr VisitExpr_(const BufferLoadNode* op) override;
