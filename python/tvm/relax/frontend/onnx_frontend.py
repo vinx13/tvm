@@ -161,7 +161,7 @@ class MatMul(OnnxOpConverter):
 
     @classmethod
     def _impl_v13(cls, bb, inputs, attr):
-        return relax.op.matmul(inputs[0], inputs[1])
+        return bb.emit(relax.op.matmul(inputs[0], inputs[1]))
 
 
 class Div(OnnxOpConverter):
@@ -278,16 +278,28 @@ class Gemm(OnnxOpConverter):
         # Compute Y = alpha * A X B + beta * C
 
         if alpha is not None:
-            A = bb.normalize(relax.op.multiply(A, relax.const(alpha, dtype=dtype)))
+            if transA:
+                A = relax.op.permute_dims(A)
+            if transB:
+                B = relax.op.permute_dims(B)
 
-        Y = bb.emit_te(topi.matmul, A, B, transA, transB)
+            Y = relax.op.multiply(
+                relax.op.linear_algebra.matmul(bb.normalize(A), bb.normalize(B)),
+                relax.const(alpha, dtype=dtype),
+            )
 
         if C is not None:
             if beta is not None:
-                C = bb.normalize(relax.op.multiply(C, relax.const(beta, dtype=dtype)))
-            Y = relax.op.add(Y, C)
+                C = relax.op.multiply(C, relax.const(beta, dtype=dtype))
+            if alpha is not None:
+                Y = relax.op.add(Y, C)
+            else:
+                Y = C
+        else:
+            if alpha is None:
+                Y = relax.const(0, dtype=dtype)
 
-        return Y
+        return bb.emit(bb.normalize(Y))
 
 
 class Reshape(OnnxOpConverter):
@@ -1023,7 +1035,7 @@ class Range(OnnxOpConverter):
 
 def _get_convert_map():
     return {
-        "MatMul": relay.frontend.onnx.MatMul,
+        "MatMul": MatMul,
         "Concat": Concat,
         "Add": Add,
         "Mul": Mul,

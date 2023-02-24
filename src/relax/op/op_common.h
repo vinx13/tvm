@@ -165,11 +165,12 @@ inline DataType InferBinaryArithOpOutDtype(const Call& call, const BlockBuilder&
                                            const TensorStructInfo& x2_sinfo) {
   if (x1_sinfo->IsUnknownDtype() || x2_sinfo->IsUnknownDtype()) {
     return DataType::Void();
-  } else if (x1_sinfo->dtype != x2_sinfo->dtype) {
-    ctx->ReportFatal(Diagnostic::Error(call)
-                     << "Data types " << x1_sinfo->dtype << " and " << x2_sinfo->dtype
-                     << " must be equal for binary operators");
   }
+  // else if (x1_sinfo->dtype != x2_sinfo->dtype) {
+  //   ctx->ReportFatal(Diagnostic::Error(call)
+  //                    << "Data types " << x1_sinfo->dtype << " and " << x2_sinfo->dtype
+  //                    << " must be equal for binary operators");
+  // }
   return x1_sinfo->dtype;
 }
 
