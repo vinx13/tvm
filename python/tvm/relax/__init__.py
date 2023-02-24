@@ -91,3 +91,6 @@ from . import backend
 
 # VM
 from .vm_build import build, Executable
+
+# Frontend
+from .frontend.onnx_frontend import from_onnx
