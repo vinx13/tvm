@@ -161,7 +161,7 @@ class MatMul(OnnxOpConverter):
 
     @classmethod
     def _impl_v13(cls, bb, inputs, attr):
-        return bb.emit(relax.op.matmul(inputs[0], inputs[1]))
+        return bb.emit(bb.normalize(relax.op.matmul(inputs[0], inputs[1])))
 
 
 class Div(OnnxOpConverter):
@@ -279,9 +279,9 @@ class Gemm(OnnxOpConverter):
 
         if alpha is not None:
             if transA:
-                A = relax.op.permute_dims(A)
+                A = bb.normalize(relax.op.permute_dims(A))
             if transB:
-                B = relax.op.permute_dims(B)
+                B = bb.normalize(relax.op.permute_dims(B))
 
             Y = relax.op.multiply(
                 relax.op.linear_algebra.matmul(bb.normalize(A), bb.normalize(B)),
@@ -342,7 +342,12 @@ class Gelu(OnnxOpConverter):
 
     @classmethod
     def _impl_v1(cls, bb, inputs, attr):
-        return relax.op.nn.gelu(inputs[0])
+        dtype = inputs[0].struct_info.dtype
+        if dtype == "float32":
+            return relax.op.nn.gelu(inputs[0])
+        casted = bb.emit_te(topi.cast, inputs[0], "float32")
+        result = bb.normalize(relax.op.nn.gelu(casted))
+        return bb.emit_te(topi.cast, result, dtype)
 
 
 class BiasGelu(OnnxOpConverter):
@@ -353,8 +358,13 @@ class BiasGelu(OnnxOpConverter):
 
     @classmethod
     def _impl_v1(cls, bb, inputs, attr):
-        inp = relax.op.add(inputs[0], inputs[1])
-        return relax.op.nn.gelu(inp)
+        inp = bb.normalize(relax.op.add(inputs[0], inputs[1]))
+        dtype = inp.struct_info.dtype
+        if dtype == "float32":
+            return relax.op.nn.gelu(inp)
+        casted = bb.emit_te(topi.cast, inp, "float32")
+        result = bb.normalize(relax.op.nn.gelu(casted))
+        return bb.emit_te(topi.cast, result, dtype)
 
 
 class Where(OnnxOpConverter):

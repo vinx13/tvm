@@ -39,8 +39,8 @@ def _matmul(bb: BlockBuilder, call: Call) -> Expr:
         is_a_larger = len(a_shape) > len(b_shape)
         offset = len(a_shape) - len(b_shape) if is_a_larger else len(b_shape) - len(a_shape)
 
-        a_relax = relax.Var("a", relax.TensorStructInfo(a.shape))
-        b_relax = relax.Var("b", relax.TensorStructInfo(b.shape))
+        a_relax = relax.Var("a", relax.TensorStructInfo(a.shape, dtype=a.dtype))
+        b_relax = relax.Var("b", relax.TensorStructInfo(b.shape, dtype=b.dtype))
         f_infer_sinfo = call.op.get_attr("FInferStructInfo")
         output_shape = f_infer_sinfo(relax.op.matmul(a_relax, b_relax), bb).shape
 
