@@ -279,12 +279,12 @@ class Gemm(OnnxOpConverter):
 
         if alpha is not None:
             if transA:
-                A = bb.normalize(relax.op.permute_dims(A))
+                A = relax.op.permute_dims(A)
             if transB:
-                B = bb.normalize(relax.op.permute_dims(B))
+                B = relax.op.permute_dims(B)
 
             Y = relax.op.multiply(
-                relax.op.linear_algebra.matmul(bb.normalize(A), bb.normalize(B)),
+                relax.op.linear_algebra.matmul(A, B),
                 relax.const(alpha, dtype=dtype),
             )
 
@@ -1045,7 +1045,7 @@ class Range(OnnxOpConverter):
 
 def _get_convert_map():
     return {
-        "MatMul": MatMul,
+        "MatMul": Matmul,
         "Concat": Concat,
         "Add": Add,
         "Mul": Mul,
