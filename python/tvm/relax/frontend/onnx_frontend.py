@@ -1045,7 +1045,7 @@ class Range(OnnxOpConverter):
 
 def _get_convert_map():
     return {
-        "MatMul": Matmul,
+        "MatMul": MatMul,
         "Concat": Concat,
         "Add": Add,
         "Mul": Mul,
