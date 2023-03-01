@@ -284,7 +284,7 @@ def FuseTIR() -> tvm.ir.transform.Pass:
 
 
 def FuseOpsByPattern(
-    patterns: List[Tuple], lift_constants: bool = False, annotate_codegen: bool = False
+    patterns: List[Tuple], bind_constants: bool = True, annotate_codegen: bool = False
 ) -> tvm.ir.transform.Pass:
     """Apply pattern matching to each function in the given module, and group matched expressions
     into a new function.
@@ -303,8 +303,8 @@ def FuseOpsByPattern(
         The string is the name of the corresponding pattern. It becomes the value of the kComposite
         attribute of a fused function after a successful matching.
 
-    lift_constants : bool
-        Whether or not to lift bound constants to parameters of the grouped function.
+    bind_constants : bool
+        Whether or not to keep bound constants in the grouped function.
 
     annotate_codegen : bool
         If True, wrap each created composite function with another function, whose body consists
@@ -336,7 +336,7 @@ def FuseOpsByPattern(
         else:
             raise ValueError("Invalid pattern: {}".format(tup))
     return _ffi_api.FuseOpsByPattern(
-        pattern_names, df_patterns, checks, lift_constants, annotate_codegen
+        pattern_names, df_patterns, checks, bind_constants, annotate_codegen
     )  # type: ignore
 
 
