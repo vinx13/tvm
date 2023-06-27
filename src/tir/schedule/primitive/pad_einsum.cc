@@ -327,7 +327,9 @@ class PadEinsumBufferReplacer : public StmtExprMutator {
         writes.push_back(write);
       }
     }
-    Block new_block = Block(iter_vars, reads, writes, block->name_hint, block->body, block->init);
+    Block new_block =
+        Block(iter_vars, reads, writes, block->name_hint, block->body, block->init,
+              /*alloc_buffers=*/{}, /*match_buffers=*/{}, /*annotations=*/block->annotations);
     block_sref_reuse_.Set(old_block, new_block);
     return new_block;
   }
