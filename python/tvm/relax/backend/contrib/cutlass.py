@@ -216,14 +216,14 @@ def matmul_patterns():
         )
 
     return [
-        _matmul_pattern("cutlass.matmul"),
-        _matmul_pattern("cutlass.matmul_bias"),
-        _matmul_pattern("cutlass.matmul_bias_relu"),
-        _matmul_pattern("cutlass.matmul_bias_gelu"),
-        _matmul_pattern("cutlass.matmul_transposed"),
-        _matmul_pattern("cutlass.matmul_transposed_bias"),
-        _matmul_pattern("cutlass.matmul_transposed_bias_relu"),
-        _matmul_pattern("cutlass.matmul_transposed_bias_gelu"),
+        # _matmul_pattern("cutlass.matmul"),
+        # _matmul_pattern("cutlass.matmul_bias"),
+        # _matmul_pattern("cutlass.matmul_bias_relu"),
+        # _matmul_pattern("cutlass.matmul_bias_gelu"),
+        # _matmul_pattern("cutlass.matmul_transposed"),
+        # _matmul_pattern("cutlass.matmul_transposed_bias"),
+        # _matmul_pattern("cutlass.matmul_transposed_bias_relu"),
+        # _matmul_pattern("cutlass.matmul_transposed_bias_gelu"),
     ]
 
 
