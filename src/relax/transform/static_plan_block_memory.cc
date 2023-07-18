@@ -218,7 +218,7 @@ class TokenAllocator1D {
 
  private:
   /*! \brief A constant scale representing the token search range. */
-  const int match_range_{16};
+  const int match_range_{2};
   /*! \brief The pool of available storage tokens for each dtype. */
   std::unordered_map<DataType, std::multimap<int64_t, StorageToken>> available_pool_;
   /*! \brief All the storage tokens that have been allocated with actual storage. */
@@ -337,7 +337,6 @@ class StorageAllocatorInit : public StorageAllocatorBaseVisitor {
                                tvm::IntImm(DataType::Int(64), (*it).second->value + 1)));
       }
     }
-
     // Recurse into the function to get its tokens.
     Tokens body_tokens = GetTokens(func->body);
     // Discard the tokens used by the function return value, as they are external referenced.

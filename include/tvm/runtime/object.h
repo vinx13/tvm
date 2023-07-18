@@ -598,7 +598,7 @@ class ObjectRef {
   // Default type properties for the reference class.
   static constexpr bool _type_is_nullable = true;
 
- protected:
+ public:
   /*! \brief Internal pointer that backs the reference. */
   ObjectPtr<Object> data_;
   /*! \return return a mutable internal ptr, can be used by sub-classes. */

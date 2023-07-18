@@ -62,7 +62,10 @@ class GeneralReduction(ScheduleRule):
                 ),
                 ndim=num_last_block_iter,
             )
-            sch.transform_block_layout(block_infos[-1].block_rv, index_map)
+            try:
+                sch.transform_block_layout(block_infos[-1].block_rv, index_map)
+            except:
+                return None
 
         try:
             # TODO: fix num_leading_s = 0 case

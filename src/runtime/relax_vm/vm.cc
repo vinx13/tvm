@@ -794,7 +794,7 @@ void VirtualMachineImpl::InitFuncPool() {
 }
 
 void VirtualMachineImpl::RunInstrCall(VMFrame* curr_frame, Instruction instr) {
-  DLOG(INFO) << "\n  pc = " << pc_ << ", execute: " << GetFuncName(instr.func_idx);
+  // DLOG(INFO) << "\n  pc = " << pc_ << ", execute: " << GetFuncName(instr.func_idx);
   int args_begin_offset = instrument_ != nullptr ? 4 : 0;
   // Use the call arg stack from the current frame to increase reuse
   // and avoid re-allocation

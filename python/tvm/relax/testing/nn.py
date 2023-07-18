@@ -19,12 +19,13 @@
 
 
 import typing
-from typing import List, Any, Callable, Union
+from typing import Dict, List, Any, Callable, Tuple, Union
 
 import numpy as np  # type: ignore
 
 import tvm
 from tvm import relax, topi, tir
+from tvm.runtime import Object
 from tvm.relax.op.grad.grad import end_checkpoint, start_checkpoint
 
 
@@ -34,6 +35,22 @@ def emit(expr: relax.Expr, name_hint: str = "") -> relax.Var:
 
 def emit_te(func: Callable, *args: Any, **kwargs: Any) -> relax.Var:
     return relax.BlockBuilder.current().emit_te(func, *args, **kwargs)
+
+
+def call_te(func: Callable, *args: Any, **kwargs: Any) -> relax.Var:
+    return relax.BlockBuilder.current().call_te(func, *args, **kwargs)
+
+
+def call_te_with_grad(
+    func: Callable,
+    *args: Any,
+    te_grad_name: str,
+    te_grad_kwargs: Dict[str, Object] = None,
+    **kwargs: Any,
+) -> relax.Var:
+    return relax.BlockBuilder.current().call_te_with_grad(
+        func, *args, **kwargs, te_grad_name=te_grad_name, te_grad_kwargs=te_grad_kwargs
+    )
 
 
 def checkpoint(
@@ -205,12 +222,17 @@ class Parameter(relax.Var):
     """A special kind of relax Var that represents model parameter(weight)."""
 
     def __init__(
-        self, shape: Union[List[Any], typing.Tuple[Any, ...]], dtype="float32", name="param"
+        self,
+        shape: Union[List[Any], typing.Tuple[Any, ...]],
+        dtype="float32",
+        name="param",
+        init_value: tvm.nd.NDArray = None,
     ):
         if not isinstance(shape, (list, tuple)):
             raise TypeError("the shape of Parameter is expected to be a list or a tuple")
 
         super().__init__(_try_unique_name(name), relax.TensorStructInfo(shape, dtype))
+        self.init_value = init_value
 
 
 class Module(tvm.relax.frontend.nn.SubroutineMixin):
@@ -255,12 +277,19 @@ class Module(tvm.relax.frontend.nn.SubroutineMixin):
         """Return the list of parameters in the module."""
         return _unpack_params(self.__dict__)
 
+    def named_parameters(self, prefix="") -> List[Tuple[str, relax.Var]]:
+        """Return the list of parameters with their names in the module."""
+        return _unpack_named_params(self.__dict__, prefix)
+
     def forward(self, input: relax.Expr):
         """Define the computation performed at every call."""
         raise NotImplementedError()
 
     def __call__(self, *args, **kwargs):
         return self.forward(*args, **kwargs)
+
+    def param_init_values(self) -> List[tvm.nd.NDArray]:
+        return [p.init_value for p in self.parameters() if p.init_value is not None]
 
 
 def _unpack_params(value: object) -> List[relax.Var]:
@@ -277,6 +306,24 @@ def _unpack_params(value: object) -> List[relax.Var]:
         params = []
         for v in value:
             params += _unpack_params(v)
+        return params
+    return []
+
+
+def _unpack_named_params(value: object, prefix="") -> List[Tuple[str, relax.Var]]:
+    if isinstance(value, Parameter):
+        return [(prefix, value)]
+    if isinstance(value, Module):
+        return value.named_parameters(prefix)
+    if isinstance(value, dict):
+        params = []
+        for k, v in value.items():
+            params += _unpack_named_params(v, prefix + ("." if prefix else "") + k)
+        return params
+    if isinstance(value, (list, tuple)):
+        params = []
+        for i, v in enumerate(value):
+            params += _unpack_named_params(v, prefix + ("." if prefix else "") + str(i))
         return params
     return []
 

@@ -80,6 +80,7 @@ class Executable:
             rt_mod = ex.jit()
             vm = tvm.relax.VirtualMachine(rt_mod, tvm.cuda())
         """
+
         # TODO(tvm-team): Update runtime.Module interfac
         # to query these properties as bitmask.
         def _not_runnable(x):
@@ -245,6 +246,21 @@ def _vmlink(
     return Executable(_ffi_api.VMLink(builder, target, lib, ext_libs, params))  # type: ignore
 
 
+flag = False
+
+
+def debug_dump_script(mod, name):
+    if not flag:
+        return
+    """Debug dump mode"""
+    import os
+
+    dump_path = os.path.join("./dist/dump-output/", name)
+    with open(dump_path, "w") as outfile:
+        outfile.write(mod.script())
+    print(f"Dump mod to {dump_path}")
+
+
 def build(
     mod: tvm.IRModule,
     target: Union[str, tvm.target.Target],
@@ -309,7 +325,19 @@ def build(
     passes.append(relax.transform.ToNonDataflow())
     passes.append(relax.transform.RemovePurityChecking())
     passes.append(relax.transform.CallTIRRewrite())
+    seq = tvm.transform.Sequential(passes)
+    mod = seq(mod)
+    debug_dump_script(mod, "mod_before_static_plan_block_memory.py")
+
+    passes = []
     passes.append(relax.transform.StaticPlanBlockMemory())
+    seq = tvm.transform.Sequential(passes)
+    mod = seq(mod)
+    debug_dump_script(mod, "mod_after_static_plan_block_memory.py")
+    # mod.show(None, False)
+    print(relax.analysis.estimate_memory_usage(mod))
+
+    passes = []
 
     if tvm.transform.PassContext.current().config.get("relax.backend.use_cuda_graph", False):
         passes.append(relax.transform.RewriteCUDAGraph())

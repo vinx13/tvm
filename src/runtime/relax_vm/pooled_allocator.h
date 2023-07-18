@@ -69,7 +69,7 @@ class PooledAllocator final : public Allocator {
     }
 
     used_memory_.fetch_add(size, std::memory_order_relaxed);
-    DLOG(INFO) << "allocate " << size << " B, used memory " << used_memory_ << " B";
+    // DLOG(INFO) << "allocate " << size << " B, used memory " << used_memory_ << " B";
     return buf;
   }
 
@@ -79,7 +79,7 @@ class PooledAllocator final : public Allocator {
       memory_pool_.emplace(buffer.size, std::vector<Buffer>{});
     }
     memory_pool_.at(buffer.size).push_back(buffer);
-    DLOG(INFO) << "reclaim buffer " << buffer.size;
+    // DLOG(INFO) << "reclaim buffer " << buffer.size;
   }
 
  private:

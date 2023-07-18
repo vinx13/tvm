@@ -434,10 +434,16 @@ PrimExpr BlockBufferAccessSimplifier::VisitExpr_(const BufferLoadNode* op) {
 Optional<ObjectRef> NormalizePrimFunc(Schedule sch) {
   BlockRV root_block = sch->GetBlock("root");
   Array<BlockRV> blocks = sch->GetChildBlocks(root_block);
+  std::unordered_set<BlockRV, ObjectPtrHash, ObjectPtrEqual> dummy_blocks;
   for (const BlockRV& block : blocks) {
     StmtSRef block_sref = sch->GetSRef(block);
     Array<StmtSRef> loops = GetLoops(block_sref);
     Array<PrimExpr> binds = GetBlockRealize(sch->state(), block_sref)->iter_values;
+    if (loops.size() == 0 && binds.size() == 1) {
+      sch->AddUnitLoop(block);
+      dummy_blocks.insert(block);
+      continue;
+    }
     if (loops.size() != binds.size()) {
       return NullOpt;
     }
@@ -473,8 +479,10 @@ Optional<ObjectRef> NormalizePrimFunc(Schedule sch) {
       index_map_outputs.insert(index_map_outputs.begin(), tir::make_const(DataType::Int(64), 0));
     }
     try {
+      if (!dummy_blocks.count(block)) {
       sch->TransformBlockLayout(block, IndexMap(index_map_inputs, index_map_outputs));
-    } catch (tvm::runtime::Error& e) {
+    }
+    }catch (tvm::runtime::Error& e) {
       // Skip layout transformation when not transformable.
     }
     block_loops.push_back(sch->GetLoops(block));

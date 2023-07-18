@@ -81,6 +81,7 @@ class Reduction(ScheduleRule):
         if (
             (not block_info.is_reduction())
             or len(block_stmt.writes) != 1
+            or len(block_stmt.reads) == 0
             or _get_reduction_expr(block_stmt) is None
         ):
             return None

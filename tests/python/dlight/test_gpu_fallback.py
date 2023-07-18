@@ -179,5 +179,48 @@ def test_fallback_irregular_spatial():
     assert_structural_equal(mod["main"], expected)
 
 
+def test_fallback_dummy():
+    @I.ir_module
+    class Module:
+        @T.prim_func
+        def main(input: T.Buffer((), "int32"), output: T.Buffer((), "int32")):
+            with T.block("T_add"):
+                vi = T.axis.spatial(1, T.int64(0))
+                T.reads(input[()])
+                T.writes(output[()])
+                output[()] = input[()] + 1
+
+    # @I.ir_module
+    # class Expected:
+    #     @T.prim_func
+    #     def main(input: T.Buffer((), "int32"), output: T.Buffer((), "int32")):
+    #         T.func_attr({"tir.is_scheduled": 1})
+    #         for u_fused_0 in T.thread_binding(1, thread="blockIdx.x"):
+    #             for u_fused_1 in T.thread_binding(1, thread="threadIdx.x"):
+    #                 with T.block("T_add"):
+    #                     vi = T.axis.spatial(1, T.int64(0))
+    #                     T.reads(input[()])
+    #                     T.writes(output[()])
+    #                     output[()] = input[()] + 1
+
+    @I.ir_module
+    class Expected:
+        @T.prim_func
+        def main(input: T.Buffer((), "int32"), output: T.Buffer((), "int32")):
+            T.func_attr({"tir.is_scheduled": 1})
+            for u_fused_0 in T.thread_binding(1, thread="blockIdx.x"):
+                for u_fused_1 in T.thread_binding(1024, thread="threadIdx.x"):
+                    with T.block("T_add"):
+                        vi = T.axis.spatial(1, T.int64(0))
+                        T.where(u_fused_0 * 1024 + u_fused_1 < 1)
+                        T.reads(input[()])
+                        T.writes(output[()])
+                        output[()] = input[()] + 1
+
+    with Target("apple/m1-gpu"):
+        mod = dl.ApplyDefaultSchedule(dl.gpu.Fallback())(Module)  # pylint: disable=not-callable
+    assert_structural_equal(mod, Expected)
+
+
 if __name__ == "__main__":
     tvm.testing.main()

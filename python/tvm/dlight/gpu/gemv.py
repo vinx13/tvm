@@ -167,6 +167,8 @@ class GEMV(ScheduleRule):
             return None
         sch = tir.Schedule(func)
         block_infos = normalize_prim_func(sch)
+        if block_infos is None:
+            return None
         block_infos = try_inline_contiguous_spatial(sch, block_infos)
         if len(block_infos) == 1:
             epilogue = None

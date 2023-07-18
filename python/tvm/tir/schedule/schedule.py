@@ -21,7 +21,7 @@ from tvm._ffi import register_object as _register_object
 from tvm.error import TVMError, register_error
 from tvm.ir import GlobalVar, IRModule, PrimExpr
 from tvm.runtime import Object, String
-from tvm.tir import Block, Buffer, FloatImm, For, IntImm, PrimFunc
+from tvm.tir import Block, BlockRealize, Buffer, FloatImm, For, IntImm, PrimFunc
 
 from ..function import IndexMap
 from . import _ffi_api
@@ -500,6 +500,29 @@ class Schedule(Object):
         return _ffi_api.ScheduleGetBlock(  # type: ignore # pylint: disable=no-member
             self, name, func_name
         )
+
+    @type_checked
+    def get_block_realize(self, block: BlockRV) -> BlockRealize:
+        """Retrieve a block in a specific function with its name
+
+        By default, if `func_name` is not specified, the schedule will search for the block in the
+        function that is currently being "worked on". To switch the function to be worked on, use
+        `work_on` before calling this method.
+
+        Parameters
+        ----------
+        name : str
+            The name of the block
+        func_name : Optional[str] = None
+            The name of the function
+
+        Returns
+        -------
+        block : BlockRV
+            The block retrieved
+            IndexError is raised if 0 or multiple blocks exist with the specific name.
+        """
+        return _ffi_api.GetBlockRealize(self, block)  # type: ignore # pylint: disable=no-member
 
     @type_checked
     def get_loops(self, block: Union[BlockRV, str]) -> List[LoopRV]:

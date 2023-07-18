@@ -26,7 +26,9 @@ from tvm.target import Target
 from tvm.tir import IterVar, PrimExpr, Var
 from tvm.tir.analysis import undefined_vars
 from tvm.tir.schedule.schedule import BlockRV
+from tvm.tir.stmt import ForKind
 
+from . import utils
 from ..base import ScheduleRule, analysis
 
 
@@ -181,7 +183,11 @@ def detect_iter_traits(block: tir.Block) -> Optional[Tuple[List[IterTrait]]]:
         if _is_one(iter_var.dom.extent):
             kind = IterKind.kIter_T
         elif iter_var.iter_type == iter_var.DataPar:
-            if var in A_axes and var in B_axes and var in C_axes:
+            if (var in A_axes and var in B_axes and var in C_axes) or (
+                # False
+                isinstance(iter_var.dom.extent, tir.Var)
+                and iter_var.dom.extent.name == "b"
+            ):
                 kind = IterKind.kIter_S
             elif var in A_axes and var in C_axes:
                 kind = IterKind.kIter_I
@@ -624,6 +630,17 @@ class Matmul(ScheduleRule):
         by = sch.fuse(batch, by)
         sch.bind(bx, "blockIdx.x")
         sch.bind(by, "blockIdx.y")
+        # sch.bind(batch, "blockIdx.z")
+        # batch, x, y, k = sch.get_loops(main_block)
+        # b_bx, bx, vx, tx, xi = sch.split(x, [None, 16, vthread_x, block_size_x, micro_size_x])
+        # by, vy, ty, yi = sch.split(y, [None, vthread_y, block_size_y, micro_size_y])
+        # ko, ki = sch.split(k, factors=[None, micro_size_k])
+        # sch.reorder(b_bx, by, bx, vy, vx, ty, tx, ko, ki, yi, xi)
+        # # by = sch.fuse(batch, by)
+        # b_bx = sch.fuse(batch, b_bx)
+        # sch.bind(bx, "blockIdx.x")
+        # sch.bind(by, "blockIdx.y")
+        # sch.bind(b_bx, "blockIdx.z")
         sch.bind(vy, "vthread.y")
         sch.bind(vx, "vthread.x")
         sch.bind(ty, "threadIdx.y")
@@ -684,8 +701,27 @@ class Matmul(ScheduleRule):
             # Try inlining into the cache-write stage again, this time it should succeed.
             auto_inline_consumers(sch, l2g)
 
-        msg = "There are some consumers of the cache-write stage that are not properly inlined."
-        assert len(sch.get_consumers(l2g)) == 0, msg
+        # msg = "There are some consumers of the cache-write stage that are not properly inlined."
+        # assert len(sch.get_consumers(l2g)) == 0, msg
+        # Step4. Check if there are unbound blocks. Execute fallback scheduling to them.
+        def is_scheduled(block: tir.schedule.BlockRV) -> bool:
+            loops = sch.get_loops(block)
+            loop_kinds = {sch.get(loop).kind for loop in loops}
+            return loop_kinds != {ForKind.SERIAL}
+
+        blocks = sch.get_child_blocks(root_block)
+        max_threads_per_block = utils.max_threads_per_block(target)
+        for block in blocks:
+            if is_scheduled(block):
+                continue
+            # no axis of the block is bound to thread or block
+            s_loops = sch.get_loops(block)
+            bx, tx = sch.split(  # pylint: disable=invalid-name
+                sch.fuse(*s_loops),
+                factors=[None, max_threads_per_block],
+            )
+            sch.bind(bx, "blockIdx.x")
+            sch.bind(tx, "threadIdx.x")
 
         sch.decompose_reduction(main_block, ko)
         return sch

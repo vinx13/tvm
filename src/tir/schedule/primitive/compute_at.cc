@@ -703,7 +703,7 @@ void ComputeAtOrReverseComputeAtImpl(ScheduleState self, const StmtSRef& block_s
   NotInSameScopeError::CheckAndBindLoopDomain(self, block_sref, loop_sref, scope_root_sref,
                                               analyzer);
   // Check condition 4): `block` is not an output block
-  if (is_compute_at) {
+  if (is_compute_at && self->enable_check) {
     CheckNotOutputBlock(self, block_sref, scope_root_sref);
   }
   // Step 2. Plan for the removal of `block`

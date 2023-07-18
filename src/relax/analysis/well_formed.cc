@@ -91,6 +91,7 @@ class WellFormedChecker : public relax::ExprVisitor,
       // visit relax.Function
       if (auto* n = it.second.as<FunctionNode>()) {
         Function func = GetRef<Function>(n);
+        well_formed_checker.cur_visited_gvar_ = it.first;
         well_formed_checker.CheckGlobalVarAndGsymbolConsistency(it.first, func);
         well_formed_checker.VisitExpr(func);
       }
@@ -121,7 +122,8 @@ class WellFormedChecker : public relax::ExprVisitor,
 
   void Malformed(Diagnostic diag) {
     well_formed_ = false;
-    LOG(WARNING) << "This IR is not well formed: " << diag->message;
+    LOG(WARNING) << "This IR is not well formed: In function " << cur_visited_gvar_->name_hint
+                 << ", " << diag->message;
   }
 
   void CheckGlobalVarAndGsymbolConsistency(GlobalVar var, Function func) {
@@ -537,6 +539,7 @@ class WellFormedChecker : public relax::ExprVisitor,
   bool well_formed_ = true;
   bool is_dataflow_;
   // Current visited function.
+  GlobalVar cur_visited_gvar_;
   const FunctionNode* cur_visited_func_;
   // Current visit mode.
   VisitMode mode_ = VisitMode::kDefault;
