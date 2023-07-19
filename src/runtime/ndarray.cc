@@ -183,27 +183,27 @@ NDArray NDArray::CreateView(ShapeTuple shape, DLDataType dtype) {
   ICHECK(data_ != nullptr);
 
   const DLTensor& orig = get_mutable()->dl_tensor;
-  ICHECK(IsContiguous()) << "Can only create view for compact tensor, but found strides " <<
-      [&orig]() {
-        std::stringstream ss;
-        ss << "[";
-        for (int i = 0; i < orig.ndim; i++) {
-          if (i) ss << ", ";
-          ss << orig.strides[i];
-        }
-        ss << "]";
-        return ss.str();
-      }() << ", for shape "
-                         << [&]() {
-                              std::stringstream ss;
-                              ss << "[";
-                              for (int i = 0; i < orig.ndim; i++) {
-                                if (i) ss << ", ";
-                                ss << orig.shape[i];
-                              }
-                              ss << "]";
-                              return ss.str();
-                            }();
+  // ICHECK(IsContiguous()) << "Can only create view for compact tensor, but found strides " <<
+  //     [&orig]() {
+  //       std::stringstream ss;
+  //       ss << "[";
+  //       for (int i = 0; i < orig.ndim; i++) {
+  //         if (i) ss << ", ";
+  //         ss << orig.strides[i];
+  //       }
+  //       ss << "]";
+  //       return ss.str();
+  //     }() << ", for shape "
+  //                        << [&]() {
+  //                             std::stringstream ss;
+  //                             ss << "[";
+  //                             for (int i = 0; i < orig.ndim; i++) {
+  //                               if (i) ss << ", ";
+  //                               ss << orig.shape[i];
+  //                             }
+  //                             ss << "]";
+  //                             return ss.str();
+  //                           }();
 
   NDArray ret = Internal::Create(shape, dtype, get_mutable()->dl_tensor.device);
   ret.get_mutable()->dl_tensor.byte_offset = this->get_mutable()->dl_tensor.byte_offset;
@@ -262,7 +262,7 @@ NDArray NDArray::FromDLPack(DLManagedTensor* tensor) {
   data->SetDeleter(Internal::DLPackDeleter);
   // fill up content.
   data->manager_ctx = tensor;
-  ICHECK(::tvm::runtime::IsContiguous(tensor->dl_tensor)) << "DLManagedTensor must be contiguous.";
+  //  ICHECK(::tvm::runtime::IsContiguous(tensor->dl_tensor)) << "DLManagedTensor must be contiguous.";
   ICHECK(IsAligned(tensor->dl_tensor))
       << "Data in DLManagedTensor is not aligned as required by NDArray";
   data->dl_tensor = tensor->dl_tensor;

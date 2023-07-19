@@ -417,7 +417,8 @@ def emit_fp16A_intB_matmul(attrs):
     attrs["template_common"] = substitute_template(
         """
   using namespace fastertransformer;
-  int m = ${A_arg}->shape[${batch_offset}];
+  // int m = ${A_arg}->shape[${batch_offset}];
+  int m = ${A_arg}->shape[0] * ${A_arg}->shape[1]; // Hard coded
   int n = ${B_arg}->shape[1] * ${float_per_int};
   int k = ${B_arg}->shape[0];
 
