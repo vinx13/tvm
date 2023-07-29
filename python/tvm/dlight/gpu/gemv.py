@@ -250,6 +250,9 @@ class GEMV(ScheduleRule):
                 cache = sch.cache_read(rf, index, "shared")
                 sch.compute_at(cache, unit, preserve_unit_loops=True)
                 fused = sch.fuse(*sch.get_loops(cache)[5:])
+                vec_len = vec_bytes // type_bytes
+                # avoid predication after splitting
+                vec_len = min(len_r // len_ty // len_tx, vec_len)
                 _, _ty, _tx, _vec = sch.split(
                     fused, [None, len_ty, len_tx, vec_bytes // type_bytes]
                 )
