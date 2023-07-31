@@ -254,7 +254,7 @@ class GEMV(ScheduleRule):
                 # avoid predication after splitting
                 vec_len = min(len_r // len_ty // len_tx, vec_len)
                 _, _ty, _tx, _vec = sch.split(
-                    fused, [None, len_ty, len_tx, vec_bytes // type_bytes]
+                    fused, [None, len_ty, len_tx, vec_len]
                 )
                 sch.bind(_ty, "threadIdx.y")
                 sch.bind(_tx, "threadIdx.x")
