@@ -628,7 +628,6 @@ class MatmulTensorization(ScheduleRule):
         k0, k1 = sch.split(k, factors=k_factors)
 
         sch.reorder(i0, j0, i1, j1, k0, i2, j2, k1, i3, j3)
-        sch.mod.show()
         block_axis = sch.fuse(batch, i0, j0, i1, j1)
 
         sch.bind(block_axis, "blockIdx.x")
