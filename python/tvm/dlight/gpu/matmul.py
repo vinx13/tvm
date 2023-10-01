@@ -589,6 +589,9 @@ class MatmulTensorization(ScheduleRule):
         z_order_factor_m = get_z_order_factor(l2_size, input_k, dtype_a_bytes, input_m, block_m)
         z_order_factor_n = get_z_order_factor(l2_size, input_k, dtype_b_bytes, input_n, block_n)
 
+        # z_order_factor_m = [1, None]
+        # z_order_factor_n = [1, None]
+
         print(f"z_order_factor_m={z_order_factor_m}, z_order_factor_n={z_order_factor_n}")
 
         # Step 2. Padding for dynamic shape kernels
@@ -728,7 +731,8 @@ class MatmulTensorization(ScheduleRule):
         # sch.annotate(k0, ann_key="pragma_auto_unroll_max_step", ann_val=unroll_depth)
         sch.unroll(k0)
         # sch.annotate(k0, ann_key="pragma_unroll_explicit", ann_val=0)
-        # k00, k01 = sch.split(k0, factors=[None, 128])
+        # k00, k01 = sch.split(k0, factors=[None, 8])
+        # sch.annotate(k01, ann_key="pragma_unroll_explicit", ann_val=0)
         # sch.unroll(k01)
 
         # Tensorization by hardware intrinsics
@@ -739,8 +743,8 @@ class MatmulTensorization(ScheduleRule):
         intrin_group = get_wmma_intrin_group(
             load_scope="shared.dyn",
             store_scope="shared.dyn",
-            in_dtype="float16",
-            out_dtype="float32",
+            in_dtype=str(dtype_a),
+            out_dtype=str(dtype_c),
             trans_b=True,
         )
 
