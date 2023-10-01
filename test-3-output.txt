@@ -1,0 +1,1640 @@
+Running with b=1, m=512, k=4096, n=4096
+<schedule done>
+<build done>
+<correctness check done>
+Execution time summary:
+ mean (ms)   median (ms)    max (ms)     min (ms)     std (ms)
+   0.1209       0.1209       0.1209       0.1208       0.0001
+Op latency: 120.87674999999999 us, TFlops: 142.12715997079673
+<performance check done>
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'default_function_kernel' for 'sm_89'
+ptxas info    : Function properties for default_function_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 255 registers, 376 bytes cmem[0]
+<register usage check done>
+free(): invalid pointer
+
+Running with b=4, m=512, k=4096, n=4096
+<schedule done>
+<build done>
+<correctness check done>
+Execution time summary:
+ mean (ms)   median (ms)    max (ms)     min (ms)     std (ms)
+   0.4743       0.4743       0.4744       0.4741       0.0001
+Op latency: 474.295 us, TFlops: 144.88762634225534
+<performance check done>
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'default_function_kernel' for 'sm_89'
+ptxas info    : Function properties for default_function_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 255 registers, 376 bytes cmem[0]
+<register usage check done>
+free(): invalid pointer
+
+Running with b=6, m=512, k=4096, n=4096
+<schedule done>
+<build done>
+<correctness check done>
+Execution time summary:
+ mean (ms)   median (ms)    max (ms)     min (ms)     std (ms)
+   0.7156       0.7156       0.7162       0.7150       0.0004
+Op latency: 715.5721100000001 us, TFlops: 144.05147107256596
+<performance check done>
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'default_function_kernel' for 'sm_89'
+ptxas info    : Function properties for default_function_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 255 registers, 376 bytes cmem[0]
+<register usage check done>
+free(): invalid pointer
+
+Running with b=10, m=512, k=4096, n=4096
+<schedule done>
+<build done>
+<correctness check done>
+Execution time summary:
+ mean (ms)   median (ms)    max (ms)     min (ms)     std (ms)
+   1.1873       1.1880       1.1897       1.1848       0.0017
+Op latency: 1187.32189 us, TFlops: 144.69428491712557
+<performance check done>
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'default_function_kernel' for 'sm_89'
+ptxas info    : Function properties for default_function_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 255 registers, 376 bytes cmem[0]
+<register usage check done>
+free(): invalid pointer
+
+Running with b=4, m=512, k=4096, n=11008
+<schedule done>
+<build done>
+<correctness check done>
+Execution time summary:
+ mean (ms)   median (ms)    max (ms)     min (ms)     std (ms)
+   2.4459       2.4477       2.4522       2.4327       0.0066
+Op latency: 2445.8629799999994 us, TFlops: 75.50856087939972
+<performance check done>
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'default_function_kernel' for 'sm_89'
+ptxas info    : Function properties for default_function_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 255 registers, 376 bytes cmem[0]
+<register usage check done>
+free(): invalid pointer
+
+Running with b=4, m=512, k=11008, n=4096
+<schedule done>
+<build done>
+<correctness check done>
+Execution time summary:
+ mean (ms)   median (ms)    max (ms)     min (ms)     std (ms)
+   1.4068       1.4069       1.4079       1.4046       0.0009
+Op latency: 1406.7813899999999 us, TFlops: 131.2809474455729
+<performance check done>
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'default_function_kernel' for 'sm_89'
+ptxas info    : Function properties for default_function_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 255 registers, 376 bytes cmem[0]
+<register usage check done>
+free(): invalid pointer
+
+Running with b=1, m=512, k=4096, n=11008
+<schedule done>
+<build done>
+<correctness check done>
+Execution time summary:
+ mean (ms)   median (ms)    max (ms)     min (ms)     std (ms)
+   0.6844       0.6843       0.6852       0.6835       0.0005
+Op latency: 684.37019 us, TFlops: 67.4648006395486
+<performance check done>
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'default_function_kernel' for 'sm_89'
+ptxas info    : Function properties for default_function_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 255 registers, 376 bytes cmem[0]
+<register usage check done>
+free(): invalid pointer
+
+Running with b=1, m=512, k=11008, n=4096
+<schedule done>
+<build done>
+<correctness check done>
+Execution time summary:
+ mean (ms)   median (ms)    max (ms)     min (ms)     std (ms)
+   0.3487       0.3486       0.3495       0.3481       0.0004
+Op latency: 348.6943500000001 us, TFlops: 132.4108017006871
+<performance check done>
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'default_function_kernel' for 'sm_89'
+ptxas info    : Function properties for default_function_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 255 registers, 376 bytes cmem[0]
+<register usage check done>
+free(): invalid pointer
+
+Running with b=10, m=512, k=4096, n=11008
+<schedule done>
+<build done>
+<correctness check done>
+Execution time summary:
+ mean (ms)   median (ms)    max (ms)     min (ms)     std (ms)
+   5.8510       5.8432       5.8763       5.8390       0.0138
+Op latency: 5851.00794 us, TFlops: 78.91101653845986
+<performance check done>
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'default_function_kernel' for 'sm_89'
+ptxas info    : Function properties for default_function_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 255 registers, 376 bytes cmem[0]
+<register usage check done>
+free(): invalid pointer
+
+Running with b=10, m=512, k=11008, n=4096
+<schedule done>
+<build done>
+<correctness check done>
+Execution time summary:
+ mean (ms)   median (ms)    max (ms)     min (ms)     std (ms)
+   3.4502       3.4806       3.4838       3.3796       0.0422
+Op latency: 3450.2050200000003 us, TFlops: 133.8207386643939
+<performance check done>
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'default_function_kernel' for 'sm_89'
+ptxas info    : Function properties for default_function_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 255 registers, 376 bytes cmem[0]
+<register usage check done>
+free(): invalid pointer
+
+Running with b=1, m=512, k=128, n=4096
+<schedule done>
+<build done>
+<correctness check done>
+Execution time summary:
+ mean (ms)   median (ms)    max (ms)     min (ms)     std (ms)
+   0.0092       0.0091       0.0094       0.0090       0.0001
+Op latency: 9.164800000000001 us, TFlops: 58.57966480446927
+<performance check done>
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'default_function_kernel' for 'sm_89'
+ptxas info    : Function properties for default_function_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 250 registers, 376 bytes cmem[0]
+<register usage check done>
+free(): invalid pointer
+
+Running with b=1, m=512, k=64, n=4096
+<schedule done>
+<build done>
+<correctness check done>
+Execution time summary:
+ mean (ms)   median (ms)    max (ms)     min (ms)     std (ms)
+   0.0068       0.0068       0.0070       0.0068       0.0001
+Op latency: 6.842200000000002 us, TFlops: 39.232331121569075
+<performance check done>
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'default_function_kernel' for 'sm_89'
+ptxas info    : Function properties for default_function_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 210 registers, 376 bytes cmem[0]
+<register usage check done>
+free(): invalid pointer
+
+Running with b=1, m=512, k=16, n=4096
+<schedule done>
+<build done>
+<correctness check done>
+Execution time summary:
+ mean (ms)   median (ms)    max (ms)     min (ms)     std (ms)
+   0.0049       0.0049       0.0050       0.0049       0.0000
+Op latency: 4.9347 us, TFlops: 13.599380712100025
+<performance check done>
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'default_function_kernel' for 'sm_89'
+ptxas info    : Function properties for default_function_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 80 registers, 376 bytes cmem[0]
+<register usage check done>
+free(): invalid pointer
+
+Running with b=1, m=512, k=8, n=4096
+<schedule done>
+<build done>
+<correctness check done>
+Execution time summary:
+ mean (ms)   median (ms)    max (ms)     min (ms)     std (ms)
+   0.0050       0.0049       0.0051       0.0048       0.0001
+Op latency: 4.95708 us, TFlops: 6.76899142236962
+<performance check done>
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'default_function_kernel' for 'sm_89'
+ptxas info    : Function properties for default_function_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 80 registers, 376 bytes cmem[0]
+<register usage check done>
+free(): invalid pointer
+
+Running with b=1, m=128, k=4096, n=4096
+<schedule done>
+<build done>
+Traceback (most recent call last):
+  File "/home/yxdong/llm/tvm-develop/other-repos/AD-Example/matmul_test/test-3-tool.py", line 136, in <module>
+    assert np.allclose(torch_res.detach().cpu().numpy(), tvm_inputs[2].numpy(), atol=atol, rtol=rtol)
+AssertionError
+free(): invalid pointer
+
+Running with b=1, m=64, k=4096, n=4096
+<schedule done>
+<build done>
+Traceback (most recent call last):
+  File "/home/yxdong/llm/tvm-develop/other-repos/AD-Example/matmul_test/test-3-tool.py", line 136, in <module>
+    assert np.allclose(torch_res.detach().cpu().numpy(), tvm_inputs[2].numpy(), atol=atol, rtol=rtol)
+AssertionError
+free(): invalid pointer
+
+Running with b=1, m=16, k=4096, n=4096
+<schedule done>
+<build done>
+Traceback (most recent call last):
+  File "/home/yxdong/llm/tvm-develop/other-repos/AD-Example/matmul_test/test-3-tool.py", line 136, in <module>
+    assert np.allclose(torch_res.detach().cpu().numpy(), tvm_inputs[2].numpy(), atol=atol, rtol=rtol)
+AssertionError
+free(): invalid pointer
+
+Running with b=1, m=8, k=4096, n=4096
+<schedule done>
+<build done>
+Traceback (most recent call last):
+  File "/home/yxdong/llm/tvm-develop/other-repos/AD-Example/matmul_test/test-3-tool.py", line 136, in <module>
+    assert np.allclose(torch_res.detach().cpu().numpy(), tvm_inputs[2].numpy(), atol=atol, rtol=rtol)
+AssertionError
+free(): invalid pointer
+
+Running with b=1, m=512, k=4096, n=128
+<schedule done>
+<build done>
+Traceback (most recent call last):
+  File "/home/yxdong/llm/tvm-develop/other-repos/AD-Example/matmul_test/test-3-tool.py", line 136, in <module>
+    assert np.allclose(torch_res.detach().cpu().numpy(), tvm_inputs[2].numpy(), atol=atol, rtol=rtol)
+AssertionError
+free(): invalid pointer
+
+Running with b=1, m=512, k=4096, n=64
+<schedule done>
+<build done>
+Traceback (most recent call last):
+  File "/home/yxdong/llm/tvm-develop/other-repos/AD-Example/matmul_test/test-3-tool.py", line 136, in <module>
+    assert np.allclose(torch_res.detach().cpu().numpy(), tvm_inputs[2].numpy(), atol=atol, rtol=rtol)
+AssertionError
+free(): invalid pointer
+Running with b=1, m=512, k=4096, n=16
+<schedule done>
+<build done>
+Traceback (most recent call last):
+  File "/home/yxdong/llm/tvm-develop/other-repos/AD-Example/matmul_test/test-3-tool.py", line 136, in <module>
+    assert np.allclose(torch_res.detach().cpu().numpy(), tvm_inputs[2].numpy(), atol=atol, rtol=rtol)
+AssertionError
+free(): invalid pointer
+
+Running with b=1, m=512, k=4096, n=8
+<schedule done>
+<build done>
+Traceback (most recent call last):
+  File "/home/yxdong/llm/tvm-develop/other-repos/AD-Example/matmul_test/test-3-tool.py", line 136, in <module>
+    assert np.allclose(torch_res.detach().cpu().numpy(), tvm_inputs[2].numpy(), atol=atol, rtol=rtol)
+AssertionError
+free(): invalid pointer
+
+Running with b=1, m=128, k=32, n=128
+<schedule done>
+<build done>
+<correctness check done>
+Execution time summary:
+ mean (ms)   median (ms)    max (ms)     min (ms)     std (ms)
+   0.0040       0.0040       0.0046       0.0039       0.0002
+Op latency: 4.012079999999999 us, TFlops: 0.26135470877948597
+<performance check done>
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'default_function_kernel' for 'sm_89'
+ptxas info    : Function properties for default_function_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 93 registers, 376 bytes cmem[0]
+<register usage check done>
+free(): invalid pointer
+
+Running with b=1, m=16, k=16, n=16
+<schedule done>
+<build done>
+<correctness check done>
+Execution time summary:
+ mean (ms)   median (ms)    max (ms)     min (ms)     std (ms)
+   0.0030       0.0029       0.0040       0.0028       0.0003
+Op latency: 2.96575 us, TFlops: 0.0027622018039281803
+<performance check done>
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'default_function_kernel' for 'sm_89'
+ptxas info    : Function properties for default_function_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 88 registers, 376 bytes cmem[0]
+<register usage check done>
+free(): invalid pointer
+
+Running with b=1, m=8, k=8, n=8
+<schedule done>
+<build done>
+<correctness check done>
+Execution time summary:
+ mean (ms)   median (ms)    max (ms)     min (ms)     std (ms)
+   0.0039       0.0039       0.0044       0.0038       0.0002
+Op latency: 3.918010000000001 us, TFlops: 0.00026135716856261204
+<performance check done>
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'default_function_kernel' for 'sm_89'
+ptxas info    : Function properties for default_function_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 88 registers, 376 bytes cmem[0]
+<register usage check done>
+free(): invalid pointer
+
+Running with b=6, m=513, k=4097, n=4097
+<schedule done>
+<build done>
+Traceback (most recent call last):
+  File "/home/yxdong/llm/tvm-develop/other-repos/AD-Example/matmul_test/test-3-tool.py", line 136, in <module>
+    assert np.allclose(torch_res.detach().cpu().numpy(), tvm_inputs[2].numpy(), atol=atol, rtol=rtol)
+AssertionError
+free(): invalid pointer
+
+Running with b=2, m=500, k=4000, n=4000
+<schedule done>
+<build done>
+<correctness check done>
+Execution time summary:
+ mean (ms)   median (ms)    max (ms)     min (ms)     std (ms)
+   0.2312       0.2312       0.2314       0.2311       0.0001
+Op latency: 231.22775000000004 us, TFlops: 138.3916939035215
+<performance check done>
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'default_function_kernel' for 'sm_89'
+ptxas info    : Function properties for default_function_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 251 registers, 376 bytes cmem[0]
+<register usage check done>
+free(): invalid pointer
+
+Running with b=1, m=128, k=32, n=127
+<schedule done>
+<build done>
+Traceback (most recent call last):
+  File "/home/yxdong/llm/tvm-develop/other-repos/AD-Example/matmul_test/test-3-tool.py", line 136, in <module>
+    assert np.allclose(torch_res.detach().cpu().numpy(), tvm_inputs[2].numpy(), atol=atol, rtol=rtol)
+AssertionError
+free(): invalid pointer
+
+Running with b=1, m=128, k=32, n=129
+<schedule done>
+<build done>
+Traceback (most recent call last):
+  File "/home/yxdong/llm/tvm-develop/other-repos/AD-Example/matmul_test/test-3-tool.py", line 136, in <module>
+    assert np.allclose(torch_res.detach().cpu().numpy(), tvm_inputs[2].numpy(), atol=atol, rtol=rtol)
+AssertionError
+free(): invalid pointer
+
+# after correction
+Running with b=1, m=128, k=4096, n=4096
+<schedule done>
+<build done>
+<correctness check done>
+Execution time summary:
+ mean (ms)   median (ms)    max (ms)     min (ms)     std (ms)
+   0.1184       0.1183       0.1188       0.1182       0.0002
+Op latency: 118.3532 us, TFlops: 36.289405744838334
+<performance check done>
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'default_function_kernel' for 'sm_89'
+ptxas info    : Function properties for default_function_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 255 registers, 376 bytes cmem[0]
+<register usage check done>
+free(): invalid pointer
+
+Running with b=1, m=64, k=4096, n=4096
+<schedule done>
+<build done>
+<correctness check done>
+Execution time summary:
+ mean (ms)   median (ms)    max (ms)     min (ms)     std (ms)
+   0.1256       0.1256       0.1261       0.1252       0.0003
+Op latency: 125.55356000000002 us, TFlops: 17.104123913332284
+<performance check done>
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'default_function_kernel' for 'sm_89'
+ptxas info    : Function properties for default_function_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 238 registers, 376 bytes cmem[0]
+<register usage check done>
+free(): invalid pointer
+
+Running with b=1, m=16, k=4096, n=4096
+<schedule done>
+<build done>
+<correctness check done>
+Execution time summary:
+ mean (ms)   median (ms)    max (ms)     min (ms)     std (ms)
+   0.1165       0.1164       0.1165       0.1164       0.0000
+Op latency: 116.45469999999999 us, TFlops: 4.610126615757029
+<performance check done>
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'default_function_kernel' for 'sm_89'
+ptxas info    : Function properties for default_function_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 251 registers, 376 bytes cmem[0]
+<register usage check done>
+free(): invalid pointer
+
+Running with b=1, m=8, k=4096, n=4096
+<schedule done>
+<build done>
+<correctness check done>
+Execution time summary:
+ mean (ms)   median (ms)    max (ms)     min (ms)     std (ms)
+   0.1165       0.1164       0.1165       0.1164       0.0000
+Op latency: 116.46079 us, TFlops: 2.304942770867345
+<performance check done>
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'default_function_kernel' for 'sm_89'
+ptxas info    : Function properties for default_function_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 251 registers, 376 bytes cmem[0]
+<register usage check done>
+free(): invalid pointer
+
+Running with b=1, m=512, k=4096, n=128
+<schedule done>
+<build done>
+<correctness check done>
+Execution time summary:
+ mean (ms)   median (ms)    max (ms)     min (ms)     std (ms)
+   0.1181       0.1181       0.1183       0.1181       0.0001
+Op latency: 118.13853 us, TFlops: 4.544418421322832
+<performance check done>
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'default_function_kernel' for 'sm_89'
+ptxas info    : Function properties for default_function_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 253 registers, 376 bytes cmem[0]
+<register usage check done>
+free(): invalid pointer
+
+Running with b=1, m=512, k=4096, n=64
+<schedule done>
+<build done>
+<correctness check done>
+Execution time summary:
+ mean (ms)   median (ms)    max (ms)     min (ms)     std (ms)
+   0.1139       0.1139       0.1140       0.1138       0.0001
+Op latency: 113.85303000000002 us, TFlops: 2.357736601300817
+<performance check done>
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'default_function_kernel' for 'sm_89'
+ptxas info    : Function properties for default_function_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 250 registers, 376 bytes cmem[0]
+<register usage check done>
+free(): invalid pointer
+
+Running with b=1, m=512, k=4096, n=16
+<schedule done>
+<build done>
+<correctness check done>
+Execution time summary:
+ mean (ms)   median (ms)    max (ms)     min (ms)     std (ms)
+   0.1164       0.1164       0.1165       0.1163       0.0001
+Op latency: 116.41728 us, TFlops: 0.5764510560631549
+<performance check done>
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'default_function_kernel' for 'sm_89'
+ptxas info    : Function properties for default_function_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 255 registers, 376 bytes cmem[0]
+<register usage check done>
+free(): invalid pointer
+
+Running with b=1, m=512, k=4096, n=8
+<schedule done>
+<build done>
+<correctness check done>
+Execution time summary:
+ mean (ms)   median (ms)    max (ms)     min (ms)     std (ms)
+   0.1225       0.1224       0.1230       0.1223       0.0002
+Op latency: 122.46973000000001 us, TFlops: 0.2739814319832337
+<performance check done>
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'default_function_kernel' for 'sm_89'
+ptxas info    : Function properties for default_function_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 252 registers, 376 bytes cmem[0]
+<register usage check done>
+free(): invalid pointer
+
+Running with b=6, m=513, k=4097, n=4097
+<schedule done>
+<build done>
+<correctness check done>
+Execution time summary:
+ mean (ms)   median (ms)    max (ms)     min (ms)     std (ms)
+   1.4665       1.4660       1.4682       1.4650       0.0012
+Op latency: 1466.47514 us, TFlops: 70.46214080656014
+<performance check done>
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'default_function_kernel' for 'sm_89'
+ptxas info    : Function properties for default_function_kernel
+    64 bytes stack frame, 96 bytes spill stores, 96 bytes spill loads
+ptxas info    : Used 255 registers, 376 bytes cmem[0]
+<register usage check done>
+free(): invalid pointer
+
+Running with b=1, m=128, k=32, n=127
+<schedule done>
+<build done>
+<correctness check done>
+Execution time summary:
+ mean (ms)   median (ms)    max (ms)     min (ms)     std (ms)
+   0.0067       0.0067       0.0068       0.0066       0.0000
+Op latency: 6.6831700000000005 us, TFlops: 0.15567223338625233
+<performance check done>
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'default_function_kernel' for 'sm_89'
+ptxas info    : Function properties for default_function_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 93 registers, 376 bytes cmem[0]
+<register usage check done>
+free(): invalid pointer
+
+Running with b=1, m=128, k=32, n=129
+<schedule done>
+<build done>
+<correctness check done>
+Execution time summary:
+ mean (ms)   median (ms)    max (ms)     min (ms)     std (ms)
+   0.0069       0.0069       0.0071       0.0068       0.0001
+Op latency: 6.883510000000001 us, TFlops: 0.15352167716760778
+<performance check done>
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'default_function_kernel' for 'sm_89'
+ptxas info    : Function properties for default_function_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 93 registers, 376 bytes cmem[0]
+<register usage check done>
+free(): invalid pointer
+
+# new gen
+
+Running with b=1, m=512, k=4096, n=4096
+z_order_factor_m=[None, 4], z_order_factor_n=[None, 16]
+<schedule done>
+<build done>
+<correctness check done>
+Execution time summary:
+ mean (ms)   median (ms)    max (ms)     min (ms)     std (ms)
+   0.1226       0.1226       0.1229       0.1224       0.0002
+Op latency: 122.60955999999999 us, TFlops: 140.11851265105267
+<performance check done>
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'default_function_kernel' for 'sm_89'
+ptxas info    : Function properties for default_function_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 254 registers, 376 bytes cmem[0]
+<register usage check done>
+free(): invalid pointer
+
+Running with b=4, m=512, k=4096, n=4096
+z_order_factor_m=[None, 16], z_order_factor_n=[None, 16]
+<schedule done>
+<build done>
+<correctness check done>
+Execution time summary:
+ mean (ms)   median (ms)    max (ms)     min (ms)     std (ms)
+   0.4788       0.4787       0.4790       0.4785       0.0001
+Op latency: 478.76854 us, TFlops: 143.53381852533587
+<performance check done>
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'default_function_kernel' for 'sm_89'
+ptxas info    : Function properties for default_function_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 254 registers, 376 bytes cmem[0]
+<register usage check done>
+free(): invalid pointer
+
+Running with b=6, m=512, k=4096, n=4096
+z_order_factor_m=[None, 24], z_order_factor_n=[None, 16]
+<schedule done>
+<build done>
+<correctness check done>
+Execution time summary:
+ mean (ms)   median (ms)    max (ms)     min (ms)     std (ms)
+   0.7139       0.7139       0.7141       0.7138       0.0001
+Op latency: 713.9315099999999 us, TFlops: 144.3824984052042
+<performance check done>
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'default_function_kernel' for 'sm_89'
+ptxas info    : Function properties for default_function_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 255 registers, 376 bytes cmem[0]
+<register usage check done>
+free(): invalid pointer
+
+Running with b=10, m=512, k=4096, n=4096
+z_order_factor_m=[None, 20], z_order_factor_n=[None, 16]
+<schedule done>
+<build done>
+<correctness check done>
+Execution time summary:
+ mean (ms)   median (ms)    max (ms)     min (ms)     std (ms)
+   1.1917       1.1918       1.1920       1.1909       0.0003
+Op latency: 1191.6684 us, TFlops: 144.1665247144256
+<performance check done>
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'default_function_kernel' for 'sm_89'
+ptxas info    : Function properties for default_function_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 255 registers, 376 bytes cmem[0]
+<register usage check done>
+free(): invalid pointer
+
+Running with b=4, m=512, k=4096, n=11008
+z_order_factor_m=[None, 16], z_order_factor_n=[None, 22]
+<schedule done>
+<build done>
+<correctness check done>
+Execution time summary:
+ mean (ms)   median (ms)    max (ms)     min (ms)     std (ms)
+   1.3335       1.3335       1.3338       1.3330       0.0002
+Op latency: 1333.4709799999998 us, TFlops: 138.498397413943
+<performance check done>
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'default_function_kernel' for 'sm_89'
+ptxas info    : Function properties for default_function_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 255 registers, 376 bytes cmem[0]
+<register usage check done>
+free(): invalid pointer
+
+Running with b=4, m=512, k=11008, n=4096
+z_order_factor_m=[None, 8], z_order_factor_n=[None, 8]
+<schedule done>
+<build done>
+<correctness check done>
+Execution time summary:
+ mean (ms)   median (ms)    max (ms)     min (ms)     std (ms)
+   1.5609       1.5611       1.5619       1.5589       0.0009
+Op latency: 1560.90427 us, TFlops: 118.31833462022627
+<performance check done>
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'default_function_kernel' for 'sm_89'
+ptxas info    : Function properties for default_function_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 255 registers, 376 bytes cmem[0]
+<register usage check done>
+free(): invalid pointer
+
+Running with b=1, m=512, k=4096, n=11008
+z_order_factor_m=[None, 4], z_order_factor_n=[None, 22]
+<schedule done>
+<build done>
+<correctness check done>
+Execution time summary:
+ mean (ms)   median (ms)    max (ms)     min (ms)     std (ms)
+   0.3729       0.3729       0.3732       0.3728       0.0001
+Op latency: 372.93438 us, TFlops: 123.80434979472797
+<performance check done>
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'default_function_kernel' for 'sm_89'
+ptxas info    : Function properties for default_function_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 255 registers, 376 bytes cmem[0]
+<register usage check done>
+free(): invalid pointer
+
+Running with b=1, m=512, k=11008, n=4096
+z_order_factor_m=[None, 4], z_order_factor_n=[None, 8]
+<schedule done>
+<build done>
+<correctness check done>
+Execution time summary:
+ mean (ms)   median (ms)    max (ms)     min (ms)     std (ms)
+   0.4130       0.4129       0.4158       0.4115       0.0012
+Op latency: 413.00827 us, TFlops: 111.7917043937159
+<performance check done>
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'default_function_kernel' for 'sm_89'
+ptxas info    : Function properties for default_function_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 255 registers, 376 bytes cmem[0]
+<register usage check done>
+free(): invalid pointer
+
+Running with b=10, m=512, k=4096, n=11008
+z_order_factor_m=[None, 20], z_order_factor_n=[None, 22]
+<schedule done>
+<build done>
+<correctness check done>
+Execution time summary:
+ mean (ms)   median (ms)    max (ms)     min (ms)     std (ms)
+   3.3350       3.3347       3.3369       3.3343       0.0007
+Op latency: 3334.9554500000004 us, TFlops: 138.44532295626317
+<performance check done>
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'default_function_kernel' for 'sm_89'
+ptxas info    : Function properties for default_function_kernel
+    24 bytes stack frame, 28 bytes spill stores, 28 bytes spill loads
+ptxas info    : Used 255 registers, 376 bytes cmem[0]
+<register usage check done>
+free(): invalid pointer
+
+Running with b=10, m=512, k=11008, n=4096
+z_order_factor_m=[None, 8], z_order_factor_n=[None, 8]
+<schedule done>
+<build done>
+<correctness check done>
+Execution time summary:
+ mean (ms)   median (ms)    max (ms)     min (ms)     std (ms)
+   3.9032       3.9034       3.9048       3.9014       0.0011
+Op latency: 3903.2258900000006 us, TFlops: 118.28907609546522
+<performance check done>
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'default_function_kernel' for 'sm_89'
+ptxas info    : Function properties for default_function_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 255 registers, 376 bytes cmem[0]
+<register usage check done>
+free(): invalid pointer
+
+Running with b=1, m=512, k=128, n=4096
+z_order_factor_m=[None, 4], z_order_factor_n=[None, 32]
+<schedule done>
+<build done>
+<correctness check done>
+Execution time summary:
+ mean (ms)   median (ms)    max (ms)     min (ms)     std (ms)
+   0.0088       0.0087       0.0090       0.0086       0.0001
+Op latency: 8.760580000000001 us, TFlops: 61.28257626778135
+<performance check done>
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'default_function_kernel' for 'sm_89'
+ptxas info    : Function properties for default_function_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 250 registers, 376 bytes cmem[0]
+<register usage check done>
+free(): invalid pointer
+
+Running with b=1, m=512, k=64, n=4096
+z_order_factor_m=[None, 4], z_order_factor_n=[None, 32]
+<schedule done>
+<build done>
+<correctness check done>
+Execution time summary:
+ mean (ms)   median (ms)    max (ms)     min (ms)     std (ms)
+   0.0069       0.0069       0.0073       0.0069       0.0001
+Op latency: 6.945600000000001 us, TFlops: 38.648274591108034
+<performance check done>
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'default_function_kernel' for 'sm_89'
+ptxas info    : Function properties for default_function_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 210 registers, 376 bytes cmem[0]
+<register usage check done>
+free(): invalid pointer
+
+Running with b=1, m=512, k=16, n=4096
+z_order_factor_m=[None, 4], z_order_factor_n=[None, 32]
+<schedule done>
+<build done>
+<correctness check done>
+Execution time summary:
+ mean (ms)   median (ms)    max (ms)     min (ms)     std (ms)
+   0.0053       0.0053       0.0054       0.0052       0.0001
+Op latency: 5.3147899999999995 us, TFlops: 12.6268138534166
+<performance check done>
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'default_function_kernel' for 'sm_89'
+ptxas info    : Function properties for default_function_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 90 registers, 376 bytes cmem[0]
+<register usage check done>
+free(): invalid pointer
+
+Running with b=1, m=512, k=8, n=4096
+z_order_factor_m=[None, 4], z_order_factor_n=[None, 32]
+<schedule done>
+<build done>
+<correctness check done>
+Execution time summary:
+ mean (ms)   median (ms)    max (ms)     min (ms)     std (ms)
+   0.0050       0.0050       0.0052       0.0049       0.0001
+Op latency: 5.012750000000001 us, TFlops: 6.693817166226122
+<performance check done>
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'default_function_kernel' for 'sm_89'
+ptxas info    : Function properties for default_function_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 90 registers, 376 bytes cmem[0]
+<register usage check done>
+free(): invalid pointer
+
+Running with b=1, m=128, k=4096, n=4096
+z_order_factor_m=[None, 1], z_order_factor_n=[None, 16]
+<schedule done>
+<build done>
+<correctness check done>
+Execution time summary:
+ mean (ms)   median (ms)    max (ms)     min (ms)     std (ms)
+   0.1192       0.1193       0.1195       0.1188       0.0003
+Op latency: 119.18074999999999 us, TFlops: 36.03742463443132
+<performance check done>
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'default_function_kernel' for 'sm_89'
+ptxas info    : Function properties for default_function_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 255 registers, 376 bytes cmem[0]
+<register usage check done>
+free(): invalid pointer
+
+Running with b=1, m=64, k=4096, n=4096
+z_order_factor_m=[None, 1], z_order_factor_n=[None, 16]
+<schedule done>
+<build done>
+<correctness check done>
+Execution time summary:
+ mean (ms)   median (ms)    max (ms)     min (ms)     std (ms)
+   0.1146       0.1146       0.1150       0.1145       0.0001
+Op latency: 114.58174000000001 us, TFlops: 18.74193608859492
+<performance check done>
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'default_function_kernel' for 'sm_89'
+ptxas info    : Function properties for default_function_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 254 registers, 376 bytes cmem[0]
+<register usage check done>
+free(): invalid pointer
+
+Running with b=1, m=16, k=4096, n=4096
+z_order_factor_m=[None, 1], z_order_factor_n=[None, 16]
+<schedule done>
+<build done>
+<correctness check done>
+Execution time summary:
+ mean (ms)   median (ms)    max (ms)     min (ms)     std (ms)
+   0.1155       0.1154       0.1158       0.1154       0.0001
+Op latency: 115.48406999999999 us, TFlops: 4.648874186716835
+<performance check done>
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'default_function_kernel' for 'sm_89'
+ptxas info    : Function properties for default_function_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 255 registers, 376 bytes cmem[0]
+<register usage check done>
+free(): invalid pointer
+
+Running with b=1, m=8, k=4096, n=4096
+z_order_factor_m=[None, 1], z_order_factor_n=[None, 16]
+<schedule done>
+<build done>
+<correctness check done>
+Execution time summary:
+ mean (ms)   median (ms)    max (ms)     min (ms)     std (ms)
+   0.1149       0.1148       0.1150       0.1148       0.0001
+Op latency: 114.85181999999999 us, TFlops: 2.337232931963986
+<performance check done>
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'default_function_kernel' for 'sm_89'
+ptxas info    : Function properties for default_function_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 255 registers, 376 bytes cmem[0]
+<register usage check done>
+free(): invalid pointer
+
+Running with b=1, m=512, k=4096, n=128
+z_order_factor_m=[None, 4], z_order_factor_n=[None, 1]
+<schedule done>
+<build done>
+<correctness check done>
+Execution time summary:
+ mean (ms)   median (ms)    max (ms)     min (ms)     std (ms)
+   0.1189       0.1188       0.1191       0.1187       0.0001
+Op latency: 118.87769 us, TFlops: 4.516162048572781
+<performance check done>
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'default_function_kernel' for 'sm_89'
+ptxas info    : Function properties for default_function_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 253 registers, 376 bytes cmem[0]
+<register usage check done>
+free(): invalid pointer
+
+Running with b=1, m=512, k=4096, n=64
+z_order_factor_m=[None, 4], z_order_factor_n=[None, 1]
+<schedule done>
+<build done>
+<correctness check done>
+Execution time summary:
+ mean (ms)   median (ms)    max (ms)     min (ms)     std (ms)
+   0.1155       0.1155       0.1156       0.1153       0.0001
+Op latency: 115.46134999999998 us, TFlops: 2.32489448633677
+<performance check done>
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'default_function_kernel' for 'sm_89'
+ptxas info    : Function properties for default_function_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 252 registers, 376 bytes cmem[0]
+<register usage check done>
+free(): invalid pointer
+
+Running with b=1, m=512, k=4096, n=16
+z_order_factor_m=[None, 4], z_order_factor_n=[None, 1]
+<schedule done>
+<build done>
+<correctness check done>
+Execution time summary:
+ mean (ms)   median (ms)    max (ms)     min (ms)     std (ms)
+   0.1159       0.1159       0.1161       0.1157       0.0001
+Op latency: 115.89627 us, TFlops: 0.5790424834207347
+<performance check done>
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'default_function_kernel' for 'sm_89'
+ptxas info    : Function properties for default_function_kernel
+    8 bytes stack frame, 8 bytes spill stores, 8 bytes spill loads
+ptxas info    : Used 255 registers, 376 bytes cmem[0]
+<register usage check done>
+free(): invalid pointer
+
+Running with b=1, m=512, k=4096, n=8
+z_order_factor_m=[None, 4], z_order_factor_n=[None, 1]
+<schedule done>
+<build done>
+<correctness check done>
+Execution time summary:
+ mean (ms)   median (ms)    max (ms)     min (ms)     std (ms)
+   0.1158       0.1157       0.1161       0.1156       0.0002
+Op latency: 115.79740000000001 us, TFlops: 0.2897684403967619
+<performance check done>
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'default_function_kernel' for 'sm_89'
+ptxas info    : Function properties for default_function_kernel
+    16 bytes stack frame, 16 bytes spill stores, 12 bytes spill loads
+ptxas info    : Used 255 registers, 376 bytes cmem[0]
+<register usage check done>
+free(): invalid pointer
+
+Running with b=1, m=128, k=32, n=128
+z_order_factor_m=[None, 1], z_order_factor_n=[None, 1]
+<schedule done>
+<build done>
+<correctness check done>
+Execution time summary:
+ mean (ms)   median (ms)    max (ms)     min (ms)     std (ms)
+   0.0041       0.0041       0.0043       0.0039       0.0001
+Op latency: 4.10742 us, TFlops: 0.25528823446348314
+<performance check done>
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'default_function_kernel' for 'sm_89'
+ptxas info    : Function properties for default_function_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 93 registers, 376 bytes cmem[0]
+<register usage check done>
+free(): invalid pointer
+
+Running with b=1, m=16, k=16, n=16
+z_order_factor_m=[None, 1], z_order_factor_n=[None, 1]
+<schedule done>
+<build done>
+<correctness check done>
+Execution time summary:
+ mean (ms)   median (ms)    max (ms)     min (ms)     std (ms)
+   0.0030       0.0029       0.0033       0.0029       0.0001
+Op latency: 2.96572 us, TFlops: 0.002762229745222071
+<performance check done>
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'default_function_kernel' for 'sm_89'
+ptxas info    : Function properties for default_function_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 88 registers, 376 bytes cmem[0]
+<register usage check done>
+free(): invalid pointer
+
+Running with b=1, m=8, k=8, n=8
+z_order_factor_m=[None, 1], z_order_factor_n=[None, 1]
+<schedule done>
+<build done>
+<correctness check done>
+Execution time summary:
+ mean (ms)   median (ms)    max (ms)     min (ms)     std (ms)
+   0.0029       0.0029       0.0033       0.0028       0.0001
+Op latency: 2.89789 us, TFlops: 0.000353360548537039
+<performance check done>
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'default_function_kernel' for 'sm_89'
+ptxas info    : Function properties for default_function_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 88 registers, 376 bytes cmem[0]
+<register usage check done>
+free(): invalid pointer
+
+Running with b=6, m=513, k=4097, n=4097
+z_order_factor_m=[None, 13], z_order_factor_n=[None, 17]
+<schedule done>
+<build done>
+<correctness check done>
+Execution time summary:
+ mean (ms)   median (ms)    max (ms)     min (ms)     std (ms)
+   1.8351       1.8351       1.8356       1.8343       0.0004
+Op latency: 1835.0771 us, TFlops: 56.3087936762984
+<performance check done>
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'default_function_kernel' for 'sm_89'
+ptxas info    : Function properties for default_function_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 221 registers, 376 bytes cmem[0]
+<register usage check done>
+free(): invalid pointer
+
+Running with b=2, m=500, k=4000, n=4000
+z_order_factor_m=[None, 8], z_order_factor_n=[None, 16]
+<schedule done>
+<build done>
+<correctness check done>
+Execution time summary:
+ mean (ms)   median (ms)    max (ms)     min (ms)     std (ms)
+   0.2848       0.2848       0.2850       0.2847       0.0001
+Op latency: 284.78908 us, TFlops: 112.36385889515144
+<performance check done>
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'default_function_kernel' for 'sm_89'
+ptxas info    : Function properties for default_function_kernel
+    16 bytes stack frame, 20 bytes spill stores, 16 bytes spill loads
+ptxas info    : Used 255 registers, 376 bytes cmem[0]
+<register usage check done>
+free(): invalid pointer
+
+Running with b=1, m=128, k=32, n=127
+z_order_factor_m=[None, 1], z_order_factor_n=[None, 1]
+<schedule done>
+<build done>
+<correctness check done>
+Execution time summary:
+ mean (ms)   median (ms)    max (ms)     min (ms)     std (ms)
+   0.0068       0.0069       0.0069       0.0067       0.0001
+Op latency: 6.82047 us, TFlops: 0.15253846142567887
+<performance check done>
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'default_function_kernel' for 'sm_89'
+ptxas info    : Function properties for default_function_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 93 registers, 376 bytes cmem[0]
+<register usage check done>
+free(): invalid pointer
+
+Running with b=1, m=128, k=32, n=129
+z_order_factor_m=[None, 1], z_order_factor_n=[None, 2]
+<schedule done>
+<build done>
+<correctness check done>
+Execution time summary:
+ mean (ms)   median (ms)    max (ms)     min (ms)     std (ms)
+   0.0067       0.0067       0.0069       0.0066       0.0001
+Op latency: 6.70203 us, TFlops: 0.1576787928433624
+<performance check done>
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'default_function_kernel' for 'sm_89'
+ptxas info    : Function properties for default_function_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 93 registers, 376 bytes cmem[0]
+<register usage check done>
+free(): invalid pointer
+
+
+# 2nd new gen
+Running with b=1, m=512, k=4096, n=4096
+z_order_factor_m=[None, 4], z_order_factor_n=[None, 16]
+<schedule done>
+<build done>
+<correctness check done>
+Execution time summary:
+ mean (ms)   median (ms)    max (ms)     min (ms)     std (ms)  
+   0.1224       0.1226       0.1227       0.1219       0.0003                  
+Op latency: 122.39355000000002 us, TFlops: 140.36580509348735
+<performance check done>
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'default_function_kernel' for 'sm_89'
+ptxas info    : Function properties for default_function_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 255 registers, 376 bytes cmem[0]
+<register usage check done>
+free(): invalid pointer
+
+Running with b=4, m=512, k=4096, n=4096
+z_order_factor_m=[None, 16], z_order_factor_n=[None, 16]
+<schedule done>
+<build done>
+<correctness check done>
+Execution time summary:
+ mean (ms)   median (ms)    max (ms)     min (ms)     std (ms)  
+   0.4772       0.4771       0.4774       0.4770       0.0001                  
+Op latency: 477.15133 us, TFlops: 144.02029799644487
+<performance check done>
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'default_function_kernel' for 'sm_89'
+ptxas info    : Function properties for default_function_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 255 registers, 376 bytes cmem[0]
+<register usage check done>
+free(): invalid pointer
+
+Running with b=6, m=512, k=4096, n=4096
+z_order_factor_m=[None, 24], z_order_factor_n=[None, 16]
+<schedule done>
+<build done>
+<correctness check done>
+Execution time summary:
+ mean (ms)   median (ms)    max (ms)     min (ms)     std (ms)  
+   0.7142       0.7141       0.7150       0.7139       0.0003                  
+Op latency: 714.22013 us, TFlops: 144.32415270065266
+<performance check done>
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'default_function_kernel' for 'sm_89'
+ptxas info    : Function properties for default_function_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 255 registers, 376 bytes cmem[0]
+<register usage check done>
+free(): invalid pointer
+
+Running with b=10, m=512, k=4096, n=4096
+z_order_factor_m=[None, 20], z_order_factor_n=[None, 16]
+<schedule done>
+<build done>
+<correctness check done>
+Execution time summary:
+ mean (ms)   median (ms)    max (ms)     min (ms)     std (ms)  
+   1.1969       1.1961       1.2012       1.1955       0.0018                  
+Op latency: 1196.9465 us, TFlops: 143.53080262150397
+<performance check done>
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'default_function_kernel' for 'sm_89'
+ptxas info    : Function properties for default_function_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 255 registers, 376 bytes cmem[0]
+<register usage check done>
+free(): invalid pointer
+
+Running with b=4, m=512, k=4096, n=11008
+z_order_factor_m=[None, 16], z_order_factor_n=[None, 22]
+<schedule done>
+<build done>
+<correctness check done>
+Execution time summary:
+ mean (ms)   median (ms)    max (ms)     min (ms)     std (ms)  
+   1.3382       1.3380       1.3401       1.3349       0.0015                  
+Op latency: 1338.1637799999999 us, TFlops: 138.01269806301292
+<performance check done>
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'default_function_kernel' for 'sm_89'
+ptxas info    : Function properties for default_function_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 255 registers, 376 bytes cmem[0]
+<register usage check done>
+free(): invalid pointer
+
+Running with b=4, m=512, k=11008, n=4096
+z_order_factor_m=[None, 8], z_order_factor_n=[None, 8]
+<schedule done>
+<build done>
+<correctness check done>
+Execution time summary:
+ mean (ms)   median (ms)    max (ms)     min (ms)     std (ms)  
+   1.2944       1.2941       1.2983       1.2910       0.0019                  
+Op latency: 1294.3938899999998 us, TFlops: 142.67959324808
+<performance check done>
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'default_function_kernel' for 'sm_89'
+ptxas info    : Function properties for default_function_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 255 registers, 376 bytes cmem[0]
+<register usage check done>
+free(): invalid pointer
+
+Running with b=1, m=512, k=4096, n=11008
+z_order_factor_m=[None, 4], z_order_factor_n=[None, 22]
+<schedule done>
+<build done>
+<correctness check done>
+Execution time summary:
+ mean (ms)   median (ms)    max (ms)     min (ms)     std (ms)  
+   0.3782       0.3781       0.3787       0.3777       0.0003                  
+Op latency: 378.17175999999995 us, TFlops: 122.08975739489381
+<performance check done>
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'default_function_kernel' for 'sm_89'
+ptxas info    : Function properties for default_function_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 255 registers, 376 bytes cmem[0]
+<register usage check done>
+free(): invalid pointer
+
+Running with b=1, m=512, k=11008, n=4096
+z_order_factor_m=[None, 4], z_order_factor_n=[None, 8]
+<schedule done>
+<build done>
+<correctness check done>
+Execution time summary:
+ mean (ms)   median (ms)    max (ms)     min (ms)     std (ms)  
+   0.3386       0.3385       0.3393       0.3378       0.0005                  
+Op latency: 338.58555999999993 us, TFlops: 136.3640505873907
+<performance check done>
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'default_function_kernel' for 'sm_89'
+ptxas info    : Function properties for default_function_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 255 registers, 376 bytes cmem[0]
+<register usage check done>
+free(): invalid pointer
+
+Running with b=10, m=512, k=4096, n=11008
+z_order_factor_m=[None, 20], z_order_factor_n=[None, 22]
+<schedule done>
+<build done>
+<correctness check done>
+Execution time summary:
+ mean (ms)   median (ms)    max (ms)     min (ms)     std (ms)  
+   3.4233       3.4207       3.4341       3.4192       0.0046                  
+Op latency: 3423.2783 us, TFlops: 134.8733418255828
+<performance check done>
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'default_function_kernel' for 'sm_89'
+ptxas info    : Function properties for default_function_kernel
+    8 bytes stack frame, 8 bytes spill stores, 8 bytes spill loads
+ptxas info    : Used 255 registers, 376 bytes cmem[0]
+<register usage check done>
+free(): invalid pointer
+
+Running with b=10, m=512, k=11008, n=4096
+z_order_factor_m=[None, 8], z_order_factor_n=[None, 8]
+<schedule done>
+<build done>
+<correctness check done>
+Execution time summary:
+ mean (ms)   median (ms)    max (ms)     min (ms)     std (ms)  
+   3.2263       3.2230       3.2339       3.2218       0.0048                  
+Op latency: 3226.30617 us, TFlops: 143.10761595202231
+<performance check done>
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'default_function_kernel' for 'sm_89'
+ptxas info    : Function properties for default_function_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 255 registers, 376 bytes cmem[0]
+<register usage check done>
+free(): invalid pointer
+
+Running with b=1, m=512, k=128, n=4096
+z_order_factor_m=[None, 4], z_order_factor_n=[None, 32]
+<schedule done>
+<build done>
+<correctness check done>
+Execution time summary:
+ mean (ms)   median (ms)    max (ms)     min (ms)     std (ms)  
+   0.0089       0.0089       0.0091       0.0086       0.0002                  
+Op latency: 8.938859999999998 us, TFlops: 60.06033342059279
+<performance check done>
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'default_function_kernel' for 'sm_89'
+ptxas info    : Function properties for default_function_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 250 registers, 376 bytes cmem[0]
+<register usage check done>
+free(): invalid pointer
+
+Running with b=1, m=512, k=64, n=4096
+z_order_factor_m=[None, 4], z_order_factor_n=[None, 32]
+<schedule done>
+<build done>
+<correctness check done>
+Execution time summary:
+ mean (ms)   median (ms)    max (ms)     min (ms)     std (ms)  
+   0.0069       0.0069       0.0074       0.0069       0.0002                  
+Op latency: 6.9337599999999995 us, TFlops: 38.71426989108363
+<performance check done>
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'default_function_kernel' for 'sm_89'
+ptxas info    : Function properties for default_function_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 210 registers, 376 bytes cmem[0]
+<register usage check done>
+free(): invalid pointer
+
+Running with b=1, m=512, k=16, n=4096
+z_order_factor_m=[None, 4], z_order_factor_n=[None, 32]
+<schedule done>
+<build done>
+<correctness check done>
+Execution time summary:
+ mean (ms)   median (ms)    max (ms)     min (ms)     std (ms)  
+   0.0052       0.0052       0.0053       0.0050       0.0001                  
+Op latency: 5.18134 us, TFlops: 12.952028625799505
+<performance check done>
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'default_function_kernel' for 'sm_89'
+ptxas info    : Function properties for default_function_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 90 registers, 376 bytes cmem[0]
+<register usage check done>
+free(): invalid pointer
+
+Running with b=1, m=512, k=8, n=4096
+z_order_factor_m=[None, 4], z_order_factor_n=[None, 32]
+<schedule done>
+<build done>
+<correctness check done>
+Execution time summary:
+ mean (ms)   median (ms)    max (ms)     min (ms)     std (ms)  
+   0.0050       0.0049       0.0052       0.0049       0.0001                  
+Op latency: 4.962220000000001 us, TFlops: 6.761979920277616
+<performance check done>
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'default_function_kernel' for 'sm_89'
+ptxas info    : Function properties for default_function_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 90 registers, 376 bytes cmem[0]
+<register usage check done>
+free(): invalid pointer
+
+Running with b=1, m=128, k=4096, n=4096
+z_order_factor_m=[None, 1], z_order_factor_n=[None, 16]
+<schedule done>
+<build done>
+<correctness check done>
+Execution time summary:
+ mean (ms)   median (ms)    max (ms)     min (ms)     std (ms)  
+   0.1191       0.1190       0.1194       0.1189       0.0002                  
+Op latency: 119.05117000000001 us, TFlops: 36.0766491921079
+<performance check done>
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'default_function_kernel' for 'sm_89'
+ptxas info    : Function properties for default_function_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 255 registers, 376 bytes cmem[0]
+<register usage check done>
+free(): invalid pointer
+
+Running with b=1, m=64, k=4096, n=4096
+z_order_factor_m=[None, 1], z_order_factor_n=[None, 16]
+<schedule done>
+<build done>
+<correctness check done>
+Execution time summary:
+ mean (ms)   median (ms)    max (ms)     min (ms)     std (ms)  
+   0.1264       0.1264       0.1273       0.1256       0.0005                  
+Op latency: 126.36956999999998 us, TFlops: 16.99367694295391
+<performance check done>
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'default_function_kernel' for 'sm_89'
+ptxas info    : Function properties for default_function_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 238 registers, 376 bytes cmem[0]
+<register usage check done>
+free(): invalid pointer
+
+Running with b=1, m=16, k=4096, n=4096
+z_order_factor_m=[None, 1], z_order_factor_n=[None, 16]
+<schedule done>
+<build done>
+<correctness check done>
+Execution time summary:
+ mean (ms)   median (ms)    max (ms)     min (ms)     std (ms)  
+   0.1171       0.1171       0.1174       0.1169       0.0002                  
+Op latency: 117.14392000000001 us, TFlops: 4.5830027883649445
+<performance check done>
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'default_function_kernel' for 'sm_89'
+ptxas info    : Function properties for default_function_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 251 registers, 376 bytes cmem[0]
+<register usage check done>
+free(): invalid pointer
+
+Running with b=1, m=8, k=4096, n=4096
+z_order_factor_m=[None, 1], z_order_factor_n=[None, 16]
+<schedule done>
+<build done>
+<correctness check done>
+Execution time summary:
+ mean (ms)   median (ms)    max (ms)     min (ms)     std (ms)  
+   0.1170       0.1169       0.1172       0.1168       0.0001                  
+Op latency: 116.99031000000001 us, TFlops: 2.294510169261027
+<performance check done>
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'default_function_kernel' for 'sm_89'
+ptxas info    : Function properties for default_function_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 251 registers, 376 bytes cmem[0]
+<register usage check done>
+free(): invalid pointer
+
+Running with b=1, m=512, k=4096, n=128
+z_order_factor_m=[None, 4], z_order_factor_n=[None, 1]
+<schedule done>
+<build done>
+<correctness check done>
+Execution time summary:
+ mean (ms)   median (ms)    max (ms)     min (ms)     std (ms)  
+   0.1192       0.1193       0.1198       0.1189       0.0003                  
+Op latency: 119.23165 us, TFlops: 4.502755031906377
+<performance check done>
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'default_function_kernel' for 'sm_89'
+ptxas info    : Function properties for default_function_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 253 registers, 376 bytes cmem[0]
+<register usage check done>
+free(): invalid pointer
+
+Running with b=1, m=512, k=4096, n=64
+z_order_factor_m=[None, 4], z_order_factor_n=[None, 1]
+<schedule done>
+<build done>
+<correctness check done>
+Execution time summary:
+ mean (ms)   median (ms)    max (ms)     min (ms)     std (ms)  
+   0.1143       0.1143       0.1144       0.1141       0.0001                  
+Op latency: 114.25082 us, TFlops: 2.349527609517376
+<performance check done>
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'default_function_kernel' for 'sm_89'
+ptxas info    : Function properties for default_function_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 250 registers, 376 bytes cmem[0]
+<register usage check done>
+free(): invalid pointer
+
+Running with b=1, m=512, k=4096, n=16
+z_order_factor_m=[None, 4], z_order_factor_n=[None, 1]
+<schedule done>
+<build done>
+<correctness check done>
+Execution time summary:
+ mean (ms)   median (ms)    max (ms)     min (ms)     std (ms)  
+   0.1172       0.1172       0.1175       0.1170       0.0001                  
+Op latency: 117.22553 us, TFlops: 0.5724765245249903
+<performance check done>
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'default_function_kernel' for 'sm_89'
+ptxas info    : Function properties for default_function_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 255 registers, 376 bytes cmem[0]
+<register usage check done>
+free(): invalid pointer
+
+Running with b=1, m=512, k=4096, n=8
+z_order_factor_m=[None, 4], z_order_factor_n=[None, 1]
+<schedule done>
+<build done>
+<correctness check done>
+Execution time summary:
+ mean (ms)   median (ms)    max (ms)     min (ms)     std (ms)  
+   0.1232       0.1231       0.1235       0.1230       0.0002                  
+Op latency: 123.15671999999999 us, TFlops: 0.27245311502287495
+<performance check done>
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'default_function_kernel' for 'sm_89'
+ptxas info    : Function properties for default_function_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 252 registers, 376 bytes cmem[0]
+<register usage check done>
+free(): invalid pointer
+
+Running with b=1, m=128, k=32, n=128
+z_order_factor_m=[None, 1], z_order_factor_n=[None, 1]
+<schedule done>
+<build done>
+<correctness check done>
+Execution time summary:
+ mean (ms)   median (ms)    max (ms)     min (ms)     std (ms)  
+   0.0040       0.0040       0.0043       0.0039       0.0001                  
+Op latency: 4.021050000000001 us, TFlops: 0.26077168898670744
+<performance check done>
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'default_function_kernel' for 'sm_89'
+ptxas info    : Function properties for default_function_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 93 registers, 376 bytes cmem[0]
+<register usage check done>
+free(): invalid pointer
+
+Running with b=1, m=16, k=16, n=16
+z_order_factor_m=[None, 1], z_order_factor_n=[None, 1]
+<schedule done>
+<build done>
+<correctness check done>
+Execution time summary:
+ mean (ms)   median (ms)    max (ms)     min (ms)     std (ms)  
+   0.0032       0.0032       0.0040       0.0028       0.0003                  
+Op latency: 3.2249000000000003 us, TFlops: 0.0025402338056994015
+<performance check done>
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'default_function_kernel' for 'sm_89'
+ptxas info    : Function properties for default_function_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 88 registers, 376 bytes cmem[0]
+<register usage check done>
+free(): invalid pointer
+
+Running with b=1, m=8, k=8, n=8
+z_order_factor_m=[None, 1], z_order_factor_n=[None, 1]
+<schedule done>
+<build done>
+<correctness check done>
+Execution time summary:
+ mean (ms)   median (ms)    max (ms)     min (ms)     std (ms)  
+   0.0029       0.0029       0.0031       0.0028       0.0001                  
+Op latency: 2.8748400000000003 us, TFlops: 0.0003561937359992208
+<performance check done>
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'default_function_kernel' for 'sm_89'
+ptxas info    : Function properties for default_function_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 88 registers, 376 bytes cmem[0]
+<register usage check done>
+free(): invalid pointer
+
+Running with b=6, m=513, k=4097, n=4097
+z_order_factor_m=[None, 13], z_order_factor_n=[None, 17]
+<schedule done>
+<build done>
+<correctness check done>
+Execution time summary:
+ mean (ms)   median (ms)    max (ms)     min (ms)     std (ms)  
+   1.4688       1.4687       1.4696       1.4682       0.0004                  
+Op latency: 1468.76411 us, TFlops: 70.35233030306003
+<performance check done>
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'default_function_kernel' for 'sm_89'
+ptxas info    : Function properties for default_function_kernel
+    16 bytes stack frame, 16 bytes spill stores, 16 bytes spill loads
+ptxas info    : Used 255 registers, 376 bytes cmem[0]
+<register usage check done>
+free(): invalid pointer
+
+Running with b=2, m=500, k=4000, n=4000
+z_order_factor_m=[None, 8], z_order_factor_n=[None, 16]
+<schedule done>
+<build done>
+<correctness check done>
+Execution time summary:
+ mean (ms)   median (ms)    max (ms)     min (ms)     std (ms)  
+   0.2448       0.2448       0.2451       0.2447       0.0001                  
+Op latency: 244.84894000000003 us, TFlops: 130.69282636061237
+<performance check done>
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'default_function_kernel' for 'sm_89'
+ptxas info    : Function properties for default_function_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 255 registers, 376 bytes cmem[0]
+<register usage check done>
+free(): invalid pointer
+
+Running with b=1, m=128, k=32, n=127
+z_order_factor_m=[None, 1], z_order_factor_n=[None, 1]
+<schedule done>
+<build done>
+<correctness check done>
+Execution time summary:
+ mean (ms)   median (ms)    max (ms)     min (ms)     std (ms)  
+   0.0068       0.0067       0.0072       0.0066       0.0002                  
+Op latency: 6.751000000000001 us, TFlops: 0.15410813212857352
+<performance check done>
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'default_function_kernel' for 'sm_89'
+ptxas info    : Function properties for default_function_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 93 registers, 376 bytes cmem[0]
+<register usage check done>
+free(): invalid pointer
+
+Running with b=1, m=128, k=32, n=129
+z_order_factor_m=[None, 1], z_order_factor_n=[None, 2]
+<schedule done>
+<build done>
+<correctness check done>
+Execution time summary:
+ mean (ms)   median (ms)    max (ms)     min (ms)     std (ms)  
+   0.0066       0.0066       0.0069       0.0065       0.0001                  
+Op latency: 6.592879999999999 us, TFlops: 0.16028928177063742
+<performance check done>
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function 'default_function_kernel' for 'sm_89'
+ptxas info    : Function properties for default_function_kernel
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 93 registers, 376 bytes cmem[0]
+<register usage check done>
+free(): invalid pointer
+

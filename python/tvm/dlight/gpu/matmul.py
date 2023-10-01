@@ -16,11 +16,12 @@
 # under the License.
 # pylint: disable=missing-docstring, invalid-name
 """A GEMM schedule rule for GPU operators."""
+import math
 from dataclasses import dataclass
 from enum import Enum
 from typing import Dict, List, Optional, Set, Tuple
 
-from tvm import tir
+from tvm import DataType, tir
 from tvm.ir import Range
 from tvm.target import Target
 from tvm.tir import IterVar, PrimExpr, Var
@@ -548,16 +549,7 @@ class MatmulTensorization(ScheduleRule):
         thread_cnt = thread_y * thread_z * warp_size
 
         vector_size = 8
-
-        in_wrap_block_cnt_m = block_m // thread_z // micro_size_m
-        in_wrap_block_cnt_n = block_n // thread_y // micro_size_n
-        in_wrap_block_cnt_k = block_k // micro_size_k
-
-        i_factors = [None, thread_z, in_wrap_block_cnt_m]
-        j_factors = [None, thread_y, in_wrap_block_cnt_n]
-        k_factors = [None, in_wrap_block_cnt_k]
-
-        num_ty = i_factors[2] * j_factors[2]
+        unroll_depth = 256
 
         # Step 1. Normalize generic matmul to C[S, I, J] += A[S, I, K] * B[S, J, K]
         block = sch.reindex(main_block, ("read", 0))
@@ -568,18 +560,49 @@ class MatmulTensorization(ScheduleRule):
         sch.transform_layout(block, ("read", 0), c_index_map)
         sch.transform_block_layout(main_block, matmul_index_map)
 
+        batch, i, j, k = sch.get_loops(main_block)
+        main_block_stmt = sch.get(main_block)
+        buffer_regions = list(main_block_stmt.reads) + list(main_block_stmt.writes)
+
+        # Supported data types:
+        # fp16, fp16, fp16: fp16 precision
+        # fp16, fp16, fp32: fp16 mixed precision
+        dtype_a, dtype_b, dtype_c = [DataType(region.buffer.dtype) for region in buffer_regions]
+        input_b, input_m, input_n, input_k = [sch.get(loop).extent for loop in [batch, i, j, k]]
+        l2_size = target.l2_cache_size_bytes
+        dtype_a_bytes, dtype_b_bytes, dtype_c_bytes = [
+            math.ceil(d.bits / 8) for d in [dtype_a, dtype_b, dtype_c]
+        ]
+
+        def get_z_order_factor(l2_size, input_k, dtype_bytes, input_spatial, block_size):
+            if l2_size != 0 and isinstance(input_k, (int, tir.IntImm)):
+                z_order_factor = l2_size / 3 / int(input_k) / dtype_bytes / block_size
+                if isinstance(input_spatial, (int, tir.IntImm)):
+                    block_cnt = math.ceil(int(input_spatial) / block_size)
+                    z_order_factor = math.ceil(block_cnt / math.ceil(block_cnt / z_order_factor))
+                else:
+                    z_order_factor = math.floor(z_order_factor)
+                return [None, z_order_factor]
+            else:
+                return [4, None]
+
+        z_order_factor_m = get_z_order_factor(l2_size, input_k, dtype_a_bytes, input_m, block_m)
+        z_order_factor_n = get_z_order_factor(l2_size, input_k, dtype_b_bytes, input_n, block_n)
+
+        print(f"z_order_factor_m={z_order_factor_m}, z_order_factor_n={z_order_factor_n}")
+
         # Step 2. Padding for dynamic shape kernels
-        sch.pad_einsum(main_block, [1, block_m, block_n, block_k])
+        sch.pad_einsum(
+            main_block,
+            [
+                1,
+                (z_order_factor_m[0] or z_order_factor_m[1]) * block_m,
+                (z_order_factor_n[0] or z_order_factor_n[1]) * block_n,
+                block_k,
+            ],
+        )
 
         # Step 3. Schedule matmul to use tensor core
-        block = main_block
-
-        batch, i, j, k = sch.get_loops(block)
-
-        input_b, input_m, input_n, input_k = [sch.get(loop).extent for loop in [batch, i, j, k]]
-        block_cnt_m = input_m // block_m
-        block_cnt_n = input_n // block_n
-        block_cnt_k = input_k // block_k
 
         # inner loops for tensor core computation
         i, i_inner = sch.split(i, factors=[None, micro_size_m])
@@ -588,20 +611,29 @@ class MatmulTensorization(ScheduleRule):
 
         sch.reorder(i, j, k, i_inner, j_inner, k_inner)
 
-        block_inner = block
+        block_inner = main_block
         block_outer = sch.blockize(i_inner)
 
-        i0, i1, i2 = sch.split(i, factors=i_factors)
-        j0, j1, j2 = sch.split(j, factors=j_factors)
-        k0, k1 = sch.split(k, k_factors)
+        # split factors for i, j, and k
+        in_wrap_block_cnt_m = block_m // thread_z // micro_size_m
+        in_wrap_block_cnt_n = block_n // thread_y // micro_size_n
+        in_wrap_block_cnt_k = block_k // micro_size_k
 
-        sch.reorder(i0, j0, k0, i1, j1, k1, i2, j2)
+        i_factors = z_order_factor_m + [thread_z, in_wrap_block_cnt_m]
+        j_factors = z_order_factor_n + [thread_y, in_wrap_block_cnt_n]
+        k_factors = [None, in_wrap_block_cnt_k]
 
-        sch.bind(batch, "blockIdx.z")
-        sch.bind(i0, "blockIdx.y")
-        sch.bind(j0, "blockIdx.x")
-        sch.bind(i1, "threadIdx.z")
-        sch.bind(j1, "threadIdx.y")
+        i0, i1, i2, i3 = sch.split(i, factors=i_factors)
+        j0, j1, j2, j3 = sch.split(j, factors=j_factors)
+        k0, k1 = sch.split(k, factors=k_factors)
+
+        sch.reorder(i0, j0, i1, j1, k0, i2, j2, k1, i3, j3)
+        sch.mod.show()
+        block_axis = sch.fuse(batch, i0, j0, i1, j1)
+
+        sch.bind(block_axis, "blockIdx.x")
+        sch.bind(i2, "threadIdx.z")
+        sch.bind(j2, "threadIdx.y")
 
         def fetch_input(block_outer, read_buffer_idx, read_loop_ndim, block_sizes, wmma_name):
             block_read = sch.cache_read(block_outer, read_buffer_idx, "shared.dyn")
@@ -649,7 +681,7 @@ class MatmulTensorization(ScheduleRule):
         # create write cache to store matrix from wmma fragments to shared memory and global memory
         def store_output(block_outer, write_buffer_idx, write_loop_ndim, block_sizes, wmma_name):
             block_write = sch.cache_write(block_outer, write_buffer_idx, "shared.dyn")
-            sch.reverse_compute_at(block_write, j0)
+            sch.reverse_compute_at(block_write, block_axis)
 
             fused = sch.fuse(*sch.get_loops(block_write)[-write_loop_ndim:])
 
@@ -693,6 +725,13 @@ class MatmulTensorization(ScheduleRule):
         block_init_c = sch.decompose_reduction(block_outer, k0)
         block_init_c_inner = sch.get_child_blocks(block_init_c)[0]
 
+        # unroll k
+        # sch.annotate(k0, ann_key="pragma_auto_unroll_max_step", ann_val=unroll_depth)
+        sch.unroll(k0)
+        # sch.annotate(k0, ann_key="pragma_unroll_explicit", ann_val=0)
+        # k00, k01 = sch.split(k0, factors=[None, 128])
+        # sch.unroll(k01)
+
         # Tensorization by hardware intrinsics
         from tvm.tir.tensor_intrin.cuda import (  # pylint: disable=import-outside-toplevel
             get_wmma_intrin_group,
@@ -711,6 +750,11 @@ class MatmulTensorization(ScheduleRule):
         sch.tensorize(sch.get_loops(wmma_read_b)[-2], intrin_group["load_b"])
         sch.tensorize(sch.get_loops(block_inner)[-3], intrin_group["compute"])
         sch.tensorize(sch.get_loops(store)[-2], intrin_group["store"])
+
+        # async pipeline
+        # sch.annotate(k0, ann_key="software_pipeline_stage", ann_val=[0, 0, 3])
+        # sch.annotate(k0, ann_key="software_pipeline_order", ann_val=[0, 1, 2])
+        # sch.annotate(k0, ann_key="software_pipeline_async_stages", ann_val=[0])
 
         return sch
 

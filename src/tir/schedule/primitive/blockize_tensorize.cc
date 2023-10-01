@@ -109,7 +109,7 @@ Array<Array<arith::IterMark>> TrivialSubspaceDivision(const Array<IterVar>& iter
   };
   auto use_outer_loop_vars = make_uses_var(outer_iters);
   auto use_inner_loop_vars = make_uses_var(inner_iters);
-  arith::IterMark unit_iter_mark(arith::IterSumExpr({}, 0), 1);
+  arith::IterMark unit_iter_mark(arith::IterSumExpr({}, 0), make_const(DataType::Int(64), 1));
 
   for (int i = 0, n = bindings.size(); i < n; ++i) {
     bool outer = use_outer_loop_vars(bindings[i]);

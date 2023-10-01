@@ -115,7 +115,7 @@ TVM_REGISTER_TARGET_TAG("nvidia/jetson-orin-nano")
       {"max_threads_per_block", Integer(1024)},                   \
       {"thread_warp_size", Integer(32)},                          \
       {"registers_per_block", Integer(RegPerBlock)},              \
-  });
+  })
 
 // Naming convention for CUDA tags see https://developer.nvidia.com/cuda-gpus
 // Parameters see Table 15. Technical Specifications per Compute Capability
@@ -231,6 +231,8 @@ TVM_REGISTER_CUDA_TAG("nvidia/nvidia-nvs-310", "sm_21", 49152, 32768);
 TVM_REGISTER_CUDA_TAG("nvidia/nvs-5400m", "sm_21", 49152, 32768);
 TVM_REGISTER_CUDA_TAG("nvidia/nvs-5200m", "sm_21", 49152, 32768);
 TVM_REGISTER_CUDA_TAG("nvidia/nvs-4200m", "sm_21", 49152, 32768);
+TVM_REGISTER_CUDA_TAG("nvidia/geforce-rtx-4090", "sm_89", 49152, 65536)
+    .add_config("l2_cache_size_bytes", Integer(75497472));
 TVM_REGISTER_CUDA_TAG("nvidia/geforce-rtx-3090-ti", "sm_86", 49152, 65536);
 TVM_REGISTER_CUDA_TAG("nvidia/geforce-rtx-3090", "sm_86", 49152, 65536);
 TVM_REGISTER_CUDA_TAG("nvidia/geforce-rtx-3080-ti", "sm_86", 49152, 65536);
