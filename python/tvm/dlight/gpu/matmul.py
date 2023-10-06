@@ -307,6 +307,9 @@ class MatmulTensorization(ScheduleRule):
     func with attr 'dlight.do_not_tensorize' will not be tensorized.
     """
 
+    software_pipeline = False
+    async_pipeline = True
+
     def apply(  # pylint: disable=too-many-locals,missing-docstring
         self,
         func: tir.PrimFunc,
@@ -396,10 +399,17 @@ class MatmulTensorization(ScheduleRule):
         i0, i1, i2, i3 = sch.split(i, factors=i_factors)
         j0, j1, j2, j3 = sch.split(j, factors=j_factors)
         k0, k1 = sch.split(k, k_factors)
-        sch.annotate(k0, "software_pipeline_order", [0, 3, 1, 4, 5, 2, 6])
-        sch.annotate(k0, "software_pipeline_stage", [0, 0, 0, 0, 0, 1, 1])
-        sch.annotate(k1, "software_pipeline_order", [0, 1, 2])
-        sch.annotate(k1, "software_pipeline_stage", [0, 0, 1])
+        if self.software_pipeline:
+            sch.annotate(k0, "software_pipeline_order", [0, 3, 1, 4, 5, 2, 6])
+            sch.annotate(k0, "software_pipeline_stage", [0, 0, 0, 0, 0, 1, 1])
+            sch.annotate(k1, "software_pipeline_order", [0, 1, 2])
+            sch.annotate(k1, "software_pipeline_stage", [0, 0, 1])
+        if self.async_pipeline:
+            sch.annotate(k0, "software_pipeline_async_stages", [0])
+            sch.annotate(k0, "software_pipeline_stage", [0, 0, 1, 2, 2])
+            sch.annotate(k0, "software_pipeline_order", [0, 1, 3, 2, 4])
+            sch.annotate(k1, "software_pipeline_stage", [0, 0, 1])
+            sch.annotate(k1, "software_pipeline_order", [0, 1, 2])
 
         sch.reorder(i0, j0, i1, j1, j2, i2, k0, k1, i3, j3)
 
@@ -423,8 +433,9 @@ class MatmulTensorization(ScheduleRule):
             sch.vectorize(f_3)
 
             sch.storage_align(block_read, 0, axis=-2, factor=16, offset=8)
-            sch.annotate(block_read, "tir.manifest_shared_memory_local_stage", 1)
-            sch.annotate(block_read, "double_buffer_scope", 0)
+            if self.software_pipeline:
+                sch.annotate(block_read, "tir.manifest_shared_memory_local_stage", 1)
+                sch.annotate(block_read, "double_buffer_scope", 0)
             return block_read
 
         a_g2s = fetch_to_shared(block_outer, 0, 2)
