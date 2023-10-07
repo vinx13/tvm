@@ -28,6 +28,14 @@ from tvm.tir import IterVar, PrimExpr, Var
 from tvm.tir.analysis import undefined_vars
 from tvm.tir.schedule.schedule import BlockRV
 from tvm.tir.stmt import ForKind
+from tvm.tir.tensor_intrin.cuda import (
+    LDMATRIX_16x16_A_DYN_INTRIN,
+    LDMATRIX_16x16_B_DYN_INTRIN,
+    MMA_f16f16f32_INTRIN,
+    MMA_f16f16f32_TRANS_INTRIN,
+    MMA_store_16x16_f32_global_INTRIN,
+    shared_16x16_to_ldmatrix_32x8_layout,
+)
 
 from . import utils
 from ..base import ScheduleRule, analysis
@@ -591,8 +599,8 @@ class MatmulTensorizationMMA(ScheduleRule):
         z_order_factor_m = get_z_order_factor(l2_size, input_k, dtype_a_bytes, input_m, block_m)
         z_order_factor_n = get_z_order_factor(l2_size, input_k, dtype_b_bytes, input_n, block_n)
 
-        # z_order_factor_m = [1, None]
-        # z_order_factor_n = [1, None]
+        z_order_factor_m = [1, None]
+        z_order_factor_n = [1, None]
 
         print(f"z_order_factor_m={z_order_factor_m}, z_order_factor_n={z_order_factor_n}")
 
@@ -634,6 +642,7 @@ class MatmulTensorizationMMA(ScheduleRule):
 
         sch.reorder(i0, j0, i1, j1, k0, i2, j2, k1, i3, j3)
         block_axis = sch.fuse(batch, i0, j0, i1, j1)
+        # block_axis = j1
 
         sch.bind(block_axis, "blockIdx.x")
         sch.bind(i2, "threadIdx.z")
@@ -650,36 +659,41 @@ class MatmulTensorizationMMA(ScheduleRule):
 
             block_m, block_k, micro_size_m, micro_size_k = block_sizes
 
-            sch.transform_layout(
-                block_read,
-                ("write", 0),
-                lambda v0, v1, v2: (
-                    v1 // block_m,
-                    v2 // block_k,
-                    v1 % block_m // 2,
-                    v1 % block_m % 2 * block_k + v2 % block_k,
-                    # (v1 % block_m * block_k + v2 % block_k) // bank_cnt_a,
-                    # (v1 % block_m * block_k + v2 % block_k) % bank_cnt_a,
-                ),
-            )
-
             sch.bind(f1, "threadIdx.z")
             sch.bind(f2, "threadIdx.y")
             sch.bind(f3, "threadIdx.x")
             sch.vectorize(f4)
-            # sch.storage_align(block_read, 0, axis=-2, factor=16, offset=8)
-
             auto_inline_producers(sch, block_read)
 
-            wmma_read = sch.cache_read(block_outer, read_buffer_idx, "wrap")
-            sch.compute_at(wmma_read, k1)
-            return wmma_read
+            mma_read = sch.cache_read(block_outer, read_buffer_idx, "warp")
+            sch.compute_at(mma_read, k1)
 
-        wmma_read_a = fetch_input(block_outer, 0, 2, [block_m, block_k, micro_size_m, micro_size_k])
-        wmma_read_b = fetch_input(block_outer, 1, 2, [block_n, block_k, micro_size_n, micro_size_k])
+            sch.split(sch.get_loops(mma_read)[-2], [None, micro_size_m])
+
+            sch.transform_layout(
+                mma_read,
+                ("write", 0),
+                lambda v0, v1, v2: (
+                    v1 // block_m,
+                    v2 // block_k,
+                    v1 % block_m // (block_m // thread_z),
+                    v2 % block_k // (block_k // thread_y),
+                    v1 % (block_m // thread_z) // micro_size_m,
+                    v2 % (block_k // thread_y) // micro_size_k,
+                    *shared_16x16_to_ldmatrix_32x8_layout(v1 % micro_size_m, v2 % micro_size_k),
+                ),
+            )
+            return block_read, mma_read
+
+        block_read_a, mma_read_a = fetch_input(
+            block_outer, 0, 2, [block_m, block_k, micro_size_m, micro_size_k]
+        )
+        block_read_b, mma_read_b = fetch_input(
+            block_outer, 1, 2, [block_n, block_k, micro_size_n, micro_size_k]
+        )
 
         # create write cache to store matrix from wmma fragments to shared memory and global memory
-        def store_output(block_outer, write_buffer_idx, write_loop_ndim, block_sizes, wmma_name):
+        def store_output(block_outer, write_buffer_idx, write_loop_ndim, block_sizes):
             block_write = sch.cache_write(block_outer, write_buffer_idx, "shared.dyn")
             sch.reverse_compute_at(block_write, block_axis)
 
@@ -690,18 +704,6 @@ class MatmulTensorizationMMA(ScheduleRule):
             )
 
             block_m, block_n, micro_size_m, micro_size_n = block_sizes
-            sch.transform_layout(
-                block_write,
-                ("read", 0),
-                lambda v0, v1, v2: (
-                    v1 // block_m,
-                    v2 // block_n,
-                    v1 % block_m // micro_size_m,
-                    v2 % block_n // micro_size_n,
-                    v1 % micro_size_m,
-                    v2 % micro_size_n,
-                ),
-            )
 
             sch.bind(f1, "threadIdx.z")
             sch.bind(f2, "threadIdx.y")
@@ -709,16 +711,31 @@ class MatmulTensorizationMMA(ScheduleRule):
             sch.vectorize(f4)
             auto_inline_consumers(sch, block_write)
 
-            store = sch.cache_write(block_outer, write_buffer_idx, "wrap")
-            v0, v1, v2, v3, v4, v5 = sch.get_loops(store)[-6:]
-            v21, v22 = sch.split(v2, factors=[thread_z, None])
-            v31, v32 = sch.split(v3, factors=[thread_z, None])
-            sch.reorder(v21, v31, v22, v32)
-            sch.bind(v21, "threadIdx.z")
-            sch.bind(v31, "threadIdx.y")
-            return store
+            store = sch.cache_write(block_outer, write_buffer_idx, "warp")
+            v0, v1, v2 = sch.get_loops(store)[-3:]
+            v11, v12, v13 = sch.split(v1, factors=[thread_z, None, micro_size_m])
+            v21, v22, v23 = sch.split(v2, factors=[thread_y, None, micro_size_n])
+            sch.reorder(v11, v21, v12, v22, v13, v23)
+            sch.bind(v11, "threadIdx.z")
+            sch.bind(v12, "threadIdx.y")
 
-        store = store_output(
+            sch.transform_layout(
+                store,
+                ("read", 0),
+                lambda v0, v1, v2: (
+                    v1 // block_m,
+                    v2 // block_n,
+                    v1 % block_m // (block_m // thread_z),
+                    v2 % block_n // (block_n // thread_y),
+                    v1 % (block_m // thread_z) // micro_size_m,
+                    v2 % (block_n // thread_y) // micro_size_n,
+                    *shared_16x16_to_ldmatrix_32x8_layout(v1 % micro_size_m, v2 % micro_size_n),
+                ),
+            )
+
+            return block_write, store
+
+        block_write, store = store_output(
             block_outer, 0, 2, [block_m, block_n, micro_size_m, micro_size_n]
         )
 
@@ -727,30 +744,109 @@ class MatmulTensorizationMMA(ScheduleRule):
 
         # unroll k
         # sch.annotate(k0, ann_key="pragma_auto_unroll_max_step", ann_val=unroll_depth)
-        sch.unroll(k0)
+        # sch.unroll(k0)
         # sch.annotate(k0, ann_key="pragma_unroll_explicit", ann_val=0)
         # k00, k01 = sch.split(k0, factors=[None, 8])
         # sch.annotate(k01, ann_key="pragma_unroll_explicit", ann_val=0)
         # sch.unroll(k01)
 
         # Tensorization by hardware intrinsics
-        from tvm.tir.tensor_intrin.cuda import (  # pylint: disable=import-outside-toplevel
-            get_wmma_intrin_group,
+        # from tvm.tir.tensor_intrin.cuda import (  # pylint: disable=import-outside-toplevel
+        #     get_wmma_intrin_group,
+        # )
+
+        # intrin_group = get_wmma_intrin_group(
+        #     load_scope="shared.dyn",
+        #     store_scope="shared.dyn",
+        #     in_dtype=str(dtype_a),
+        #     out_dtype=str(dtype_c),
+        #     trans_b=True,
+        # )
+
+        def bind_x_axis(loops):
+            sch.bind(sch.split(sch.fuse(*loops), [None, 32])[1], "threadIdx.x")
+
+        bind_x_axis(sch.get_loops(block_init_c_inner)[-2:])
+        bind_x_axis(sch.get_loops(mma_read_a)[-2:])
+        bind_x_axis(sch.get_loops(mma_read_b)[-2:])
+        bind_x_axis(sch.get_loops(store)[-2:])
+        bind_x_axis(sch.get_loops(block_inner)[-3:-1])
+
+        # sch.tensorize(sch.get_loops(block_init_c_inner)[-2], "mma_fill_16x16_f32")
+        # sch.tensorize(sch.get_loops(mma_read_a)[-2], LDMATRIX_16x16_A_DYN_INTRIN)
+        # sch.tensorize(sch.get_loops(mma_read_b)[-2], LDMATRIX_16x16_B_DYN_INTRIN)
+        # sch.tensorize(sch.get_loops(block_inner)[-3], MMA_f16f16f32_TRANS_INTRIN)
+        # sch.tensorize(sch.get_loops(store)[-2], MMA_store_16x16_f32_global_INTRIN)
+
+        sch.transform_layout(
+            block_read_a,
+            ("write", 0),
+            lambda v0, v1, v2: (
+                v1 // block_m,
+                v2 // block_k,
+                v1 % block_m,
+                v2 % block_k,
+            ),
         )
 
-        intrin_group = get_wmma_intrin_group(
-            load_scope="shared.dyn",
-            store_scope="shared.dyn",
-            in_dtype=str(dtype_a),
-            out_dtype=str(dtype_c),
-            trans_b=True,
+        sch.transform_layout(
+            block_read_b,
+            ("write", 0),
+            lambda v0, v1, v2: (
+                v1 // block_m,
+                v2 // block_k,
+                v1 % block_m,
+                v2 % block_k,
+            ),
         )
 
-        sch.tensorize(sch.get_loops(block_init_c_inner)[-2], intrin_group["init"])
-        sch.tensorize(sch.get_loops(wmma_read_a)[-2], intrin_group["load_a"])
-        sch.tensorize(sch.get_loops(wmma_read_b)[-2], intrin_group["load_b"])
-        sch.tensorize(sch.get_loops(block_inner)[-3], intrin_group["compute"])
-        sch.tensorize(sch.get_loops(store)[-2], intrin_group["store"])
+        sch.transform_layout(
+            block_write,
+            ("read", 0),
+            lambda v0, v1, v2: (
+                v1 // block_m,
+                v2 // block_n,
+                v1 % block_m,
+                v2 % block_n,
+            ),
+        )
+
+        # sch.transform_layout(
+        #     block_read_a,
+        #     ("write", 0),
+        #     lambda v0, v1, v2: (
+        #         v1 // block_m,
+        #         v2 // block_k,
+        #         v1 % block_m // 2,
+        #         v1 % block_m % 2 * block_k + v2 % block_k,
+        #         # (v1 % block_m * block_k + v2 % block_k) // bank_cnt_a,
+        #         # (v1 % block_m * block_k + v2 % block_k) % bank_cnt_a,
+        #     ),
+        # )
+
+        # sch.transform_layout(
+        #     block_read_b,
+        #     ("write", 0),
+        #     lambda v0, v1, v2: (
+        #         v1 // block_m,
+        #         v2 // block_k,
+        #         v1 % block_m // 2,
+        #         v1 % block_m % 2 * block_k + v2 % block_k,
+        #         # (v1 % block_m * block_k + v2 % block_k) // bank_cnt_a,
+        #         # (v1 % block_m * block_k + v2 % block_k) % bank_cnt_a,
+        #     ),
+        # )
+
+        # sch.transform_layout(
+        #     block_write,
+        #     ("read", 0),
+        #     lambda v0, v1, v2: (
+        #         v1 // block_m,
+        #         v2 // block_n,
+        #         v1 % block_m,
+        #         v2 % block_n,
+        #     ),
+        # )
 
         # async pipeline
         # sch.annotate(k0, ann_key="software_pipeline_stage", ann_val=[0, 0, 3])
@@ -849,8 +945,8 @@ class MatmulTensorization(ScheduleRule):
         z_order_factor_m = get_z_order_factor(l2_size, input_k, dtype_a_bytes, input_m, block_m)
         z_order_factor_n = get_z_order_factor(l2_size, input_k, dtype_b_bytes, input_n, block_n)
 
-        # z_order_factor_m = [1, None]
-        # z_order_factor_n = [1, None]
+        z_order_factor_m = [1, None]
+        z_order_factor_n = [1, None]
 
         print(f"z_order_factor_m={z_order_factor_m}, z_order_factor_n={z_order_factor_n}")
 
@@ -989,7 +1085,7 @@ class MatmulTensorization(ScheduleRule):
 
         # unroll k
         # sch.annotate(k0, ann_key="pragma_auto_unroll_max_step", ann_val=unroll_depth)
-        sch.unroll(k0)
+        # sch.unroll(k0)
         # sch.annotate(k0, ann_key="pragma_unroll_explicit", ann_val=0)
         # k00, k01 = sch.split(k0, factors=[None, 8])
         # sch.annotate(k01, ann_key="pragma_unroll_explicit", ann_val=0)
@@ -1015,9 +1111,9 @@ class MatmulTensorization(ScheduleRule):
         sch.tensorize(sch.get_loops(store)[-2], intrin_group["store"])
 
         # async pipeline
-        # sch.annotate(k0, ann_key="software_pipeline_stage", ann_val=[0, 0, 3])
-        # sch.annotate(k0, ann_key="software_pipeline_order", ann_val=[0, 1, 2])
-        # sch.annotate(k0, ann_key="software_pipeline_async_stages", ann_val=[0])
+        sch.annotate(k0, ann_key="software_pipeline_stage", ann_val=[0, 0, 3])
+        sch.annotate(k0, ann_key="software_pipeline_order", ann_val=[0, 1, 2])
+        sch.annotate(k0, ann_key="software_pipeline_async_stages", ann_val=[0])
 
         return sch
 

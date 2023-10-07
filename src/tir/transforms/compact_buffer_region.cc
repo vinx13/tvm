@@ -71,11 +71,13 @@ class Var2BufferCollector : public StmtExprVisitor {
 
  private:
   void VisitStmt_(const BufferStoreNode* op) final {
+    VLOG(0) << op->buffer->data << " " << op->buffer;
     var2buffer_[op->buffer->data].insert(op->buffer);
     StmtExprVisitor::VisitStmt_(op);
   }
 
   void VisitExpr_(const BufferLoadNode* op) final {
+    VLOG(0) << op->buffer->data << " " << op->buffer;
     var2buffer_[op->buffer->data].insert(op->buffer);
     StmtExprVisitor::VisitExpr_(op);
   }
@@ -83,16 +85,20 @@ class Var2BufferCollector : public StmtExprVisitor {
   void VisitStmt_(const BlockNode* op) final {
     for (const Buffer& buffer : op->alloc_buffers) {
       var2buffer_[buffer->data].insert(buffer);
+      VLOG(0) << buffer->data << " " << buffer;
     }
     for (const MatchBufferRegion& region : op->match_buffers) {
       var2buffer_[region->buffer->data].insert(region->buffer);
+      VLOG(0) << region->buffer->data << " " << region->buffer;
       var2buffer_[region->source->buffer->data].insert(region->source->buffer);
+      VLOG(0) << region->source->buffer->data << " " << region->source->buffer;
     }
     StmtExprVisitor::VisitStmt_(op);
   }
 
   void VisitStmt_(const DeclBufferNode* op) final {
     var2buffer_[op->buffer->data].insert(op->buffer);
+    VLOG(0) << op->buffer->data << " " << op->buffer;
     StmtExprVisitor::VisitStmt_(op);
   }
 };
@@ -258,6 +264,7 @@ class BufferAccessRegionCollector : public StmtExprVisitor {
     }
     // Step 6. Update buffer_access_region_ from relaxed_accesses_ for inner buffers.
     for (const Buffer& buffer : op->alloc_buffers) {
+      VLOG(0) << buffer->data << " " << Array<Buffer>(var2buffer_[buffer->data].begin(), var2buffer_[buffer->data].end());
       ICHECK_EQ(var2buffer_[buffer->data].size(), 1)
           << "Block allocation buffer shoud not be alised";
       SimplifyAndNarrowBufferRegionFromNDIntSet(buffer);

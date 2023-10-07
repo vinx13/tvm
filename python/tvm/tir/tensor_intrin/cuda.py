@@ -206,6 +206,7 @@ def get_ldmatrix_intrin(k_dim, dtype, is_b, transposed, shared_scope="shared"):
 
 
 def get_mma_intrin(k_dim, out_dtype, b_transposed):
+    global M_DIM, N_DIM, WARP_SIZE
     local_size = (M_DIM * k_dim) // WARP_SIZE
     local_size_out = (M_DIM * N_DIM) // 32
 
@@ -246,6 +247,13 @@ def get_mma_intrin(k_dim, out_dtype, b_transposed):
 
     in_offset_factor = get_tensor_core_load_offset_factor(in_dtype)
     out_offset_factor = get_tensor_core_load_offset_factor(out_dtype)
+
+    local_size = T.int64(local_size)
+    local_size_out = T.int64(local_size_out)
+    M_DIM = T.int64(M_DIM)
+    N_DIM = T.int64(N_DIM)
+    k_dim = T.int64(k_dim)
+    WRAP_SIZE = T.int64(WARP_SIZE)
 
     @T.prim_func
     def mma_sync_desc(a: T.handle, b: T.handle, c: T.handle) -> None:
@@ -531,6 +539,11 @@ TensorIntrin.register(MMA_fill_16x16_i32_INTRIN, *get_mma_fill_intrin("int32", 8
 MMA_store_16x16_f32_global_INTRIN = "mma_store_16x16_f32_global_"
 TensorIntrin.register(
     MMA_store_16x16_f32_global_INTRIN, *get_mma_store_intrin("float32", 8, "global")
+)
+
+MMA_store_16x16_f32_global_INTRIN = "mma_store_16x16_f32_shared_dyn_"
+TensorIntrin.register(
+    MMA_store_16x16_f32_global_INTRIN, *get_mma_store_intrin("float32", 8, "shared.dyn")
 )
 
 MMA_store_16x16_f16_global_INTRIN = "mma_store_16x16_f16_global_"

@@ -15,6 +15,14 @@
 # specific language governing permissions and limitations
 # under the License.
 # pylint: disable=missing-docstring
+
+# A100
+# f16f16f32_m16n16k16: 130486.335153 GFLOPS
+# f16f16f32_m16n16k16_trans: 108788.076037 GFLOPS
+# f16f16f16_m16n16k16: 141298.478747 GFLOPS
+# f16f16f16_m16n16k16_trans: 137431.144360 GFLOPS
+
+
 import numpy as np
 import pytest
 import tvm
@@ -187,26 +195,26 @@ def test_f16f16f32_m16n16k16():
     if measure_perf and timer:
         print("f16f16f32_m16n16k16: %f GFLOPS" % (gflops / (timer().mean)))
 
-    timer = run_test(
-        k_inner,
-        in_dtype,
-        out_dtype,
-        True,  # b_transposed
-        i_factors,
-        j_factors,
-        k_factors,
-        index_map,
-        index_map,
-        index_map,
-        LDMATRIX_16x16_A_INTRIN,
-        LDMATRIX_16x16_B_TRANS_INTRIN,
-        MMA_f16f16f32_TRANS_INTRIN,
-        MMA_fill_16x16_f32_INTRIN,
-        MMA_store_16x16_f32_global_INTRIN,
-    )
+    # timer = run_test(
+    #     k_inner,
+    #     in_dtype,
+    #     out_dtype,
+    #     True,  # b_transposed
+    #     i_factors,
+    #     j_factors,
+    #     k_factors,
+    #     index_map,
+    #     index_map,
+    #     index_map,
+    #     LDMATRIX_16x16_A_INTRIN,
+    #     LDMATRIX_16x16_B_TRANS_INTRIN,
+    #     MMA_f16f16f32_TRANS_INTRIN,
+    #     MMA_fill_16x16_f32_INTRIN,
+    #     MMA_store_16x16_f32_global_INTRIN,
+    # )
 
-    if measure_perf and timer:
-        print("f16f16f32_m16n16k16_trans: %f GFLOPS" % (gflops / (timer().mean)))
+    # if measure_perf and timer:
+    #     print("f16f16f32_m16n16k16_trans: %f GFLOPS" % (gflops / (timer().mean)))
 
 
 test_f16f16f32_m16n16k16()
@@ -269,7 +277,7 @@ def test_f16f16f16_m16n16k16():
         print("f16f16f16_m16n16k16_trans: %f GFLOPS" % (gflops / (timer().mean)))
 
 
-test_f16f16f16_m16n16k16()
+# test_f16f16f16_m16n16k16()
 
 # @tvm.testing.requires_cuda_compute_version(8)
 # def test_i8i8i32_m16n16k32():

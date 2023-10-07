@@ -255,6 +255,8 @@ class IterMapRewriter : public ExprMutator {
    * \return whether the bindings are valid
    */
   bool CheckMapping(const Array<IterSumExpr>& bindings, IterMapLevel check_level) {
+    // VLOG(0) << check_level;
+    // VLOG(0) << bindings;
     IterMarkSplitCollector collector;
     // We can check that for each iter mark:
     // All the splits that refers to the iter_mark covers its extent.
@@ -262,7 +264,9 @@ class IterMapRewriter : public ExprMutator {
     collector.Collect(bindings);
 
     for (const IterMark& mark : collector.visited_) {
+      // VLOG(0) << mark << " " << Array<IterSplitExpr>(collector.mark2splits_[mark]);
       if (TryNormalizeSplits(mark, collector.mark2splits_[mark], check_level).empty()) {
+        // VLOG(0) << 1;
         return false;
       }
     }
@@ -562,19 +566,27 @@ class IterMapRewriter : public ExprMutator {
   Array<IterSplitExpr> TryNormalizeSplits(const IterMark& mark,
                                           const std::vector<IterSplitExpr>& splits,
                                           IterMapLevel check_level) {
+    // VLOG(0) << mark << " " << Array<IterSplitExpr>(splits);
     std::vector<bool> used(splits.size(), false);
     std::vector<IterSplitExpr> iters;
     PrimExpr expected_lower_factor = make_const(mark->source->dtype, 1);
 
     for (size_t i = 0; i < splits.size(); ++i) {
-      size_t j = 0;
-      for (; j < splits.size(); ++j) {
+      // VLOG(0) << "split i: " << i;
+      size_t chosen = splits.size();
+      for (size_t j = 0; j < splits.size(); ++j) {
+        // VLOG(0) << j;
         if (used[j]) continue;
         if (!used[j] && analyzer_->CanProveEqual(splits[j]->lower_factor, expected_lower_factor)) {
-          break;
+          bool can_be_chosen = chosen == splits.size() ||
+                               analyzer_->CanProve(splits[chosen]->extent - splits[j]->extent > 0);
+          if (can_be_chosen) {
+            // VLOG(0) << "chosen: " << j;
+            chosen = j;
+          }
         }
       }
-      if (j == splits.size()) {
+      if (chosen == splits.size()) {
         // we do not allow incomplete split if the bindings should be bijective
         if (check_level == IterMapLevel::Bijective) {
           return Array<IterSplitExpr>();
@@ -583,16 +595,17 @@ class IterMapRewriter : public ExprMutator {
         // For example, y \in [0, 24) has 3 splits [y / 6, (y / 2) % 6, y % 2]
         // It is valid to only have [y / 6, y % 2] if bijective is not required
         // We can skip (y / 2) % 6
-        j = SearchSkipLowerFactor(splits, used, expected_lower_factor);
+        chosen = SearchSkipLowerFactor(splits, used, expected_lower_factor);
         // split not found
-        if (j == splits.size()) {
+        if (chosen == splits.size()) {
+          // VLOG(0) << 1;
           return Array<IterSplitExpr>();
         }
       }
 
-      used[j] = true;
-      iters.push_back(splits[j]);
-      expected_lower_factor = splits[j]->lower_factor * splits[j]->extent;
+      used[chosen] = true;
+      iters.push_back(splits[chosen]);
+      expected_lower_factor = splits[chosen]->lower_factor * splits[chosen]->extent;
     }
 
     // Extract iteration mark info before padding
