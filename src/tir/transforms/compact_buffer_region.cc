@@ -77,21 +77,22 @@ class Var2BufferCollector : public StmtExprVisitor {
   }
 
   void VisitExpr_(const BufferLoadNode* op) final {
-    VLOG(0) << op->buffer->data << " " << op->buffer;
+    VLOG(0) << op->buffer->data << " " << op->buffer << " " << op->buffer.get();
     var2buffer_[op->buffer->data].insert(op->buffer);
     StmtExprVisitor::VisitExpr_(op);
   }
 
   void VisitStmt_(const BlockNode* op) final {
+    VLOG(0) << GetRef<Block>(op);
     for (const Buffer& buffer : op->alloc_buffers) {
       var2buffer_[buffer->data].insert(buffer);
-      VLOG(0) << buffer->data << " " << buffer;
+      VLOG(0) << buffer->data << " " << buffer << " " << buffer.get();
     }
     for (const MatchBufferRegion& region : op->match_buffers) {
       var2buffer_[region->buffer->data].insert(region->buffer);
       VLOG(0) << region->buffer->data << " " << region->buffer;
       var2buffer_[region->source->buffer->data].insert(region->source->buffer);
-      VLOG(0) << region->source->buffer->data << " " << region->source->buffer;
+      VLOG(0) << region->source->buffer->data << " " << region->source->buffer << " " << region->source->buffer.get();
     }
     StmtExprVisitor::VisitStmt_(op);
   }

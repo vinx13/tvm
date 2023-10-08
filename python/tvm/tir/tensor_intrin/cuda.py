@@ -541,9 +541,9 @@ TensorIntrin.register(
     MMA_store_16x16_f32_global_INTRIN, *get_mma_store_intrin("float32", 8, "global")
 )
 
-MMA_store_16x16_f32_global_INTRIN = "mma_store_16x16_f32_shared_dyn_"
+MMA_store_16x16_f32_shared_dyn_INTRIN = "mma_store_16x16_f32_shared_dyn_"
 TensorIntrin.register(
-    MMA_store_16x16_f32_global_INTRIN, *get_mma_store_intrin("float32", 8, "shared.dyn")
+    MMA_store_16x16_f32_shared_dyn_INTRIN, *get_mma_store_intrin("float32", 8, "shared.dyn")
 )
 
 MMA_store_16x16_f16_global_INTRIN = "mma_store_16x16_f16_global_"
