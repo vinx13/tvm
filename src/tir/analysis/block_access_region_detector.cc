@@ -118,11 +118,16 @@ class BlockReadWriteDetector : public StmtExprVisitor {
 
 void BlockReadWriteDetector::operator()(const Stmt& stmt) {
   const auto* block = stmt.as<BlockNode>();
+  // VLOG(0) << "handling: " << stmt;
   ICHECK(block != nullptr) << "Only visiting Blocks is allowed, but got " << stmt->GetTypeKey();
   for (const MatchBufferRegion& match_buffer : block->match_buffers) {
     const Var& target_var = match_buffer->buffer->data;
     const Var& source_var = match_buffer->source->buffer->data;
+    // VLOG(0) << "handling match buffer: ";
+    // VLOG(0) << target_var << " " << target_var.get() << " " << source_var << " " << source_var.get();
+    // VLOG(0) << match_buffer->buffer << " " << match_buffer->buffer.get() << " " << match_buffer->source->buffer << " " << match_buffer->source->buffer.get();
     if (buffer_var_map_.find(source_var) != buffer_var_map_.end()) {
+      // VLOG(0) << "found";
       match_buffers_[target_var.get()] = match_buffer;
       buffer_var_map_.Set(target_var, match_buffer->buffer);
     }
@@ -151,6 +156,7 @@ void BlockReadWriteDetector::VisitExpr_(const BufferLoadNode* op) {
   for (const PrimExpr& index : op->indices) {
     relaxed_region.push_back(arith::EvalSet(arith::IntSet::Vector(index), dom_map_));
   }
+  // VLOG(0) << "update read buffer: " << op->buffer << " " << op->buffer.get();
   Update(&read_buffers_, &read_regions_, op->buffer, relaxed_region);
   ExprVisitor::VisitExpr_(op);
 }
@@ -193,10 +199,13 @@ void BlockReadWriteDetector::VisitExpr_(const CallNode* op) {
         }
         // read access, write access or opaque access
         if ((access_mask->value & 1) && (access_mask->value & 2)) {
+    // VLOG(0) << "update opaque buffer: " << buffer << " " << buffer.get();
           Update(&opaque_buffers_, &opaque_regions_, buffer, int_set);
         } else if (access_mask->value & 1) {
+    // VLOG(0) << "update read buffer: " << buffer << " " << buffer.get();
           Update(&read_buffers_, &read_regions_, buffer, int_set);
         } else if (access_mask->value & 2) {
+    // VLOG(0) << "update write buffer: " << buffer << " " << buffer.get();
           Update(&writes_buffers_, &write_regions_, buffer, int_set);
         }
       }
@@ -227,6 +236,8 @@ void BlockReadWriteDetector::VisitStmt_(const BufferStoreNode* op) {
   for (const PrimExpr& index : op->indices) {
     relaxed_region.push_back(arith::EvalSet(arith::IntSet::Vector(index), dom_map_));
   }
+
+    // VLOG(0) << "update write buffer: " << op->buffer << " " << op->buffer.get();
   Update(&writes_buffers_, &write_regions_, op->buffer, relaxed_region);
   StmtVisitor::VisitStmt_(op);
 }
@@ -245,6 +256,7 @@ void BlockReadWriteDetector::VisitStmt_(const BlockRealizeNode* op) {
                              Substitute(range->min, vmap), Substitute(range->extent, vmap))),
                          dom_map_));
     }
+    // VLOG(0) << "update read buffer: " << read->buffer << " " << read->buffer.get();
     Update(&read_buffers_, &read_regions_, read->buffer, relaxed_region);
   }
   for (const auto& write : op->block->writes) {
@@ -255,6 +267,7 @@ void BlockReadWriteDetector::VisitStmt_(const BlockRealizeNode* op) {
                              Substitute(range->min, vmap), Substitute(range->extent, vmap))),
                          dom_map_));
     }
+    // VLOG(0) << "update write buffer: " << write->buffer << " " << write->buffer.get();
     Update(&writes_buffers_, &write_regions_, write->buffer, relaxed_region);
   }
 }
@@ -335,6 +348,7 @@ Array<BufferRegion> BlockReadWriteDetector::CollectRegions(
 }
 
 void BlockReadWriteDetector::UpdateOpaque(const Var& buffer_var) {
+  // VLOG(0) << "update opaque for " << buffer_var;
   auto it = buffer_var_map_.find(buffer_var);
   if (it != buffer_var_map_.end()) {
     const Buffer& buffer = (*it).second;
@@ -345,6 +359,7 @@ void BlockReadWriteDetector::UpdateOpaque(const Var& buffer_var) {
     for (const Range& range : region) {
       int_set.push_back(arith::EvalSet(range, dom_map_));
     }
+    // VLOG(0) << "update opaque buffer: " << buffer << " " << buffer.get();
     Update(&opaque_buffers_, &opaque_regions_, buffer, int_set);
   }
 }

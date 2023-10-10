@@ -186,27 +186,24 @@ def get_ldmatrix_intrin(k_dim, dtype, is_b, transposed, shared_scope="shared"):
         with T.block("root"):
             T.reads(shared[0:row_dim, 0:col_dim])
             T.writes(warp[0:WARP_SIZE, 0:local_size])
-            tx = T.env_thread("threadIdx.x")
-            T.launch_thread(tx, WARP_SIZE)
-
-            T.evaluate(
-                T.ptx_ldmatrix(
-                    ldmatrix_col_major,
-                    4,  # Always load 4 matrices
-                    ".b16",
-                    warp.data,
-                    warp.elem_offset + lift(local_size) * tx,
-                    shared.access_ptr("r"),
-                    shared_offset(tx, s0),
-                    dtype=dtype,
+            for tx in T.thread_binding(0, WARP_SIZE, "threadIdx.x"):
+                T.evaluate(
+                    T.ptx_ldmatrix(
+                        ldmatrix_col_major,
+                        4,  # Always load 4 matrices
+                        ".b16",
+                        warp.data,
+                        warp.elem_offset + lift(local_size) * tx,
+                        shared.access_ptr("r"),
+                        shared_offset(tx, s0),
+                        dtype=dtype,
+                    )
                 )
-            )
 
     return ldmatrix_desc, ldmatrix_impl
 
 
 def get_mma_intrin(k_dim, out_dtype, b_transposed):
-    global M_DIM, N_DIM, WARP_SIZE
     local_size = (M_DIM * k_dim) // WARP_SIZE
     local_size_out = (M_DIM * N_DIM) // 32
 
@@ -247,13 +244,6 @@ def get_mma_intrin(k_dim, out_dtype, b_transposed):
 
     in_offset_factor = get_tensor_core_load_offset_factor(in_dtype)
     out_offset_factor = get_tensor_core_load_offset_factor(out_dtype)
-
-    local_size = T.int64(local_size)
-    local_size_out = T.int64(local_size_out)
-    M_DIM = T.int64(M_DIM)
-    N_DIM = T.int64(N_DIM)
-    k_dim = T.int64(k_dim)
-    WRAP_SIZE = T.int64(WARP_SIZE)
 
     @T.prim_func
     def mma_sync_desc(a: T.handle, b: T.handle, c: T.handle) -> None:
@@ -344,46 +334,45 @@ def get_mma_intrin(k_dim, out_dtype, b_transposed):
                 B[0:WARP_SIZE, 0:local_size],
             )
             T.writes(C[0:WARP_SIZE, 0:local_size_out])
-            tx = T.env_thread("threadIdx.x")
-            T.launch_thread(tx, WARP_SIZE)
 
-            T.evaluate(
-                T.ptx_mma(
-                    mma_prefix,
-                    "row",
-                    "col",
-                    in_dtype_abbrv,
-                    in_dtype_abbrv,
-                    out_dtype_abbrv,
-                    A.data,
-                    A.elem_offset + tx * lift(local_size),
-                    B.data,
-                    B.elem_offset + tx * lift(local_size),
-                    C.data,
-                    C.elem_offset + tx * lift(local_size_out),
-                    False,
-                    dtype=out_dtype,
+            for tx in T.thread_binding(0, WARP_SIZE, "threadIdx.x"):
+                T.evaluate(
+                    T.ptx_mma(
+                        mma_prefix,
+                        "row",
+                        "col",
+                        in_dtype_abbrv,
+                        in_dtype_abbrv,
+                        out_dtype_abbrv,
+                        A.data,
+                        A.elem_offset + tx * lift(local_size),
+                        B.data,
+                        B.elem_offset + tx * lift(local_size),
+                        C.data,
+                        C.elem_offset + tx * lift(local_size_out),
+                        False,
+                        dtype=out_dtype,
+                    )
                 )
-            )
 
-            T.evaluate(
-                T.ptx_mma(
-                    mma_prefix,
-                    "row",
-                    "col",
-                    in_dtype_abbrv,
-                    in_dtype_abbrv,
-                    out_dtype_abbrv,
-                    A.data,
-                    A.elem_offset + tx * lift(local_size),
-                    B.data,
-                    B.elem_offset + tx * lift(local_size) + lift(local_size) // 2,
-                    C.data,
-                    C.elem_offset + tx * lift(local_size_out) + lift(local_size_out) // 2,
-                    False,
-                    dtype=out_dtype,
+                T.evaluate(
+                    T.ptx_mma(
+                        mma_prefix,
+                        "row",
+                        "col",
+                        in_dtype_abbrv,
+                        in_dtype_abbrv,
+                        out_dtype_abbrv,
+                        A.data,
+                        A.elem_offset + tx * lift(local_size),
+                        B.data,
+                        B.elem_offset + tx * lift(local_size) + lift(local_size) // 2,
+                        C.data,
+                        C.elem_offset + tx * lift(local_size_out) + lift(local_size_out) // 2,
+                        False,
+                        dtype=out_dtype,
+                    )
                 )
-            )
 
     return mma_sync_desc, mma_sync_impl
 
@@ -418,10 +407,9 @@ def get_mma_fill_intrin(dtype, local_size):
         with T.block("root"):
             T.reads()
             T.writes(C_warp[0:WARP_SIZE, 0:local_size])
-            tx = T.env_thread("threadIdx.x")
-            T.launch_thread(tx, WARP_SIZE)
 
-            T.evaluate(T.mma_fill(local_size, C_warp.data, C_warp.elem_offset, dtype=dtype))
+            for tx in T.thread_binding(0, WARP_SIZE, "threadIdx.x"):
+                T.evaluate(T.mma_fill(local_size, C_warp.data, C_warp.elem_offset, dtype=dtype))
 
     return mma_fill_desc, mma_fill_impl
 
@@ -461,20 +449,19 @@ def get_mma_store_intrin(dtype, local_size, scope="global"):
         with T.block("root"):
             T.reads(C_warp[0:WARP_SIZE, 0:local_size])
             T.writes(C[0:M_DIM, 0:N_DIM])
-            tx = T.env_thread("threadIdx.x")
-            T.launch_thread(tx, WARP_SIZE)
 
-            T.evaluate(
-                T.mma_store(
-                    M_DIM,
-                    N_DIM,
-                    C.access_ptr("w"),
-                    C_warp.data,
-                    C_warp.elem_offset,
-                    s0,
-                    dtype=dtype,
+            for tx in T.thread_binding(0, WARP_SIZE, "threadIdx.x"):
+                T.evaluate(
+                    T.mma_store(
+                        M_DIM,
+                        N_DIM,
+                        C.access_ptr("w"),
+                        C_warp.data,
+                        C_warp.elem_offset,
+                        s0,
+                        dtype=dtype,
+                    )
                 )
-            )
 
     return mma_store_desc, mma_store_impl
 
@@ -498,6 +485,11 @@ TensorIntrin.register(
 LDMATRIX_16x16_B_TRANS_INTRIN = "mma.ldmatrix_16x16_b_trans"
 TensorIntrin.register(
     LDMATRIX_16x16_B_TRANS_INTRIN, *get_ldmatrix_intrin(16, "float16", True, True)
+)
+
+LDMATRIX_16x16_B_TRANS_DYN_INTRIN = "mma.ldmatrix_16x16_b_trans_dyn"
+TensorIntrin.register(
+    LDMATRIX_16x16_B_TRANS_DYN_INTRIN, *get_ldmatrix_intrin(16, "float16", True, True, "shared.dyn")
 )
 
 LDMATRIX_16x32_A_INTRIN = "mma.ldmatrix_16x32_a"
@@ -1256,11 +1248,11 @@ def get_mma_init_intrin(
         with T.block("root"):
             T.reads()
             T.writes(dst[0:m_dim, 0:n_dim])
-            tx = T.env_thread("threadIdx.x")
-            T.launch_thread(tx, 32)
-            for b in range(m_dim // 8):
-                for v in T.vectorized(n_dim // 4):
-                    dst[b * 8 + tx // 4, (tx % 4) * (n_dim // 4) + v] = zero
+
+            for tx in T.thread_binding(0, WARP_SIZE, "threadIdx.x"):
+                for b in range(m_dim // 8):
+                    for v in T.vectorized(n_dim // 4):
+                        dst[b * 8 + tx // 4, (tx % 4) * (n_dim // 4) + v] = zero
 
     return mma_init_desc, mma_init_impl
 
@@ -1331,21 +1323,19 @@ def get_mma_load_intrin(
             T.reads(src[0:frag_m, 0:frag_n])
             T.writes(dst[0:frag_m, 0:frag_n])
 
-            tx = T.env_thread("threadIdx.x")
-            T.launch_thread(tx, 32)
-
-            T.evaluate(
-                T.ptx_ldmatrix(
-                    trans,
-                    4,  # Always load 4 matrices
-                    ".b16",
-                    dst.data,
-                    get_index(dst.elem_offset, d0),
-                    src.access_ptr("r"),
-                    get_tx_index(tx, s0),
-                    dtype=dtype,
+            for tx in T.thread_binding(0, WARP_SIZE, "threadIdx.x"):
+                T.evaluate(
+                    T.ptx_ldmatrix(
+                        trans,
+                        4,  # Always load 4 matrices
+                        ".b16",
+                        dst.data,
+                        get_index(dst.elem_offset, d0),
+                        src.access_ptr("r"),
+                        get_tx_index(tx, s0),
+                        dtype=dtype,
+                    )
                 )
-            )
 
     return mma_load_desc, mma_load_impl
 

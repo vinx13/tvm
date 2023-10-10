@@ -174,32 +174,11 @@ def test_f16f16f32_m16n16k16():
     out_dtype = "float32"
     i_factors, j_factors, k_factors = [4, 8, 2, 4, 1], [1, 64, 2, 1, 2], [128, 2, 1]
 
-    timer = run_test(
-        k_inner,
-        in_dtype,
-        out_dtype,
-        False,  # b_transposed
-        i_factors,
-        j_factors,
-        k_factors,
-        index_map,
-        index_map,
-        index_map,
-        LDMATRIX_16x16_A_INTRIN,
-        LDMATRIX_16x16_B_INTRIN,
-        MMA_f16f16f32_INTRIN,
-        MMA_fill_16x16_f32_INTRIN,
-        MMA_store_16x16_f32_global_INTRIN,
-    )
-
-    if measure_perf and timer:
-        print("f16f16f32_m16n16k16: %f GFLOPS" % (gflops / (timer().mean)))
-
     # timer = run_test(
     #     k_inner,
     #     in_dtype,
     #     out_dtype,
-    #     True,  # b_transposed
+    #     False,  # b_transposed
     #     i_factors,
     #     j_factors,
     #     k_factors,
@@ -207,14 +186,35 @@ def test_f16f16f32_m16n16k16():
     #     index_map,
     #     index_map,
     #     LDMATRIX_16x16_A_INTRIN,
-    #     LDMATRIX_16x16_B_TRANS_INTRIN,
-    #     MMA_f16f16f32_TRANS_INTRIN,
+    #     LDMATRIX_16x16_B_INTRIN,
+    #     MMA_f16f16f32_INTRIN,
     #     MMA_fill_16x16_f32_INTRIN,
     #     MMA_store_16x16_f32_global_INTRIN,
     # )
 
     # if measure_perf and timer:
-    #     print("f16f16f32_m16n16k16_trans: %f GFLOPS" % (gflops / (timer().mean)))
+    #     print("f16f16f32_m16n16k16: %f GFLOPS" % (gflops / (timer().mean)))
+
+    timer = run_test(
+        k_inner,
+        in_dtype,
+        out_dtype,
+        True,  # b_transposed
+        i_factors,
+        j_factors,
+        k_factors,
+        index_map,
+        index_map,
+        index_map,
+        LDMATRIX_16x16_A_INTRIN,
+        LDMATRIX_16x16_B_TRANS_INTRIN,
+        MMA_f16f16f32_TRANS_INTRIN,
+        MMA_fill_16x16_f32_INTRIN,
+        MMA_store_16x16_f32_global_INTRIN,
+    )
+
+    if measure_perf and timer:
+        print("f16f16f32_m16n16k16_trans: %f GFLOPS" % (gflops / (timer().mean)))
 
 
 test_f16f16f32_m16n16k16()

@@ -92,11 +92,11 @@ FindLoopLCA(const Stmt& root) {
   }
   std::sort(sorted_thread_tags.begin(), sorted_thread_tags.end(),
             [](const std::string& lhs, const std::string& rhs) {
-              return lhs.size() > rhs.size();
+              // return lhs.size() > rhs.size();
               runtime::ThreadScope lhs_scope = runtime::ThreadScope::Create(lhs);
               runtime::ThreadScope rhs_scope = runtime::ThreadScope::Create(rhs);
               if (lhs_scope.rank != rhs_scope.rank) {
-                return lhs_scope.rank < rhs_scope.rank;
+                return lhs_scope.rank > rhs_scope.rank;
               }
               return lhs_scope.dim_index < rhs_scope.dim_index;
             });

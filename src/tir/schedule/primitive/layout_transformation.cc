@@ -878,12 +878,67 @@ class TransformLayoutRewriter : private arith::IRMutatorWithAnalyzer {
       return block;
     }();
 
+    // VLOG(0) << "Visiting: " << GetRef<Block>(op);
     Block block = Downcast<Block>(Parent::VisitStmt_(op));
 
-    auto infered_access_regions = GetBlockReadWriteRegion(block, buffer_data_to_buffer_);
     auto* n = block.CopyOnWrite();
+    n->match_buffers.MutateByApply([this](const MatchBufferRegion& match_buffer) {
+      if (match_buffer->source->buffer.same_as(old_buffer_)) {
+        auto new_ranges = index_map_->MapRanges(match_buffer->source->region, &index_simplifier_);
+        return MatchBufferRegion(match_buffer->buffer, BufferRegion(new_buffer_, new_ranges));
+      } else {
+        return match_buffer;
+      }
+    });
+
+
+    // VLOG(0) << op->name_hint << " " << block;
+    // VLOG(0) << old_buffer_ << " " << old_buffer_.get() << " " << old_buffer_->data.get() << " " << new_buffer_ << " "
+    //         << new_buffer_.get() << " " << new_buffer_->data.get();
+    // VLOG(0) << buffer_data_to_buffer_;
+    // for (auto [key, value] : buffer_data_to_buffer_) {
+    //   VLOG(0) << key << " " << key.get() << " " << value << " " << value.get();
+    // }
+
+    auto infered_access_regions = GetBlockReadWriteRegion(GetRef<Block>(n), buffer_data_to_buffer_);
+
+
+    // auto printer = [](const Array<BufferRegion>& reads) {
+    //   std::ostringstream os;
+    //   os << "[";
+    //   for (const auto& read : reads) {
+    //     os << read->buffer.get() << " ";
+    //   }
+    //   os << "]";
+    //   VLOG(0) << os.str();
+    // };
+
+    // auto printer1 = [](const Array<Buffer>& reads) {
+    //   std::ostringstream os;
+    //   os << "[";
+    //   for (const auto& read : reads) {
+    //     os << read.get() << " ";
+    //   }
+    //   os << "]";
+    //   VLOG(0) << os.str();
+    // };
+
+    // VLOG(0) << op->name_hint << " Infered access regions: " << infered_access_regions;
+    // printer(infered_access_regions[0]);
+    // printer(infered_access_regions[1]);
+
+    // VLOG(0) << op->name_hint << " Reads before: " << n->reads;
+    // printer(n->reads);
     RewriteAccessRegion(&n->reads, infered_access_regions[0]);
+    // VLOG(0) << op->name_hint << " Reads after: " << n->reads;
+    // printer(n->reads);
+    // VLOG(0) << op->name_hint << " Writes before: " << n->writes;
+    // printer(n->writes);
     RewriteAccessRegion(&n->writes, infered_access_regions[1]);
+    // VLOG(0) << op->name_hint << " Writes after: " << n->writes;
+    // printer(n->writes);
+    // VLOG(0) << op->name_hint << " Alloc buffers before: " << n->alloc_buffers;
+    // printer1(n->alloc_buffers);
     n->alloc_buffers.MutateByApply([this](const Buffer& buffer) {
       if (buffer.same_as(old_buffer_)) {
         return new_buffer_;
@@ -891,6 +946,8 @@ class TransformLayoutRewriter : private arith::IRMutatorWithAnalyzer {
         return buffer;
       }
     });
+    // VLOG(0) << op->name_hint << " Alloc buffers after: " << n->alloc_buffers;
+    // printer1(n->alloc_buffers);
 
     RecordReplacement(orig, block);
     return std::move(block);
@@ -1199,6 +1256,7 @@ void TransformLayout(ScheduleState self, const StmtSRef& block_sref, int buffer_
 
   // Step 3: Rewrite BufferLoad/BufferStore access indices, block read/write regions, and block
   // alloc_buffers.
+  // VLOG(0) << "scope block: " << GetRef<Block>(scope_block);
   auto [new_stmt, block_sref_reuse] =
       TransformLayoutRewriter::Rewrite(GetRef<Block>(scope_block), old_buffer, new_buffer,
                                        index_map, opt_inverse, padding_predicate, pad_value);
