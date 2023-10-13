@@ -478,11 +478,11 @@ class LoopReconstructor : private StmtMutator {
         }
         var_map.Set(loops_[i][j]->loop_var, new_loop_vars[j]);
       }
-      VLOG(0) << 1;
-      VLOG(0) << var_map;
+      // VLOG(0) << 1;
+      // VLOG(0) << var_map;
       // VLOG(0) << loops_[i][0].data_.data_;
       auto new_stmt = Substitute(loops_[i][0]->body, var_map);
-      VLOG(0) << 1;
+      // VLOG(0) << 1;
       new_stmts.push_back(new_stmt);
       this->need_remove_loop_.push_back(loops_[i].back());
     }

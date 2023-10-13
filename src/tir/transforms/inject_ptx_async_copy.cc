@@ -114,7 +114,7 @@ class PTXAsyncCopyInjector : public StmtMutator {
           }();
           if (src_offset.defined() && dst_offset.defined()) {
             return Evaluate(Call(store->buffer->dtype, tvm::tir::builtin::ptx_cp_async(),
-                                 {store->buffer->data, tir::Mul(dst_offset, PrimExpr(index_factor)),
+                                 {store->buffer->data, dst_offset * index_factor,
                                   load->buffer->data, src_offset, PrimExpr(bytes)}));
           }
         } else {
@@ -144,8 +144,8 @@ class PTXAsyncCopyInjector : public StmtMutator {
           if (src_offset.defined() && dst_offset.defined()) {
             return Evaluate(
                 Call(store->buffer->dtype, tvm::tir::builtin::ptx_cp_async(),
-                     {store->buffer->data, tir::Mul(dst_offset, PrimExpr(index_factor)),
-                      load->buffer->data, src_offset, PrimExpr(bytes), predicate_value}));
+                     {store->buffer->data, dst_offset * index_factor, load->buffer->data,
+                      src_offset, PrimExpr(bytes), predicate_value}));
           }
         }
       }

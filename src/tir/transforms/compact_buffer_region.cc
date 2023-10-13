@@ -730,10 +730,10 @@ PrimFunc CompactBufferAllocation(PrimFunc f, bool is_strict) {
   if (!IsFromLegacyTESchedule(f)) {
     PrimFuncNode* fptr = f.CopyOnWrite();
     auto region = BufferAccessRegionCollector::Collect(f, /*collect_inbound=*/is_strict);
-    VLOG(0) << region.size();
-    for (const auto& kv : region) {
-      VLOG(0) << kv.first << " " << kv.second;
-    }
+    // VLOG(0) << region.size();
+    // for (const auto& kv : region) {
+    //   VLOG(0) << kv.first << " " << kv.second;
+    // }
     auto storage_align = CollectStorageAlignAnnotation(f->body);
     fptr->body = BufferCompactorCompact(f, region, storage_align);
     return f;

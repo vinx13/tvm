@@ -80,6 +80,7 @@ class ScriptCompleter : public StmtMutator {
     // ignore root block or blocks which already has reads/writes regions
     if (mask != 0) {
       auto access_region = GetBlockAccessRegion(block, *buffer_var_map_);
+      // VLOG(0) << access_region;
       const Array<BufferRegion>& reads = access_region[0];
       const Array<BufferRegion>& writes = access_region[1];
       const Array<BufferRegion>& opaque = access_region[2];

@@ -316,6 +316,10 @@ void BlockReadWriteDetector::Update(std::vector<Buffer>* buffers,
       return;
     }
   }
+  // VLOG(0) << "update buffer: " << buffer << " ";
+  // for (size_t i = 0; i < region.size(); ++i) {
+  //   VLOG(0) << "region: " << region[i];
+  // }
   buffers->push_back(std::move(buffer));
   regions->push_back(std::move(region));
 }

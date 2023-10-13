@@ -19,7 +19,7 @@
 import math
 from dataclasses import dataclass
 from enum import Enum
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict, List, Literal, Optional, Set, Tuple
 
 from tvm import DataType, tir
 from tvm.ir import Range
@@ -616,6 +616,8 @@ class MatmulTensorizationMMA(ScheduleRule):
 
         z_order_factor_m = [1, None]
         z_order_factor_n = [1, None]
+        # z_order_factor_m = [None, 16]
+        # z_order_factor_n = [None, 16]
 
         print(f"z_order_factor_m={z_order_factor_m}, z_order_factor_n={z_order_factor_n}")
 
@@ -662,45 +664,52 @@ class MatmulTensorizationMMA(ScheduleRule):
         sch.bind(i2, "threadIdx.z")
         sch.bind(j2, "threadIdx.y")
 
-        def fetch_input(block_outer, read_buffer_idx, read_loop_ndim, block_sizes):
+        def fetch_input(block_outer, read_buffer_idx, tensor_name: Literal["A", "B"]):
             block_read = sch.cache_read(block_outer, read_buffer_idx, "shared.dyn")
             sch.compute_at(block_read, k0)
-            fused = sch.fuse(*sch.get_loops(block_read)[-read_loop_ndim:])
+            fused = sch.fuse(*sch.get_loops(block_read)[-2:])
 
             f0, f1, f2, f3, f4 = sch.split(
                 fused, [None, thread_z, thread_y, warp_size, vector_size]
             )
 
-            block_m, block_k, micro_size_m, micro_size_k = block_sizes
+            if tensor_name == "A":
+                micro_size_spatial = micro_size_m
+            else:
+                micro_size_spatial = micro_size_n
 
             sch.bind(f1, "threadIdx.z")
             sch.bind(f2, "threadIdx.y")
             sch.bind(f3, "threadIdx.x")
             sch.vectorize(f4)
+
+            sch.annotate(block_read, ann_key="permuted_layout", ann_val=f"g2s_{tensor_name}")
+
             auto_inline_producers(sch, block_read)
 
             mma_read = sch.cache_read(block_outer, read_buffer_idx, "warp")
             sch.compute_at(mma_read, k1)
 
-            sch.split(sch.get_loops(mma_read)[-2], [None, micro_size_m])
+            sch.split(sch.get_loops(mma_read)[-2], [None, micro_size_spatial])
 
             sch.transform_layout(
                 mma_read,
                 ("write", 0),
                 lambda v0, v1, v2: (
-                    v1 // micro_size_m,
+                    v1 // micro_size_spatial,
                     v2 // micro_size_k,
-                    *shared_16x16_to_ldmatrix_32x8_layout(v1 % micro_size_m, v2 % micro_size_k),
+                    *shared_16x16_to_ldmatrix_32x8_layout(
+                        v1 % micro_size_spatial, v2 % micro_size_k
+                    ),
                 ),
             )
+
+            mma_read_block = sch.blockize(sch.get_loops(mma_read)[-2])
+            sch.annotate(mma_read_block, ann_key="permuted_layout", ann_val=f"s2l_{tensor_name}")
             return block_read, mma_read
 
-        block_read_a, mma_read_a = fetch_input(
-            block_outer, 0, 2, [block_m, block_k, micro_size_m, micro_size_k]
-        )
-        block_read_b, mma_read_b = fetch_input(
-            block_outer, 1, 2, [block_n, block_k, micro_size_n, micro_size_k]
-        )
+        block_read_a, mma_read_a = fetch_input(block_outer, 0, "A")
+        block_read_b, mma_read_b = fetch_input(block_outer, 1, "B")
 
         # create write cache to store matrix from wmma fragments to shared memory and global memory
         def store_output(block_outer, write_buffer_idx, write_loop_ndim, block_sizes):
@@ -769,50 +778,69 @@ class MatmulTensorizationMMA(ScheduleRule):
         #     trans_b=True,
         # )
 
-    #     LDMATRIX_16x16_A_INTRIN,
-    #     LDMATRIX_16x16_B_TRANS_INTRIN,
-    #     MMA_f16f16f32_TRANS_INTRIN,
-    #     MMA_fill_16x16_f32_INTRIN,
-    #     MMA_store_16x16_f32_global_INTRIN,
-    # )
         sch.tensorize(sch.get_loops(block_init_c_inner)[-2], MMA_fill_16x16_f32_INTRIN)
         sch.tensorize(sch.get_loops(mma_read_a)[-2], LDMATRIX_16x16_A_DYN_INTRIN)
         sch.tensorize(sch.get_loops(mma_read_b)[-2], LDMATRIX_16x16_B_TRANS_DYN_INTRIN)
         sch.tensorize(sch.get_loops(block_inner)[-3], MMA_f16f16f32_TRANS_INTRIN)
         sch.tensorize(sch.get_loops(store)[-2], MMA_store_16x16_f32_shared_dyn_INTRIN)
 
-        sch.transform_layout(
-            block_read_a,
-            ("write", 0),
-            lambda v0, v1, v2: (
-                v1 // block_m,
-                v2 // block_k,
-                v1 % block_m,
-                v2 % block_k,
-            ),
-        )
+        # sch.transform_layout(
+        #     block_read_a,
+        #     ("write", 0),
+        #     lambda v0, v1, v2: (
+        #         v0,
+        #         v1 // block_m,
+        #         v2 // block_k,
+        #         v1 % block_m // 2,
+        #         v1 % 2 * 32 + v2 % block_k,
+        #     ),
+        # )
 
-        sch.transform_layout(
-            block_read_b,
-            ("write", 0),
-            lambda v0, v1, v2: (
-                v1 // block_n,
-                v2 // block_k,
-                v1 % block_n,
-                v2 % block_k,
-            ),
-        )
+        # sch.transform_layout(
+        #     block_read_a,
+        #     ("write", 0),
+        #     lambda v0, v1, v2, v3, v4: (v0, v1, v2, v3, v4 ^ (v3 & 3 << 3)),
+        # )
 
-        sch.transform_layout(
-            block_write,
-            ("read", 0),
-            lambda v0, v1, v2: (
-                v1 // block_m,
-                v2 // block_n,
-                v1 % block_m,
-                v2 % block_n,
-            ),
-        )
+        # sch.transform_layout(
+        #     block_read_b,
+        #     ("write", 0),
+        #     lambda v0, v1, v2: (
+        #         v0,
+        #         v1 // block_n,
+        #         v2 // block_k,
+        #         v1 % block_n // 2,
+        #         v1 % 2 * 32 + v2 % block_k,
+        #     ),
+        # )
+
+        # sch.transform_layout(
+        #     block_read_b,
+        #     ("write", 0),
+        #     lambda v0, v1, v2, v3, v4: (v0, v1, v2, v3, v4 ^ (v3 & 3 << 3)),
+        # )
+
+        # sch.transform_layout(
+        #     block_read_b,
+        #     ("write", 0),
+        #     lambda v0, v1, v2: (
+        #         v1 // block_n,
+        #         v2 // block_k,
+        #         v1 % block_n,
+        #         v2 % block_k,
+        #     ),
+        # )
+
+        # sch.transform_layout(
+        #     block_write,
+        #     ("read", 0),
+        #     lambda v0, v1, v2: (
+        #         v1 // block_m,
+        #         v2 // block_n,
+        #         v1 % block_m,
+        #         v2 % block_n,
+        #     ),
+        # )
 
         # sch.transform_layout(
         #     sch.get_block("p_output0_intermediate_reindex_shared.dyn_warp_o"),
@@ -863,9 +891,9 @@ class MatmulTensorizationMMA(ScheduleRule):
         # )
 
         # async pipeline
-        # sch.annotate(k0, ann_key="software_pipeline_stage", ann_val=[0, 0, 3])
-        # sch.annotate(k0, ann_key="software_pipeline_order", ann_val=[0, 1, 2])
-        # sch.annotate(k0, ann_key="software_pipeline_async_stages", ann_val=[0])
+        sch.annotate(k0, ann_key="software_pipeline_stage", ann_val=[0, 0, 3])
+        sch.annotate(k0, ann_key="software_pipeline_order", ann_val=[0, 1, 2])
+        sch.annotate(k0, ann_key="software_pipeline_async_stages", ann_val=[0])
 
         return sch
 
