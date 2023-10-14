@@ -64,9 +64,8 @@ class PermutedLayoutInjectorBase : protected IRMutatorWithAnalyzer {
       // 0  1  2  3  4  5  6  7    ==>    5  4  7  6  1  0  3  2
       // 0  1  2  3  4  5  6  7    ==>    6  7  4  5  2  3  0  1
       // 0  1  2  3  4  5  6  7    ==>    7  6  5  4  3  2  1  0
-      auto row_idx_sub = floormod(row_idx, 8), col_idx_sub = floormod(col_idx_outer, 8);
-      col_idx_sub = col_idx_sub ^ row_idx_sub;
-      new_col_idx_outer = floordiv(col_idx_outer, 8) * 8 + col_idx_sub;
+      auto row_idx_sub = floormod(row_idx, 8);
+      new_col_idx_outer = col_idx_outer ^ row_idx_sub;
     } else {
       ICHECK(row_size % 32 == 0);
       // Use 8 * 4 permuted layout
@@ -85,9 +84,8 @@ class PermutedLayoutInjectorBase : protected IRMutatorWithAnalyzer {
       // 0  1  2  3  4  0  1  2  3    ==>    1  0  3  2  1  0  3  2
       // 0  1  2  3  4  0  1  2  3    ==>    2  3  0  1  2  3  0  1
       // 0  1  2  3  4  0  1  2  3    ==>    3  2  1  0  3  2  1  0
-      auto row_idx_sub = floormod(row_idx, 8), col_idx_sub = floormod(col_idx_outer, 4);
-      col_idx_sub = col_idx_sub ^ floordiv(row_idx_sub, 2);
-      new_col_idx_outer = floordiv(col_idx_outer, 4) * 4 + col_idx_sub;
+      auto row_idx_sub = floormod(row_idx, 8);
+      new_col_idx_outer = col_idx_outer ^ floordiv(row_idx_sub, 2);
     }
     return {row_idx, analyzer_->Simplify(new_col_idx_outer * 8 + col_idx_inner)};
   }
