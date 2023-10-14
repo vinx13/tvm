@@ -728,6 +728,9 @@ class MatmulTensorizationMMA(ScheduleRule):
             sch.bind(f2, "threadIdx.y")
             sch.bind(f3, "threadIdx.x")
             sch.vectorize(f4)
+
+            # sch.annotate(block_write, ann_key="permuted_layout", ann_val=f"s2g_C")
+
             auto_inline_consumers(sch, block_write)
 
             store = sch.cache_write(block_outer, write_buffer_idx, "warp")
@@ -747,6 +750,9 @@ class MatmulTensorizationMMA(ScheduleRule):
                     *shared_16x16_to_ldmatrix_32x8_layout(v1 % micro_size_m, v2 % micro_size_n),
                 ),
             )
+
+            mma_read_block = sch.blockize(sch.get_loops(store)[-2])
+            # sch.annotate(mma_read_block, ann_key="permuted_layout", ann_val=f"l2s_C")
 
             return block_write, store
 
@@ -891,9 +897,9 @@ class MatmulTensorizationMMA(ScheduleRule):
         # )
 
         # async pipeline
-        sch.annotate(k0, ann_key="software_pipeline_stage", ann_val=[0, 0, 3])
-        sch.annotate(k0, ann_key="software_pipeline_order", ann_val=[0, 1, 2])
-        sch.annotate(k0, ann_key="software_pipeline_async_stages", ann_val=[0])
+        # sch.annotate(k0, ann_key="software_pipeline_stage", ann_val=[0, 0, 3])
+        # sch.annotate(k0, ann_key="software_pipeline_order", ann_val=[0, 1, 2])
+        # sch.annotate(k0, ann_key="software_pipeline_async_stages", ann_val=[0])
 
         return sch
 

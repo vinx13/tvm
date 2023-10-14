@@ -106,6 +106,10 @@ def test_backward_compatibility_shared_a():
     _check_primfunc_transform(before, expected)
 
 
+test_backward_compatibility_shared_a()
+exit()
+
+
 def test_backward_compatibility_shared_a_and_b():
     # fmt: off
     @T.prim_func

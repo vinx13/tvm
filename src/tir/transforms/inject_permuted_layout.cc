@@ -40,24 +40,17 @@ namespace tir {
 using namespace arith;
 using namespace runtime;
 
-class PermutedLayoutInjector : private IRMutatorWithAnalyzer {
- public:
-  static PrimFunc Transfrom(PrimFunc func) {
-    Analyzer analyzer;
-    auto fptr = func.CopyOnWrite();
-    fptr->body = PermutedLayoutInjector(&analyzer)(std::move(fptr->body));
-    return func;
-  }
-
- private:
-  explicit PermutedLayoutInjector(Analyzer* analyzer) : IRMutatorWithAnalyzer(analyzer) {}
+class PermutedLayoutInjectorBase : protected IRMutatorWithAnalyzer {
+ protected:
+  explicit PermutedLayoutInjectorBase(Analyzer* analyzer) : IRMutatorWithAnalyzer(analyzer) {}
 
   using IRMutatorWithAnalyzer::VisitExpr_;
   using IRMutatorWithAnalyzer::VisitStmt_;
 
   Array<PrimExpr> PermuteIndices(PrimExpr row_idx, PrimExpr col_idx, int row_size) {
     // Index after vectorizing by 8
-    PrimExpr col_idx_outer = floordiv(col_idx, 8), col_idx_inner = floormod(col_idx, 8);
+    PrimExpr col_idx_outer = floordiv(col_idx, VECTORIZE_FACTOR),
+             col_idx_inner = floormod(col_idx, VECTORIZE_FACTOR);
     PrimExpr new_col_idx_outer;
     if (row_size % 64 == 0) {
       // Use 8 * 8 permuted layout
@@ -100,7 +93,8 @@ class PermutedLayoutInjector : private IRMutatorWithAnalyzer {
   }
 
   static void CheckModeValid(String permuted_layout_mode) {
-    static const std::vector<String> valid_modes = {"", "g2s_A", "g2s_B", "s2l_A", "s2l_B"};
+    static const std::vector<String> valid_modes = {"",      "g2s_A", "g2s_B", "s2l_A",
+                                                    "s2l_B", "l2s_C", "s2g_C"};
     auto found = std::find(valid_modes.begin(), valid_modes.end(), permuted_layout_mode) !=
                  valid_modes.end();
     CHECK(found) << "Invalid permuted layout mode \"" << permuted_layout_mode << "\"";
@@ -117,9 +111,7 @@ class PermutedLayoutInjector : private IRMutatorWithAnalyzer {
 
     CHECK(permuted_layout_mode_ == "" || permuted_layout_mode_ == permuted_layout_mode)
         << "Attribute \"permuted_layout\" is already set by block \"" << scope_block_name_
-        << "\", but "
-           "different from block \""
-        << op->name_hint << "\"";
+        << "\", but different from block \"" << op->name_hint << "\"";
     CheckModeValid(permuted_layout_mode);
 
     permuted_layout_mode_ = permuted_layout_mode;
@@ -132,22 +124,33 @@ class PermutedLayoutInjector : private IRMutatorWithAnalyzer {
     return blk;
   }
 
-  Stmt VisitStmt_(const BufferStoreNode* op) final {
-    // Case 1. Rewrite global to shared.dyn or shared
-    // We assume the shape of the shared memory is [..., row_size, col_size],
-    // where row_size is divisible by 64, or divisible by 32 and col_size is divisible by 2.
-    auto store = Downcast<BufferStore>(IRMutatorWithAnalyzer::VisitStmt_(op));
+  static const size_t VECTORIZE_FACTOR = 8;
+  static const size_t BANK_SIZE_BYTES = 128;
+  String permuted_layout_mode_ = "";
+  String scope_block_name_;
 
-    if (permuted_layout_mode_ == "" || !support::StartsWith(permuted_layout_mode_, "g2s")) {
-      return store;
+  struct BufferRowSizeInfo {
+    int size_A;
+    int size_B;
+    int size_C;
+    int& Get(char buffer_name) {
+      ICHECK(buffer_name == 'A' || buffer_name == 'B' || buffer_name == 'C');
+      return buffer_name == 'A' ? size_A : (buffer_name == 'B' ? size_B : size_C);
     }
+  };
+  BufferRowSizeInfo buffer_row_size_info_;
+};
 
-    auto buffer = store->buffer;
-    auto scope = StorageScope::Create(GetPtrStorageScope(buffer->data));
-    if (scope.rank != StorageRank::kShared) {
-      return store;
-    }
+// Handles the memory transfer from/to global mem to/from shared mem
+class PermutedLayoutInjectorGmemSmem : private PermutedLayoutInjectorBase {
+ private:
+  explicit PermutedLayoutInjectorGmemSmem(Analyzer* analyzer)
+      : PermutedLayoutInjectorBase(analyzer) {}
 
+  using PermutedLayoutInjectorBase::VisitExpr_;
+  using PermutedLayoutInjectorBase::VisitStmt_;
+
+  int CheckAndGetBufferRowSize(Buffer buffer) {
     CHECK(buffer->shape.size() >= 2)
         << "The dimension of Buffer \"" << buffer->name << "\" with shape " << buffer->shape
         << " should be at least 2";
@@ -166,62 +169,108 @@ class PermutedLayoutInjector : private IRMutatorWithAnalyzer {
                  << " is not supported since its first dimension is not divisible by 2 and "
                     "second dimension is not divisible by 64";
     }
+    return buffer_row_size;
+  }
 
+  Array<PrimExpr> HandleBufferIndices(Buffer buffer, Array<PrimExpr> indices) {
+    auto buffer_row_size = CheckAndGetBufferRowSize(buffer);
     // Store the buffer row size to for later handling of T.ptx_ldmatrix
-    if (permuted_layout_mode_.at(4) == 'A') {
-      buffer_row_size_A_ = buffer_row_size;
-    } else {
-      buffer_row_size_B_ = buffer_row_size;
-    }
+    // permuted_layout_mode_.at(4): "A" or "B" or "C"
+    buffer_row_size_info_.Get(permuted_layout_mode_.at(4)) = buffer_row_size;
 
     // Mutate the last two indices
-    auto store_node = store.CopyOnWrite();
-    PrimExpr row_idx = store_node->indices[dim - 2];
-    PrimExpr col_idx = store_node->indices[dim - 1];
+    auto indices_size = indices.size();
+    PrimExpr row_idx = indices[indices_size - 2];
+    PrimExpr col_idx = indices[indices_size - 1];
     auto new_indices = PermuteIndices(row_idx, col_idx, buffer_row_size);
-    store_node->indices.Set(dim - 2, new_indices[0]);
-    store_node->indices.Set(dim - 1, new_indices[1]);
+    indices.Set(indices_size - 2, new_indices[0]);
+    indices.Set(indices_size - 1, new_indices[1]);
+    return indices;
+  }
 
+  Stmt VisitStmt_(const BufferStoreNode* op) final {
+    // Case 1. Rewrite global to shared.dyn or shared
+    // We assume the shape of the shared memory is [..., row_size, col_size],
+    // where row_size is divisible by 64, or divisible by 32 and col_size is divisible by 2.
+    auto store = Downcast<BufferStore>(PermutedLayoutInjectorBase::VisitStmt_(op));
+
+    if (permuted_layout_mode_ == "" || (!support::StartsWith(permuted_layout_mode_, "g2s") &&
+                                        !support::StartsWith(permuted_layout_mode_, "s2g"))) {
+      return store;
+    }
+
+    auto scope = StorageScope::Create(GetPtrStorageScope(store->buffer->data));
+    if (scope.rank != StorageRank::kShared) {
+      return store;
+    }
+
+    auto store_node = store.CopyOnWrite();
+    store_node->indices = HandleBufferIndices(store_node->buffer, store_node->indices);
     return store;
   }
 
-  PrimExpr VisitExpr_(const CallNode* op) {
-    // Case 2. Rewrite shared or shared.dyn to local. We only consider T.ptx_ldmatrix, which
-    // has the form T.ptx_ldmatrix(..., smem_ptr, smem_offset) and
-    // smem_ptr == T.tvm_access_ptr(ptype, data, offset, extent, rw_mask)
-    auto call = Downcast<Call>(IRMutatorWithAnalyzer::VisitExpr_(op));
+  PrimExpr VisitExpr_(const BufferLoadNode* op) final {
+    // Case 1. Rewrite global to shared.dyn or shared
+    // We assume the shape of the shared memory is [..., row_size, col_size],
+    // where row_size is divisible by 64, or divisible by 32 and col_size is divisible by 2.
+    auto load = Downcast<BufferLoad>(PermutedLayoutInjectorBase::VisitExpr_(op));
 
-    if (!call->op.same_as(builtin::ptx_ldmatrix())) {
-      return call;
-    }
-    if (permuted_layout_mode_ == "" || !support::StartsWith(permuted_layout_mode_, "s2l")) {
-      return call;
+    if (permuted_layout_mode_ == "" || (!support::StartsWith(permuted_layout_mode_, "g2s") &&
+                                        !support::StartsWith(permuted_layout_mode_, "s2g"))) {
+      return load;
     }
 
-    auto access_ptr_node = call->args[5].as<CallNode>();
-    PrimExpr smem_offset = call->args[6];
+    auto scope = StorageScope::Create(GetPtrStorageScope(load->buffer->data));
+    if (scope.rank != StorageRank::kShared) {
+      return load;
+    }
 
-    CHECK(access_ptr_node && access_ptr_node->op.same_as(builtin::tvm_access_ptr()))
-        << "Invalid ptx_ldmatrix for permuted layout: " << GetRef<Call>(op);
+    auto load_node = load.CopyOnWrite();
+    load_node->indices = HandleBufferIndices(load_node->buffer, load_node->indices);
+    return load;
+  }
 
+  friend class PermutedLayoutInjectorSmemLocal;
+};
+
+// Handles the memory transfer from/to shared mem to/from local registers
+class PermutedLayoutInjectorSmemLocal : private PermutedLayoutInjectorBase {
+ public:
+  static PrimFunc Transfrom(PrimFunc func) {
+    Analyzer analyzer;
+
+    auto pass_gmem_smem = PermutedLayoutInjectorGmemSmem(&analyzer);
+    auto new_body = pass_gmem_smem(func->body);
+    auto pass_smem_local =
+        PermutedLayoutInjectorSmemLocal(&analyzer, pass_gmem_smem.buffer_row_size_info_);
+    new_body = pass_smem_local(new_body);
+
+    auto fptr = func.CopyOnWrite();
+    fptr->body = new_body;
+    return func;
+  }
+
+ private:
+  explicit PermutedLayoutInjectorSmemLocal(Analyzer* analyzer,
+                                           BufferRowSizeInfo buffer_row_size_info)
+      : PermutedLayoutInjectorBase(analyzer) {
+    buffer_row_size_info_ = buffer_row_size_info;
+  }
+
+  using PermutedLayoutInjectorBase::VisitExpr_;
+  using PermutedLayoutInjectorBase::VisitStmt_;
+
+  PrimExpr HandleAccessPtrAndOffset(PrimExpr access_ptr, int buffer_row_size,
+                                    Optional<PrimExpr> offset = NullOpt) {
     // The 2th arg of T.tvm_access_ptr call is offset, we set it to 0 and accumulate it to
     // smem_offset
-    auto access_ptr = GetRef<Call>(access_ptr_node);
-    auto new_access_ptr = access_ptr.CopyOnWrite();
-    smem_offset += new_access_ptr->args[2];
-    new_access_ptr->args.Set(2, 0);
+    CHECK(access_ptr->IsInstance<CallNode>())
+        << "Invalid access ptr for permuted layout: " << access_ptr;
+    auto access_ptr_call = Downcast<Call>(access_ptr);
+    CHECK(access_ptr_call->op.same_as(builtin::tvm_access_ptr()))
+        << "Invalid access ptr for permuted layout: " << access_ptr;
 
-    // Retrieve the previous set row size
-    int buffer_row_size;
-    if (permuted_layout_mode_.at(4) == 'A') {
-      CHECK(buffer_row_size_A_ != -1) << "Buffer row size for A is not set";
-      buffer_row_size = buffer_row_size_A_;
-      buffer_row_size_A_ = -1;
-    } else {
-      CHECK(buffer_row_size_B_ != -1) << "Buffer row size for B is not set";
-      buffer_row_size = buffer_row_size_B_;
-      buffer_row_size_B_ = -1;
-    }
+    PrimExpr smem_offset = access_ptr_call->args[2] + (offset.defined() ? offset.value() : 0);
 
     // Convert offset to 2-dimension, reindex it and convert it back
     PrimExpr row_idx = floordiv(smem_offset, buffer_row_size);
@@ -230,24 +279,59 @@ class PermutedLayoutInjector : private IRMutatorWithAnalyzer {
     auto new_indices = PermuteIndices(row_idx, col_idx, buffer_row_size);
     auto new_offset = analyzer_->Simplify(new_indices[0] * buffer_row_size + new_indices[1]);
 
-    auto new_call = call.CopyOnWrite();
-    new_call->args.Set(5, access_ptr);
-    new_call->args.Set(6, new_offset);
-
-    return call;
+    auto new_access_ptr = access_ptr_call.CopyOnWrite();
+    new_access_ptr->args.Set(2, new_offset);
+    return access_ptr_call;
   }
 
-  String permuted_layout_mode_ = "";
-  String scope_block_name_;
-  int buffer_row_size_A_ = -1;
-  int buffer_row_size_B_ = -1;
+  PrimExpr VisitExpr_(const CallNode* op) {
+    // Case 2. Rewrite shared or shared.dyn to local. We only consider T.ptx_ldmatrix, which
+    // has the form T.ptx_ldmatrix(..., smem_ptr, smem_offset) and
+    // smem_ptr == T.tvm_access_ptr(ptype, data, offset, extent, rw_mask)
+    auto call = Downcast<Call>(IRMutatorWithAnalyzer::VisitExpr_(op));
+
+    if (!call->op.same_as(builtin::ptx_ldmatrix()) && !call->op.same_as(builtin::mma_store())) {
+      return call;
+    }
+
+    if (permuted_layout_mode_ == "" || (!support::StartsWith(permuted_layout_mode_, "s2l") &&
+                                        !support::StartsWith(permuted_layout_mode_, "l2s"))) {
+      return call;
+    }
+
+    // Retrieve the previous set row size
+    int buffer_row_size;
+    int& buffer_row_size_ = buffer_row_size_info_.Get(permuted_layout_mode_.at(4));
+    CHECK(buffer_row_size_ != -1) << "Buffer row size for " << permuted_layout_mode_.at(4)
+                                  << " is not set";
+    buffer_row_size = buffer_row_size_;
+    buffer_row_size_ = -1;
+
+    if (call->op.same_as(builtin::ptx_ldmatrix())) {
+      auto access_ptr = call->args[5];
+      PrimExpr smem_offset = call->args[6];
+      auto new_access_ptr = HandleAccessPtrAndOffset(access_ptr, buffer_row_size, smem_offset);
+      auto new_call = call.CopyOnWrite();
+      new_call->args.Set(5, new_access_ptr);
+      new_call->args.Set(6, IntImm(smem_offset->dtype, 0));
+      return call;
+    } else if (call->op.same_as(builtin::mma_store())) {
+      auto access_ptr = call->args[2];
+      auto new_access_ptr = HandleAccessPtrAndOffset(access_ptr, buffer_row_size);
+      auto new_call = call.CopyOnWrite();
+      new_call->args.Set(2, new_access_ptr);
+      return call;
+    } else {
+      LOG(FATAL) << "Invalid call node: " << call;
+    }
+  }
 };
 
 namespace transform {
 
 Pass InjectPermutedLayout() {
   auto pass_func = [=](PrimFunc f, IRModule m, PassContext ctx) {
-    return PermutedLayoutInjector::Transfrom(std::move(f));
+    return PermutedLayoutInjectorSmemLocal::Transfrom(std::move(f));
   };
   return CreatePrimFuncPass(pass_func, 0, "tir.InjectPermutedLayout", {});
 }
