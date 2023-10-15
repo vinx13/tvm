@@ -66,6 +66,11 @@ class PermutedLayoutInjectorBase : protected IRMutatorWithAnalyzer {
       // 0  1  2  3  4  5  6  7    ==>    7  6  5  4  3  2  1  0
       auto row_idx_sub = floormod(row_idx, 8);
       new_col_idx_outer = col_idx_outer ^ row_idx_sub;
+
+      VLOG(0) << "permute idx: " << row_idx << "\n"
+              << col_idx << "\n"
+              << new_col_idx_outer << "\n"
+              << col_idx_inner;
     } else {
       ICHECK(row_size % 32 == 0);
       // Use 8 * 4 permuted layout
