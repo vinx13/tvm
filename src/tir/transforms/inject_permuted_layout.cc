@@ -67,11 +67,6 @@ class PermutedLayoutInjectorBase : protected IRMutatorWithAnalyzer {
       // 0  1  2  3  4  5  6  7    ==>    7  6  5  4  3  2  1  0
       auto row_idx_sub = floormod(row_idx, 8);
       new_col_idx_outer = col_idx_outer ^ row_idx_sub;
-
-      VLOG(0) << "permute idx: " << row_idx << "\n"
-              << col_idx << "\n"
-              << new_col_idx_outer << "\n"
-              << col_idx_inner;
     } else {
       ICHECK(row_size % 32 == 0);
       // Use 8 * 4 permuted layout
@@ -243,11 +238,11 @@ class PermutedLayoutInjectorAccessPtr : private PermutedLayoutInjectorBase {
   static PrimFunc Transfrom(PrimFunc func) {
     Analyzer analyzer;
 
-    auto pass_gmem_smem = PermutedLayoutInjectorBuffer(&analyzer);
-    auto new_body = pass_gmem_smem(func->body);
-    auto pass_smem_local =
-        PermutedLayoutInjectorAccessPtr(&analyzer, pass_gmem_smem.buffer_row_size_info_);
-    new_body = pass_smem_local(new_body);
+    auto pass_buffer = PermutedLayoutInjectorBuffer(&analyzer);
+    auto new_body = pass_buffer(func->body);
+    auto pass_access_ptr =
+        PermutedLayoutInjectorAccessPtr(&analyzer, pass_buffer.buffer_row_size_info_);
+    new_body = pass_access_ptr(new_body);
 
     auto fptr = func.CopyOnWrite();
     fptr->body = new_body;

@@ -215,13 +215,13 @@ Array<tvm::transform::Pass> CreatePassList(bool disable_loop_partition) {
   pass_list.push_back(tir::transform::LowerMatchBuffer());
   // pass_list.push_back(transform::PrintIR());
   pass_list.push_back(tir::transform::Simplify());
-  pass_list.push_back(transform::PrintIR());
+  // pass_list.push_back(transform::PrintIR());
   pass_list.push_back(tir::transform::InjectPermutedLayout());
-  pass_list.push_back(transform::PrintIR());
+  // pass_list.push_back(transform::PrintIR());
   pass_list.push_back(tir::transform::Simplify());
-  pass_list.push_back(transform::PrintIR());
+  // pass_list.push_back(transform::PrintIR());
   pass_list.push_back(tir::transform::InjectSoftwarePipeline());
-  pass_list.push_back(transform::PrintIR());
+  // pass_list.push_back(transform::PrintIR());
   pass_list.push_back(tir::transform::TransformMmaBufferLayout());
   pass_list.push_back(tir::transform::LowerOpaqueBlock());
   pass_list.push_back(tir::transform::FlattenBuffer());
@@ -229,7 +229,7 @@ Array<tvm::transform::Pass> CreatePassList(bool disable_loop_partition) {
   pass_list.push_back(tir::transform::BF16ComputeLegalize());
   pass_list.push_back(tir::transform::NarrowDataType(32));
   pass_list.push_back(tir::transform::Simplify());
-  pass_list.push_back(transform::PrintIR());
+  // pass_list.push_back(transform::PrintIR());
 
   // Add user-defined phase-1 passes
   pass_list.insert(pass_list.end(), user_lower_phase1.begin(), user_lower_phase1.end());
@@ -242,8 +242,10 @@ Array<tvm::transform::Pass> CreatePassList(bool disable_loop_partition) {
   pass_list.push_back(tir::transform::VectorizeLoop(!disable_vectorize));
   pass_list.push_back(tir::transform::InjectVirtualThread());
   pass_list.push_back(tir::transform::InjectDoubleBuffer());
+  pass_list.push_back(transform::PrintIR());
   if (!disable_storage_rewrite) {
     pass_list.push_back(tir::transform::StorageRewrite());
+    pass_list.push_back(transform::PrintIR());
   }
   bool use_async_copy = pass_ctx->GetConfig<Bool>("tir.use_async_copy", Bool(false)).value();
 
@@ -680,9 +682,9 @@ transform::Sequential DeviceModulePassManager(IRModule mixed_mod, Target target)
 
   device_pass_list.push_back(tir::transform::BindTarget(target));
 
-  device_pass_list.push_back(transform::PrintIR());
+  // device_pass_list.push_back(transform::PrintIR());
   device_pass_list.push_back(tir::transform::LowerWarpMemory());
-  device_pass_list.push_back(transform::PrintIR());
+  // device_pass_list.push_back(transform::PrintIR());
   device_pass_list.push_back(tir::transform::Simplify());
   device_pass_list.push_back(tir::transform::LowerCustomDatatypes());
   device_pass_list.push_back(tir::transform::LowerDeviceStorageAccessInfo());
