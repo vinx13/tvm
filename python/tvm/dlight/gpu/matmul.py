@@ -808,9 +808,9 @@ class MatmulTensorizationMMA(ScheduleRule):
         sch.tensorize(sch.get_loops(store)[-2], MMA_store_16x16_f32_shared_dyn_INTRIN_SIMPLE)
 
         # async pipeline
-        # sch.annotate(k0, ann_key="software_pipeline_stage", ann_val=[0, 0, 3])
-        # sch.annotate(k0, ann_key="software_pipeline_order", ann_val=[0, 1, 2])
-        # sch.annotate(k0, ann_key="software_pipeline_async_stages", ann_val=[0])
+        sch.annotate(k0, ann_key="software_pipeline_stage", ann_val=[0, 0, 3])
+        sch.annotate(k0, ann_key="software_pipeline_order", ann_val=[0, 1, 2])
+        sch.annotate(k0, ann_key="software_pipeline_async_stages", ann_val=[0])
 
         return sch
 
