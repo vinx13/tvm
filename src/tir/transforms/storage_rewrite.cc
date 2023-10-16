@@ -44,6 +44,8 @@
 namespace tvm {
 namespace tir {
 
+auto& cerr = std::cerr;
+
 using runtime::StorageRank;
 using runtime::StorageScope;
 
@@ -385,12 +387,70 @@ class StoragePlanRewriter : public StmtExprMutator {
     // plan the rewrite
     LinearAccessPatternFinder finder;
     finder(stmt);
+    // print finder.linear_seq_
+    VLOG(0) << "linear seq: " << finder.linear_seq_.size();
+    for (size_t i = 0; i < finder.linear_seq_.size(); ++i) {
+      const StmtEntry& e = finder.linear_seq_[i];
+      VLOG(0) << "linear[" << i << "]=" << GetRef<ObjectRef>(e.stmt)
+              << " offset=" << e.scope_pair_offset << "touched cnt: " << e.touched.size();
+      for (const VarNode* v : e.touched) {
+        VLOG(0) << "  touched=" << GetRef<Var>(v);
+      }
+    }
+    // print alloc info
+    VLOG(0) << "alloc info: " << finder.alloc_info_.size();
+    for (const auto& kv : finder.alloc_info_) {
+      const VarNode* buf = kv.first;
+      const AllocEntry& e = kv.second;
+      VLOG(0) << "alloc[" << GetRef<Var>(buf) << "]=" << GetRef<Allocate>(e.alloc)
+              << " level=" << static_cast<int>(e.level)
+              << " num_physical_dimensions=" << e.num_physical_dimensions;
+    }
+    // print all buffers accessed
+    VLOG(0) << "all buffers accessed: " << finder.all_buffers_accessed_.size();
+    for (const BufferNode* buf : finder.all_buffers_accessed_) {
+      VLOG(0) << "  " << GetRef<Buffer>(buf);
+    }
     this->LivenessAnalysis(finder.linear_seq_);
+    // print event map
+    VLOG(0) << "event map: " << event_map_.size();
+    for (const auto& kv : event_map_) {
+      std::ostringstream os;
+      os << GetRef<ObjectRef>(kv.first) << " gen: [";
+      for (auto var : kv.second.gen) {
+        os << GetRef<Var>(var) << ", ";
+      }
+      os << "] kill: [";
+      for (auto var : kv.second.kill) {
+        os << GetRef<Var>(var) << ", ";
+      }
+      os << "]";
+      VLOG(0) << os.str();
+    }
     this->PlanMemory(finder.linear_seq_, finder.alloc_info_);
     all_buffers_accessed_ = finder.all_buffers_accessed_;
     this->PrepareNewAlloc();
+    // print attach map
+    VLOG(0) << "attach map: " << attach_map_.size();
+    for (const auto& kv : attach_map_) {
+      VLOG(0) << GetRef<ObjectRef>(kv.first) << " " << kv.second.size();
+      // print allocs and alloc_nest
+      for (const StorageEntry* e : kv.second) {
+        VLOG(0) << *e;
+      }
+    }
+    // print attach vec in the same manner
+    VLOG(0) << "alloc vec: " << alloc_vec_.size();
+    for (const auto& e : alloc_vec_) {
+      VLOG(0) << *e;
+    }
+    VLOG(0) << "alloc map: " << alloc_map_.size();
+    for (const auto& kv : alloc_map_) {
+      VLOG(0) << GetRef<Var>(kv.first) << " " << *kv.second;
+    }
     // start rewrite
     stmt = operator()(std::move(stmt));
+    VLOG(0) << stmt;
     if (attach_map_.count(nullptr)) {
       return MakeAttach(attach_map_.at(nullptr), stmt);
     }
@@ -566,6 +626,23 @@ class StoragePlanRewriter : public StmtExprMutator {
     // This allows effective sharing among different types as long as their alignment
     // requirement fits into the max_simd_bits.
     uint64_t bits_offset{0};
+
+    friend std::ostream& operator<<(std::ostream& os, const StorageEntry& e) {
+      os << "StorageEntry(alloc_var=" << e.alloc_var << ", scope=" << e.scope.to_string()
+         << ", ndim=" << e.ndim << ", const_nbits=" << e.const_nbits
+         << ", bits_offset=" << e.bits_offset << ", allocs=[";
+      for (size_t i = 0; i < e.allocs.size(); ++i) {
+        if (i != 0) os << ", ";
+        os << GetRef<Allocate>(e.allocs[i]);
+      }
+      os << "], alloc_nest=[";
+      for (size_t i = 0; i < e.alloc_nest.size(); ++i) {
+        if (i != 0) os << ", ";
+        os << e.alloc_nest[i];
+      }
+      os << "])";
+      return os;
+    }
   };
 
   // Checks whether the storage_scope is especially tagged for a specific memory.
@@ -1704,6 +1781,7 @@ Pass StorageRewrite() {
   auto pass_func = [](PrimFunc f, IRModule m, PassContext ctx) {
     auto* n = f.CopyOnWrite();
     n->body = StoragePlanRewriter().Rewrite(std::move(n->body), true);
+    // VLOG(0) << n->body;
     // Parameters may not be rewritten, but internal allocations may.
     // Vectorization of AllocateConst is currently disabled, as it has
     // indexing issues for types that include padding (e.g. int8x3

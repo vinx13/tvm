@@ -21,6 +21,7 @@
  * \file inject_permuted_layout.cc
  * \brief The pass for inject permuted layout.
  */
+// delete attrs
 
 #include <tvm/arith/analyzer.h>
 #include <tvm/tir/function.h>

@@ -699,7 +699,7 @@ class MatmulTensorizationMMA(ScheduleRule):
             sch.bind(f3, "threadIdx.x")
             sch.vectorize(f4)
 
-            sch.annotate(block_read, ann_key="permuted_layout", ann_val=f"g2s_{tensor_name}")
+            # sch.annotate(block_read, ann_key="permuted_layout", ann_val=f"g2s_{tensor_name}")
 
             auto_inline_producers(sch, block_read)
 
@@ -721,7 +721,7 @@ class MatmulTensorizationMMA(ScheduleRule):
             )
 
             mma_read_block = sch.blockize(sch.get_loops(mma_read)[-2])
-            sch.annotate(mma_read_block, ann_key="permuted_layout", ann_val=f"s2l_{tensor_name}")
+            # sch.annotate(mma_read_block, ann_key="permuted_layout", ann_val=f"s2l_{tensor_name}")
             return block_read, mma_read
 
         block_read_a, mma_read_a = fetch_input(block_outer, 0, "A")
@@ -745,7 +745,7 @@ class MatmulTensorizationMMA(ScheduleRule):
             sch.bind(f3, "threadIdx.x")
             sch.vectorize(f4)
 
-            sch.annotate(block_write, ann_key="permuted_layout", ann_val=f"s2g_C")
+            # sch.annotate(block_write, ann_key="permuted_layout", ann_val=f"s2g_C")
 
             auto_inline_consumers(sch, block_write)
 
@@ -768,7 +768,7 @@ class MatmulTensorizationMMA(ScheduleRule):
             )
 
             mma_read_block = sch.blockize(sch.get_loops(store)[-2])
-            sch.annotate(mma_read_block, ann_key="permuted_layout", ann_val=f"l2s_C")
+            # sch.annotate(mma_read_block, ann_key="permuted_layout", ann_val=f"l2s_C")
 
             return block_write, store
 
