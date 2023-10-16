@@ -567,6 +567,10 @@ class IntSetAnalyzer::Impl {
   }
 
   void Bind(const Var& var, const Range& range, bool allow_override) {
+    // VLOG(0) << var << " " << range << " " << var->name_hint;
+    // if (var->name_hint == "threadIdx.z") {
+    //   LOG(FATAL) << 1;
+    // }
     Update(var, IntSet::FromRange(range), allow_override);
   }
 

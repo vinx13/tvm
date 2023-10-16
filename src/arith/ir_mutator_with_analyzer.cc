@@ -61,6 +61,7 @@ Array<PrimExpr> IRMutatorWithAnalyzer::IterMapSimplifyWithContext(const Array<Pr
 
 Stmt IRMutatorWithAnalyzer::VisitStmt_(const ForNode* op) {
   // record the loop variable as iterators
+  // VLOG(0) << op->loop_var << " " << op->min << " " << op->extent;
   Range dom = Range::FromMinExtent(op->min, op->extent);
   analyzer_->Bind(op->loop_var, dom);
   iter_vars_.Set(op->loop_var, dom);
@@ -68,7 +69,9 @@ Stmt IRMutatorWithAnalyzer::VisitStmt_(const ForNode* op) {
 }
 
 Stmt IRMutatorWithAnalyzer::VisitStmt_(const BlockNode* op) {
+  // VLOG(0) << GetRef<Stmt>(op);
   for (const auto& iter_var : op->iter_vars) {
+    // VLOG(0) << iter_var << " " << iter_var->dom;
     analyzer_->Bind(iter_var->var, iter_var->dom);
     iter_vars_.Set(iter_var->var, iter_var->dom);
   }
@@ -76,6 +79,7 @@ Stmt IRMutatorWithAnalyzer::VisitStmt_(const BlockNode* op) {
 }
 
 Stmt IRMutatorWithAnalyzer::VisitStmt_(const LetStmtNode* op) {
+  // VLOG(0) << GetRef<Stmt>(op);
   PrimExpr value = this->VisitExpr(op->value);
   if (SideEffect(value) <= CallEffectKind::kPure) {
     analyzer_->Bind(op->var, value);
@@ -94,6 +98,7 @@ Stmt IRMutatorWithAnalyzer::VisitStmt_(const LetStmtNode* op) {
 }
 
 Stmt IRMutatorWithAnalyzer::VisitStmt_(const IfThenElseNode* op) {
+  // VLOG(0) << 1;
   PrimExpr condition = this->VisitExpr(op->condition);
   PrimExpr real_condition = condition;
   static auto op_likely = Op::Get("tir.likely");
@@ -136,6 +141,7 @@ Stmt IRMutatorWithAnalyzer::VisitStmt_(const AttrStmtNode* op) {
     IterVar iv = Downcast<IterVar>(op->node);
     ICHECK_NE(iv->thread_tag.length(), 0U);
     Range dom = Range::FromMinExtent(make_zero(op->value.dtype()), op->value);
+    // VLOG(0) << dom;
     analyzer_->Bind(iv->var, dom);
     iter_vars_.Set(iv->var, dom);
     Stmt stmt = StmtExprMutator::VisitStmt_(op);
@@ -146,6 +152,7 @@ Stmt IRMutatorWithAnalyzer::VisitStmt_(const AttrStmtNode* op) {
 }
 
 Stmt IRMutatorWithAnalyzer::VisitStmt_(const AssertStmtNode* op) {
+  // VLOG(0) << 1;
   PrimExpr condition = this->VisitExpr(op->condition);
   PrimExpr message = this->VisitExpr(op->message);
   With<ConstraintContext> ctx(analyzer_, condition);
@@ -163,6 +170,7 @@ Stmt IRMutatorWithAnalyzer::VisitStmt_(const AssertStmtNode* op) {
 }
 
 PrimExpr IRMutatorWithAnalyzer::VisitExpr_(const CallNode* op) {
+  // VLOG(0) << 1;
   // add condition context to if_then_else
   static auto op_if_then_else = Op::Get("tir.if_then_else");
   if (op->op.same_as(op_if_then_else)) {
@@ -193,6 +201,7 @@ PrimExpr IRMutatorWithAnalyzer::VisitExpr_(const CallNode* op) {
 }
 
 PrimExpr IRMutatorWithAnalyzer::VisitExpr_(const LetNode* op) {
+  // VLOG(0) << 1;
   PrimExpr value = this->VisitExpr(op->value);
   if (SideEffect(value) <= CallEffectKind::kPure) {
     analyzer_->Bind(op->var, value);
@@ -208,6 +217,7 @@ PrimExpr IRMutatorWithAnalyzer::VisitExpr_(const LetNode* op) {
 }
 
 PrimExpr IRMutatorWithAnalyzer::VisitExpr_(const SelectNode* op) {
+  // VLOG(0) << 1;
   PrimExpr cond = this->VisitExpr(op->condition);
   PrimExpr true_value, false_value;
   {
@@ -234,6 +244,7 @@ PrimExpr IRMutatorWithAnalyzer::VisitExpr_(const SelectNode* op) {
 }
 
 PrimExpr IRMutatorWithAnalyzer::VisitExpr_(const ReduceNode* op) {
+  // VLOG(0) << 1;
   // Setup the domain information before simplification.
   for (const IterVar& iv : op->axis) {
     analyzer_->Bind(iv->var, iv->dom);

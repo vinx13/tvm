@@ -38,6 +38,7 @@
 
 #include <unordered_set>
 
+#include "../../arith/ir_mutator_with_analyzer.h"
 #include "../../arith/pattern_match.h"
 #include "../../runtime/thread_storage_scope.h"
 #include "ir_utils.h"
@@ -45,6 +46,8 @@
 
 namespace tvm {
 namespace tir {
+
+using arith::IRMutatorWithAnalyzer;
 
 // Rewrite Rule
 //
@@ -227,10 +230,10 @@ class WarpIndexFinder : private StmtVisitor {
   IterVar warp_index_{nullptr};
 };
 // Mutator to change the read pattern
-class WarpAccessRewriter : protected StmtExprMutator {
+class WarpAccessRewriter : protected IRMutatorWithAnalyzer {
  public:
   explicit WarpAccessRewriter(int warp_size, arith::Analyzer* analyzer)
-      : warp_size_(warp_size), analyzer_(analyzer) {}
+      : IRMutatorWithAnalyzer(analyzer), warp_size_(warp_size) {}
   // Rewrite the allocate statement which transforms
   // warp memory to local memory.
   Stmt Rewrite(const AllocateNode* op) {
@@ -253,6 +256,8 @@ class WarpAccessRewriter : protected StmtExprMutator {
   }
 
  protected:
+  using IRMutatorWithAnalyzer::VisitExpr_;
+  using IRMutatorWithAnalyzer::VisitStmt_;
   PrimExpr RewriteIndicesAt(const CallNode* op, const std::vector<int>& indices) {
     Array<PrimExpr> new_args = op->args;
     for (int i : indices) {
@@ -281,16 +286,16 @@ class WarpAccessRewriter : protected StmtExprMutator {
       return RewriteIndicesAt(op, {1});
     }
 
-    return StmtExprMutator::VisitExpr_(op);
+    return IRMutatorWithAnalyzer::VisitExpr_(op);
   }
 
   PrimExpr VisitExpr_(const VarNode* op) override {
     ICHECK(op != buffer_) << "Cannot access address of warp memory directly";
-    return StmtExprMutator::VisitExpr_(op);
+    return IRMutatorWithAnalyzer::VisitExpr_(op);
   }
 
   Stmt VisitStmt_(const BufferStoreNode* op) override {
-    auto store = Downcast<BufferStore>(StmtExprMutator::VisitStmt_(op));
+    auto store = Downcast<BufferStore>(IRMutatorWithAnalyzer::VisitStmt_(op));
 
     if (store->buffer->data.get() == buffer_) {
       ICHECK_EQ(store->indices.size(), 1) << "Expected flat memory to use as warp memory.  "
@@ -308,7 +313,7 @@ class WarpAccessRewriter : protected StmtExprMutator {
   }
 
   PrimExpr VisitExpr_(const BufferLoadNode* op) override {
-    auto load = Downcast<BufferLoad>(StmtExprMutator::VisitExpr_(op));
+    auto load = Downcast<BufferLoad>(IRMutatorWithAnalyzer::VisitExpr_(op));
 
     if (load->buffer->data.get() != buffer_) {
       return std::move(load);
@@ -320,6 +325,7 @@ class WarpAccessRewriter : protected StmtExprMutator {
 
     auto [local_index, group] = SplitIndexByGroup(op->indices[0]);
     // invariance: local index must do not contain warp id
+    // VLOG(0) << warp_index_ << " " << warp_group_ << " " << warp_coeff_;
     ICHECK(!UsesVar(local_index, [this](const VarNode* var) { return var == warp_index_.get(); }))
         << "LowerWarpMemory failed to rewrite load to shuffle for index " << op->indices[0]
         << " local_index=" << local_index;
@@ -350,18 +356,25 @@ class WarpAccessRewriter : protected StmtExprMutator {
       return std::make_pair(local_index, group);
     }
     PrimExpr m = make_const(index.dtype(), warp_coeff_);
+    // VLOG(0) << warp_coeff_ << " " << warp_group_ << " " << warp_index_ << " " << warp_size_ << "
+    // "
+    //         << width_;
 
     // simple case, warp index is on the highest.
     if (warp_group_ == 1) {
       PrimExpr x = analyzer_->canonical_simplify(indexmod(index, m));
       PrimExpr z = analyzer_->canonical_simplify(indexdiv(index, m));
+      // VLOG(0) << index << "\n" << x << "\n" << z;
       return std::make_pair(x, z);
     } else {
       PrimExpr x = analyzer_->canonical_simplify(indexmod(index, m));
       PrimExpr y = index / make_const(index.dtype(), warp_coeff_ * width_);
       y = y * m + x;
       PrimExpr z = indexdiv(indexmod(index, make_const(index.dtype(), warp_coeff_ * width_)), m);
-      return std::make_pair(analyzer_->canonical_simplify(y), analyzer_->canonical_simplify(z));
+      auto res = std::make_pair(analyzer_->canonical_simplify(y), analyzer_->canonical_simplify(z));
+      // VLOG(0) << x << "\n" << y << "\n" << z;
+      // VLOG(0) << index << "\n" << res.first << "\n" << res.second;
+      return res;
     }
   }
 
@@ -378,8 +391,6 @@ class WarpAccessRewriter : protected StmtExprMutator {
   int warp_coeff_{0};
   // the coefficient n
   int warp_group_{0};
-  // Internal analyzer
-  arith::Analyzer* analyzer_;
 };
 
 // Bind bound information of variables to make analyzer more effective
@@ -391,6 +402,7 @@ class BindVarBoundInfo : public StmtVisitor {
 
   void VisitStmt_(const ForNode* op) final {
     const Var& loop_var = op->loop_var;
+    // VLOG(0) << loop_var << " " << op->min << " " << op->extent;
     analyzer_->Bind(loop_var, Range::FromMinExtent(op->min, op->extent));
     StmtVisitor::VisitStmt_(op);
   }
@@ -400,7 +412,7 @@ class BindVarBoundInfo : public StmtVisitor {
       IterVar iv = Downcast<IterVar>(op->node);
       ICHECK_NE(iv->thread_tag.length(), 0U);
       if (!var_dom_.count(iv->var.get())) {
-        Range dom = Range::FromMinExtent(0, op->value);
+        Range dom = Range::FromMinExtent(make_const(op->value->dtype, 0), op->value);
         var_dom_[iv->var.get()] = dom;
         analyzer_->Bind(iv->var, dom);
       }

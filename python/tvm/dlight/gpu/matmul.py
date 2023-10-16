@@ -36,6 +36,7 @@ from tvm.tir.tensor_intrin.cuda import (
     MMA_fill_16x16_f32_INTRIN,
     MMA_store_16x16_f32_global_INTRIN,
     MMA_store_16x16_f32_shared_dyn_INTRIN,
+    MMA_store_16x16_f32_shared_dyn_INTRIN_SIMPLE,
     shared_16x16_to_ldmatrix_32x8_layout,
 )
 
@@ -574,6 +575,21 @@ class MatmulTensorizationMMA(ScheduleRule):
         vector_size = 8
         unroll_depth = 256
 
+        def is_cast_block(block):
+            return (
+                isinstance(block.body, tir.stmt.BufferStore)
+                and isinstance(block.body.value, tir.Cast)
+                and block.body.value.dtype == "float16"
+            )
+
+        cast_block = None
+        for block in sch.get_consumers(main_block):
+            if is_cast_block(sch.get(block)):
+                cast_block = block
+                break
+        # if cast_block is not None:
+        #     sch.reverse_compute_inline(cast_block)
+
         # Step 1. Normalize generic matmul to C[S, I, J] += A[S, I, K] * B[S, J, K]
         block = sch.reindex(main_block, ("read", 0))
         sch.transform_layout(block, ("write", 0), a_index_map)
@@ -729,7 +745,7 @@ class MatmulTensorizationMMA(ScheduleRule):
             sch.bind(f3, "threadIdx.x")
             sch.vectorize(f4)
 
-            # sch.annotate(block_write, ann_key="permuted_layout", ann_val=f"s2g_C")
+            sch.annotate(block_write, ann_key="permuted_layout", ann_val=f"s2g_C")
 
             auto_inline_consumers(sch, block_write)
 
@@ -752,7 +768,7 @@ class MatmulTensorizationMMA(ScheduleRule):
             )
 
             mma_read_block = sch.blockize(sch.get_loops(store)[-2])
-            # sch.annotate(mma_read_block, ann_key="permuted_layout", ann_val=f"l2s_C")
+            sch.annotate(mma_read_block, ann_key="permuted_layout", ann_val=f"l2s_C")
 
             return block_write, store
 
@@ -788,7 +804,8 @@ class MatmulTensorizationMMA(ScheduleRule):
         sch.tensorize(sch.get_loops(mma_read_a)[-2], LDMATRIX_16x16_A_DYN_INTRIN)
         sch.tensorize(sch.get_loops(mma_read_b)[-2], LDMATRIX_16x16_B_TRANS_DYN_INTRIN)
         sch.tensorize(sch.get_loops(block_inner)[-3], MMA_f16f16f32_TRANS_INTRIN)
-        sch.tensorize(sch.get_loops(store)[-2], MMA_store_16x16_f32_shared_dyn_INTRIN)
+        # sch.tensorize(sch.get_loops(store)[-2], MMA_store_16x16_f32_shared_dyn_INTRIN)
+        sch.tensorize(sch.get_loops(store)[-2], MMA_store_16x16_f32_shared_dyn_INTRIN_SIMPLE)
 
         # async pipeline
         # sch.annotate(k0, ann_key="software_pipeline_stage", ann_val=[0, 0, 3])

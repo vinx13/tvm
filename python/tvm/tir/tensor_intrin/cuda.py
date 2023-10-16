@@ -44,6 +44,12 @@ def shared_32x16_to_ldmatrix_32x16_layout(i, j):
     return thread_id, 8 * (j // 8) + (i // 16) * 4 + i % 4
 
 
+def ldmatrix_32x8_to_shared_16x16_layout(thread_id, local_id):
+    row = 8 * (local_id % 4 // 2) + (thread_id // 4)
+    col = 8 * (local_id // 4) + (thread_id % 4) * 2 + (local_id % 2)
+    return row, col
+
+
 def get_tensor_core_load_offset_factor(dtype):
     """get offset factor for tensor core load intrin"""
     bits = re.search(r"(\d+)", dtype).group(0)
@@ -414,9 +420,10 @@ def get_mma_fill_intrin(dtype, local_size):
     return mma_fill_desc, mma_fill_impl
 
 
-def get_mma_store_intrin(dtype, local_size, scope="global"):
+def get_mma_store_intrin(dtype, local_size, scope="global", use_mma_store_intrinic=True):
     # Assume M = N = 16
     index_map = shared_16x16_to_ldmatrix_32x8_layout
+    index_map_rev = ldmatrix_32x8_to_shared_16x16_layout
 
     @T.prim_func
     def mma_store_desc(a: T.handle, c: T.handle) -> None:
@@ -434,34 +441,58 @@ def get_mma_store_intrin(dtype, local_size, scope="global"):
                     T.writes(C[v0, v1])
                     C[v0, v1] = C_warp[thread_id, local_id]
 
-    @T.prim_func
-    def mma_store_impl(a: T.handle, c: T.handle) -> None:
-        s0 = T.int32()
-        s1 = T.int32()
+    if use_mma_store_intrinic:
 
-        C_warp = T.match_buffer(
-            a, [WARP_SIZE, local_size], dtype=dtype, scope="warp", offset_factor=1
-        )
-        C = T.match_buffer(
-            c, [M_DIM, N_DIM], dtype=dtype, scope=scope, offset_factor=1, strides=[s0, s1]
-        )
+        @T.prim_func
+        def mma_store_impl(a: T.handle, c: T.handle) -> None:
+            s0 = T.int32()
+            s1 = T.int32()
 
-        with T.block("root"):
-            T.reads(C_warp[0:WARP_SIZE, 0:local_size])
-            T.writes(C[0:M_DIM, 0:N_DIM])
+            C_warp = T.match_buffer(
+                a, [WARP_SIZE, local_size], dtype=dtype, scope="warp", offset_factor=1
+            )
+            C = T.match_buffer(
+                c, [M_DIM, N_DIM], dtype=dtype, scope=scope, offset_factor=1, strides=[s0, s1]
+            )
 
-            for tx in T.thread_binding(0, WARP_SIZE, "threadIdx.x"):
-                T.evaluate(
-                    T.mma_store(
-                        M_DIM,
-                        N_DIM,
-                        C.access_ptr("w"),
-                        C_warp.data,
-                        C_warp.elem_offset,
-                        s0,
-                        dtype=dtype,
+            with T.block("root"):
+                T.reads(C_warp[0:WARP_SIZE, 0:local_size])
+                T.writes(C[0:M_DIM, 0:N_DIM])
+
+                for tx in T.thread_binding(0, WARP_SIZE, "threadIdx.x"):
+                    T.evaluate(
+                        T.mma_store(
+                            M_DIM,
+                            N_DIM,
+                            C.access_ptr("w"),
+                            C_warp.data,
+                            C_warp.elem_offset,
+                            s0,
+                            dtype=dtype,
+                        )
                     )
-                )
+
+    else:
+        @T.prim_func
+        def mma_store_impl(a: T.handle, c: T.handle) -> None:
+            s0 = T.int32()
+            s1 = T.int32()
+
+            C_warp = T.match_buffer(
+                a, [WARP_SIZE, local_size], dtype=dtype, scope="warp", offset_factor=1
+            )
+            C = T.match_buffer(
+                c, [M_DIM, N_DIM], dtype=dtype, scope=scope, offset_factor=1, strides=[s0, s1]
+            )
+
+            with T.block("root"):
+                T.reads(C_warp[0:WARP_SIZE, 0:local_size])
+                T.writes(C[0:M_DIM, 0:N_DIM])
+
+                for tx in T.thread_binding(0, WARP_SIZE, "threadIdx.x"):
+                    for local_id in T.serial(local_size):
+                        row, col = T.meta_var(index_map_rev(tx, local_id))
+                        C[row, col] = C_warp[tx, local_id]
 
     return mma_store_desc, mma_store_impl
 
@@ -530,22 +561,28 @@ TensorIntrin.register(MMA_fill_16x16_i32_INTRIN, *get_mma_fill_intrin("int32", 8
 
 MMA_store_16x16_f32_global_INTRIN = "mma_store_16x16_f32_global_"
 TensorIntrin.register(
-    MMA_store_16x16_f32_global_INTRIN, *get_mma_store_intrin("float32", 8, "global")
+    MMA_store_16x16_f32_global_INTRIN, *get_mma_store_intrin("float32", 8, "global", True)
 )
 
 MMA_store_16x16_f32_shared_dyn_INTRIN = "mma_store_16x16_f32_shared_dyn_"
 TensorIntrin.register(
-    MMA_store_16x16_f32_shared_dyn_INTRIN, *get_mma_store_intrin("float32", 8, "shared.dyn")
+    MMA_store_16x16_f32_shared_dyn_INTRIN, *get_mma_store_intrin("float32", 8, "shared.dyn", True)
+)
+
+MMA_store_16x16_f32_shared_dyn_INTRIN_SIMPLE = "mma_store_16x16_f32_shared_dyn_simple_"
+TensorIntrin.register(
+    MMA_store_16x16_f32_shared_dyn_INTRIN_SIMPLE,
+    *get_mma_store_intrin("float32", 8, "shared.dyn", False),
 )
 
 MMA_store_16x16_f16_global_INTRIN = "mma_store_16x16_f16_global_"
 TensorIntrin.register(
-    MMA_store_16x16_f16_global_INTRIN, *get_mma_store_intrin("float16", 8, "global")
+    MMA_store_16x16_f16_global_INTRIN, *get_mma_store_intrin("float16", 8, "global", True)
 )
 
 MMA_store_16x16_i32_global_INTRIN = "mma_store_16x16_i32_global_"
 TensorIntrin.register(
-    MMA_store_16x16_i32_global_INTRIN, *get_mma_store_intrin("int32", 8, "global")
+    MMA_store_16x16_i32_global_INTRIN, *get_mma_store_intrin("int32", 8, "global", True)
 )
 
 

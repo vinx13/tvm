@@ -48,6 +48,7 @@ class PermutedLayoutInjectorBase : protected IRMutatorWithAnalyzer {
   using IRMutatorWithAnalyzer::VisitStmt_;
 
   Array<PrimExpr> PermuteIndices(PrimExpr row_idx, PrimExpr col_idx, int row_size) {
+    ICHECK(permuted_layout_mode_ != "");
     // Index after vectorizing by 8
     PrimExpr col_idx_outer = floordiv(col_idx, VECTORIZE_FACTOR),
              col_idx_inner = floormod(col_idx, VECTORIZE_FACTOR);
@@ -145,9 +146,9 @@ class PermutedLayoutInjectorBase : protected IRMutatorWithAnalyzer {
 };
 
 // Handles the memory transfer from/to global mem to/from shared mem
-class PermutedLayoutInjectorGmemSmem : private PermutedLayoutInjectorBase {
+class PermutedLayoutInjectorBuffer : private PermutedLayoutInjectorBase {
  private:
-  explicit PermutedLayoutInjectorGmemSmem(Analyzer* analyzer)
+  explicit PermutedLayoutInjectorBuffer(Analyzer* analyzer)
       : PermutedLayoutInjectorBase(analyzer) {}
 
   using PermutedLayoutInjectorBase::VisitExpr_;
@@ -198,7 +199,7 @@ class PermutedLayoutInjectorGmemSmem : private PermutedLayoutInjectorBase {
     auto store = Downcast<BufferStore>(PermutedLayoutInjectorBase::VisitStmt_(op));
 
     if (permuted_layout_mode_ == "" || (!support::StartsWith(permuted_layout_mode_, "g2s") &&
-                                        !support::StartsWith(permuted_layout_mode_, "s2g"))) {
+                                        !support::StartsWith(permuted_layout_mode_, "l2s"))) {
       return store;
     }
 
@@ -218,7 +219,7 @@ class PermutedLayoutInjectorGmemSmem : private PermutedLayoutInjectorBase {
     // where row_size is divisible by 64, or divisible by 32 and col_size is divisible by 2.
     auto load = Downcast<BufferLoad>(PermutedLayoutInjectorBase::VisitExpr_(op));
 
-    if (permuted_layout_mode_ == "" || (!support::StartsWith(permuted_layout_mode_, "g2s") &&
+    if (permuted_layout_mode_ == "" || (!support::StartsWith(permuted_layout_mode_, "s2l") &&
                                         !support::StartsWith(permuted_layout_mode_, "s2g"))) {
       return load;
     }
@@ -233,19 +234,19 @@ class PermutedLayoutInjectorGmemSmem : private PermutedLayoutInjectorBase {
     return load;
   }
 
-  friend class PermutedLayoutInjectorSmemLocal;
+  friend class PermutedLayoutInjectorAccessPtr;
 };
 
 // Handles the memory transfer from/to shared mem to/from local registers
-class PermutedLayoutInjectorSmemLocal : private PermutedLayoutInjectorBase {
+class PermutedLayoutInjectorAccessPtr : private PermutedLayoutInjectorBase {
  public:
   static PrimFunc Transfrom(PrimFunc func) {
     Analyzer analyzer;
 
-    auto pass_gmem_smem = PermutedLayoutInjectorGmemSmem(&analyzer);
+    auto pass_gmem_smem = PermutedLayoutInjectorBuffer(&analyzer);
     auto new_body = pass_gmem_smem(func->body);
     auto pass_smem_local =
-        PermutedLayoutInjectorSmemLocal(&analyzer, pass_gmem_smem.buffer_row_size_info_);
+        PermutedLayoutInjectorAccessPtr(&analyzer, pass_gmem_smem.buffer_row_size_info_);
     new_body = pass_smem_local(new_body);
 
     auto fptr = func.CopyOnWrite();
@@ -254,7 +255,7 @@ class PermutedLayoutInjectorSmemLocal : private PermutedLayoutInjectorBase {
   }
 
  private:
-  explicit PermutedLayoutInjectorSmemLocal(Analyzer* analyzer,
+  explicit PermutedLayoutInjectorAccessPtr(Analyzer* analyzer,
                                            BufferRowSizeInfo buffer_row_size_info)
       : PermutedLayoutInjectorBase(analyzer) {
     buffer_row_size_info_ = buffer_row_size_info;
@@ -334,7 +335,7 @@ namespace transform {
 
 Pass InjectPermutedLayout() {
   auto pass_func = [=](PrimFunc f, IRModule m, PassContext ctx) {
-    return PermutedLayoutInjectorSmemLocal::Transfrom(std::move(f));
+    return PermutedLayoutInjectorAccessPtr::Transfrom(std::move(f));
   };
   return CreatePrimFuncPass(pass_func, 0, "tir.InjectPermutedLayout", {});
 }

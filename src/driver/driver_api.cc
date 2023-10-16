@@ -211,7 +211,9 @@ Array<tvm::transform::Pass> CreatePassList(bool disable_loop_partition) {
   // pass_list.push_back(transform::PrintIR());
   pass_list.push_back(tir::transform::LowerAutoCopy());
   pass_list.push_back(tir::transform::UnifyThreadBinding());
+  // pass_list.push_back(transform::PrintIR());
   pass_list.push_back(tir::transform::LowerMatchBuffer());
+  // pass_list.push_back(transform::PrintIR());
   pass_list.push_back(tir::transform::Simplify());
   pass_list.push_back(transform::PrintIR());
   pass_list.push_back(tir::transform::InjectPermutedLayout());
@@ -675,9 +677,9 @@ transform::Sequential DeviceModulePassManager(IRModule mixed_mod, Target target)
 
   device_pass_list.push_back(tir::transform::BindTarget(target));
 
-  device_pass_list.push_back(transform::PrintIR());
+  // device_pass_list.push_back(transform::PrintIR());
   device_pass_list.push_back(tir::transform::LowerWarpMemory());
-  device_pass_list.push_back(transform::PrintIR());
+  // device_pass_list.push_back(transform::PrintIR());
   device_pass_list.push_back(tir::transform::Simplify());
   device_pass_list.push_back(tir::transform::LowerCustomDatatypes());
   device_pass_list.push_back(tir::transform::LowerDeviceStorageAccessInfo());
