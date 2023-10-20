@@ -594,6 +594,7 @@ class FunctionCreator : public ExprMutator {
       if (!expr->IsInstance<PrimValueNode>()) {
         Var param(std::move(name), GetStructInfo(expr));
         arguments_.push_back(expr);
+        VLOG(0) << param;
         params_.push_back(param);
       }
 

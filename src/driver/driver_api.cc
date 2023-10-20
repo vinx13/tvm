@@ -242,10 +242,10 @@ Array<tvm::transform::Pass> CreatePassList(bool disable_loop_partition) {
   pass_list.push_back(tir::transform::VectorizeLoop(!disable_vectorize));
   pass_list.push_back(tir::transform::InjectVirtualThread());
   pass_list.push_back(tir::transform::InjectDoubleBuffer());
-  pass_list.push_back(transform::PrintIR());
+  // pass_list.push_back(transform::PrintIR());
   if (!disable_storage_rewrite) {
     pass_list.push_back(tir::transform::StorageRewrite());
-    pass_list.push_back(transform::PrintIR());
+    // pass_list.push_back(transform::PrintIR());
   }
   bool use_async_copy = pass_ctx->GetConfig<Bool>("tir.use_async_copy", Bool(false)).value();
 
