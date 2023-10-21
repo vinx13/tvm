@@ -387,67 +387,67 @@ class StoragePlanRewriter : public StmtExprMutator {
     // plan the rewrite
     LinearAccessPatternFinder finder;
     finder(stmt);
-    // print finder.linear_seq_
-    VLOG(0) << "linear seq: " << finder.linear_seq_.size();
-    for (size_t i = 0; i < finder.linear_seq_.size(); ++i) {
-      const StmtEntry& e = finder.linear_seq_[i];
-      VLOG(0) << "linear[" << i << "]=" << GetRef<ObjectRef>(e.stmt)
-              << " offset=" << e.scope_pair_offset << "touched cnt: " << e.touched.size();
-      for (const VarNode* v : e.touched) {
-        VLOG(0) << "  touched=" << GetRef<Var>(v);
-      }
-    }
-    // print alloc info
-    VLOG(0) << "alloc info: " << finder.alloc_info_.size();
-    for (const auto& kv : finder.alloc_info_) {
-      const VarNode* buf = kv.first;
-      const AllocEntry& e = kv.second;
-      VLOG(0) << "alloc[" << GetRef<Var>(buf) << "]=" << GetRef<Allocate>(e.alloc)
-              << " level=" << static_cast<int>(e.level)
-              << " num_physical_dimensions=" << e.num_physical_dimensions;
-    }
-    // print all buffers accessed
-    VLOG(0) << "all buffers accessed: " << finder.all_buffers_accessed_.size();
-    for (const BufferNode* buf : finder.all_buffers_accessed_) {
-      VLOG(0) << "  " << GetRef<Buffer>(buf);
-    }
+    // // print finder.linear_seq_
+    // VLOG(0) << "linear seq: " << finder.linear_seq_.size();
+    // for (size_t i = 0; i < finder.linear_seq_.size(); ++i) {
+    //   const StmtEntry& e = finder.linear_seq_[i];
+    //   VLOG(0) << "linear[" << i << "]=" << GetRef<ObjectRef>(e.stmt)
+    //           << " offset=" << e.scope_pair_offset << "touched cnt: " << e.touched.size();
+    //   for (const VarNode* v : e.touched) {
+    //     VLOG(0) << "  touched=" << GetRef<Var>(v);
+    //   }
+    // }
+    // // print alloc info
+    // VLOG(0) << "alloc info: " << finder.alloc_info_.size();
+    // for (const auto& kv : finder.alloc_info_) {
+    //   const VarNode* buf = kv.first;
+    //   const AllocEntry& e = kv.second;
+    //   VLOG(0) << "alloc[" << GetRef<Var>(buf) << "]=" << GetRef<Allocate>(e.alloc)
+    //           << " level=" << static_cast<int>(e.level)
+    //           << " num_physical_dimensions=" << e.num_physical_dimensions;
+    // }
+    // // print all buffers accessed
+    // VLOG(0) << "all buffers accessed: " << finder.all_buffers_accessed_.size();
+    // for (const BufferNode* buf : finder.all_buffers_accessed_) {
+    //   VLOG(0) << "  " << GetRef<Buffer>(buf);
+    // }
     this->LivenessAnalysis(finder.linear_seq_);
-    // print event map
-    VLOG(0) << "event map: " << event_map_.size();
-    for (const auto& kv : event_map_) {
-      std::ostringstream os;
-      os << GetRef<ObjectRef>(kv.first) << " gen: [";
-      for (auto var : kv.second.gen) {
-        os << GetRef<Var>(var) << ", ";
-      }
-      os << "] kill: [";
-      for (auto var : kv.second.kill) {
-        os << GetRef<Var>(var) << ", ";
-      }
-      os << "]";
-      VLOG(0) << os.str();
-    }
+    // // print event map
+    // VLOG(0) << "event map: " << event_map_.size();
+    // for (const auto& kv : event_map_) {
+    //   std::ostringstream os;
+    //   os << GetRef<ObjectRef>(kv.first) << " gen: [";
+    //   for (auto var : kv.second.gen) {
+    //     os << GetRef<Var>(var) << ", ";
+    //   }
+    //   os << "] kill: [";
+    //   for (auto var : kv.second.kill) {
+    //     os << GetRef<Var>(var) << ", ";
+    //   }
+    //   os << "]";
+    //   VLOG(0) << os.str();
+    // }
     this->PlanMemory(finder.linear_seq_, finder.alloc_info_);
     all_buffers_accessed_ = finder.all_buffers_accessed_;
     this->PrepareNewAlloc();
-    // print attach map
-    VLOG(0) << "attach map: " << attach_map_.size();
-    for (const auto& kv : attach_map_) {
-      VLOG(0) << GetRef<ObjectRef>(kv.first) << " " << kv.second.size();
-      // print allocs and alloc_nest
-      for (const StorageEntry* e : kv.second) {
-        VLOG(0) << *e;
-      }
-    }
-    // print attach vec in the same manner
-    VLOG(0) << "alloc vec: " << alloc_vec_.size();
-    for (const auto& e : alloc_vec_) {
-      VLOG(0) << *e;
-    }
-    VLOG(0) << "alloc map: " << alloc_map_.size();
-    for (const auto& kv : alloc_map_) {
-      VLOG(0) << GetRef<Var>(kv.first) << " " << *kv.second;
-    }
+    // // print attach map
+    // VLOG(0) << "attach map: " << attach_map_.size();
+    // for (const auto& kv : attach_map_) {
+    //   VLOG(0) << GetRef<ObjectRef>(kv.first) << " " << kv.second.size();
+    //   // print allocs and alloc_nest
+    //   for (const StorageEntry* e : kv.second) {
+    //     VLOG(0) << *e;
+    //   }
+    // }
+    // // print attach vec in the same manner
+    // VLOG(0) << "alloc vec: " << alloc_vec_.size();
+    // for (const auto& e : alloc_vec_) {
+    //   VLOG(0) << *e;
+    // }
+    // VLOG(0) << "alloc map: " << alloc_map_.size();
+    // for (const auto& kv : alloc_map_) {
+    //   VLOG(0) << GetRef<Var>(kv.first) << " " << *kv.second;
+    // }
     // start rewrite
     stmt = operator()(std::move(stmt));
     VLOG(0) << stmt;
