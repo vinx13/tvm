@@ -73,6 +73,7 @@ class HostDeviceSplitter : public StmtMutator {
       });
       return {params, use_def.undefined_buffers_};
     }();
+    // VLOG(0) << params << " " << buffers_to_declare;
 
     // CodeGenCPU is used for some device-side targets, such as
     // "ext_dev", and expects to be able to return a int32_t status

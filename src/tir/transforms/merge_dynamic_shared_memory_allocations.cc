@@ -602,12 +602,37 @@ class DynamicSharedMemoryRewriter : public StmtExprMutator {
   support::Arena arena_;
 };
 
+/*!
+ * \brief Execute DynamicSharedMemoryRewriter for every thread block
+ */
+class DynamicSharedMemoryRewriteWrapper : public StmtExprMutator {
+ public:
+  explicit DynamicSharedMemoryRewriteWrapper(
+      const std::unordered_map<const VarNode*, const AllocateNode*>& dyn_shmem_allocs)
+      : dyn_shmem_allocs_{dyn_shmem_allocs} {}
+
+  using StmtExprMutator::VisitExpr;
+  using StmtExprMutator::VisitStmt;
+
+ private:
+  Stmt VisitStmt_(const AttrStmtNode* op) final {
+    if (op->attr_key == attr::thread_extent) {
+      DynamicSharedMemoryRewriter rewriter(dyn_shmem_allocs_);
+      rewriter.PlanReuse(GetRef<Stmt>(op));
+      return rewriter(GetRef<Stmt>(op));
+    } else {
+      return StmtExprMutator::VisitStmt_(op);
+    }
+  }
+  // The mapping from the original buffer var to its allocate
+  std::unordered_map<const VarNode*, const AllocateNode*> dyn_shmem_allocs_;
+};
+
 Stmt MergeDynamicSharedMemoryAllocations(Stmt stmt) {
   AllocateCollector collector;
   collector(stmt);
   if (collector.dyn_shmem_allocs_.size() > 1) {
-    DynamicSharedMemoryRewriter rewriter(collector.dyn_shmem_allocs_);
-    rewriter.PlanReuse(stmt);
+    DynamicSharedMemoryRewriteWrapper rewriter(collector.dyn_shmem_allocs_);
     return rewriter(std::move(stmt));
   }
   return stmt;

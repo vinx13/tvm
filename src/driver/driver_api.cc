@@ -597,7 +597,9 @@ transform::Sequential MixedModulePassManager(IRModule mixed_mod, Target target) 
 
   mixed_pass_list.push_back(tir::transform::ThreadSync("shared"));
   mixed_pass_list.push_back(tir::transform::ThreadSync("shared.dyn"));
+  mixed_pass_list.push_back(transform::PrintIR());
   mixed_pass_list.push_back(tir::transform::MergeDynamicSharedMemoryAllocations());
+  mixed_pass_list.push_back(transform::PrintIR());
   mixed_pass_list.push_back(tir::transform::ThreadSync("warp"));
   mixed_pass_list.push_back(tir::transform::InferFragment());
   mixed_pass_list.push_back(tir::transform::LowerThreadAllreduce());
@@ -615,6 +617,7 @@ transform::Sequential MixedModulePassManager(IRModule mixed_mod, Target target) 
 
   mixed_pass_list.push_back(tir::transform::AnnotateDeviceRegions());
   mixed_pass_list.push_back(tir::transform::SplitHostDevice());
+  // mixed_pass_list.push_back(transform::PrintIR());
 
   bool unpacked_api = mixed_mod->GetAttr<relay::Executor>(tvm::attr::kExecutor)
                           .value_or(relay::Executor::Create("graph", {}))
@@ -623,6 +626,7 @@ transform::Sequential MixedModulePassManager(IRModule mixed_mod, Target target) 
   if (unpacked_api) {
     mixed_pass_list.push_back(tir::transform::MakeUnpackedAPI());
   } else {
+    mixed_pass_list.push_back(transform::PrintIR());
     mixed_pass_list.push_back(tir::transform::MakePackedAPI());
   }
   mixed_pass_list.push_back(tir::transform::FP8StorageLegalize());

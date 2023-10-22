@@ -408,6 +408,8 @@ Pass MakePackedAPI() {
           func.CopyOnWrite()->body = body.value();
         }
 
+        // VLOG(0) << func;
+
         func = MakePackedAPI(std::move(func));
 
         if (!func.same_as(orig_func)) {
