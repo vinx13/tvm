@@ -298,7 +298,7 @@ def get_reduction_blocks(sch, blocks) -> Optional[List[BlockRV]]:
     return reduction_blocks
 
 
-def get_dequantize_blocks(sch, blocks) -> List[BlockRV]:
+def get_dequantize_block(sch, blocks) -> Optional[BlockRV]:
     # check at least two input and one output
     # at lease one input has uint dtype, and the output dtype is float
     def is_dequantize(block: BlockRV) -> bool:
@@ -313,9 +313,7 @@ def get_dequantize_blocks(sch, blocks) -> List[BlockRV]:
         return True
 
     dequantize_blocks = [block for block in blocks if is_dequantize(block)]
-    if len(dequantize_blocks) > 1:
-        return []
-    return dequantize_blocks
+    return dequantize_blocks[0] if len(dequantize_blocks) == 1 else None
 
 
 def check_sm_version(arch: str) -> int:
@@ -346,7 +344,7 @@ class MatmulTensorizationMMA(ScheduleRule):
         if reduction_blocks is None:
             return None
 
-        dequantize_blocks = get_dequantize_blocks(sch, blocks)
+        dequantize_block = get_dequantize_block(sch, blocks)
 
         main_block = reduction_blocks[0]
         block_stmt = sch.get(main_block)
@@ -374,7 +372,7 @@ class MatmulTensorizationMMA(ScheduleRule):
         thread_cnt = thread_y * thread_z * warp_size
         k_cnt = block_k // micro_size_k
 
-        vector_size = 4
+        vector_size = 8
         unroll_depth = 256
 
         def is_cast_block(block):
@@ -482,18 +480,38 @@ class MatmulTensorizationMMA(ScheduleRule):
         sch.bind(j2, "threadIdx.y")
 
         def fetch_input(block_outer, read_buffer_idx, tensor_name: Literal["A", "B"]):
-            block_read = sch.cache_read(block_outer, read_buffer_idx, "shared.dyn")
-            sch.compute_at(block_read, k0)
+            if tensor_name == "B" and dequantize_block is not None:
+                block_read = sch.get_producers(block_outer)[read_buffer_idx]
+                auto_inline_producers(sch, block_read)
+                sch.compute_at(block_read, k0)
+                dequantize_reads = []
+                for i in range(len(sch.get(block_read).reads)):
+                    dequantize_read = sch.cache_read(block_read, i, "shared.dyn")
+                    sch.compute_at(dequantize_read, k0)
+                    loops = sch.get_loops(dequantize_read)[2:]
+                    v0, v1, v2, v3 = sch.split(
+                        loops[0], factors=[None, thread_z, thread_y, warp_size]
+                    )
+                    sch.bind(v1, "threadIdx.z")
+                    sch.bind(v2, "threadIdx.y")
+                    sch.bind(v3, "threadIdx.x")
+                    if len(loops) == 2:
+                        sch.vectorize(loops[1])
+                    dequantize_reads.append(dequantize_read)
+                dequantize_write = sch.cache_write(block_read, 0, "shared.dyn")
+                sch.compute_inline(dequantize_write)
+                vector_size = 4
+            else:
+                block_read = sch.cache_read(block_outer, read_buffer_idx, "shared.dyn")
+                auto_inline_producers(sch, block_read)
+                sch.compute_at(block_read, k0)
+                vector_size = 8
+
             fused = sch.fuse(*sch.get_loops(block_read)[-2:])
 
             f0, f1, f2, f3, f4 = sch.split(
                 fused, [None, thread_z, thread_y, warp_size, vector_size]
             )
-
-            if tensor_name == "A":
-                micro_size_spatial = micro_size_m
-            else:
-                micro_size_spatial = micro_size_n
 
             sch.bind(f1, "threadIdx.z")
             sch.bind(f2, "threadIdx.y")
@@ -502,8 +520,9 @@ class MatmulTensorizationMMA(ScheduleRule):
 
             sch.annotate(block_read, ann_key="permuted_layout", ann_val=f"g2s_{tensor_name}")
 
-            auto_inline_producers(sch, block_read, dequantize_blocks)
             sch.mod.show(None, False)
+
+            micro_size_spatial = micro_size_m if tensor_name == "A" else micro_size_n
 
             mma_read = sch.cache_read(block_outer, read_buffer_idx, "warp")
             sch.compute_at(mma_read, k1)
@@ -612,30 +631,35 @@ class MatmulTensorizationMMA(ScheduleRule):
         sch.tensorize(sch.get_loops(store)[-2], MMA_store_16x16_f32_shared_dyn_INTRIN_SIMPLE)
 
         # async pipeline
-        sch.annotate(k0, ann_key="software_pipeline_stage", ann_val=[0, 0, 3])
-        sch.annotate(k0, ann_key="software_pipeline_order", ann_val=[0, 1, 2])
-        sch.annotate(k0, ann_key="software_pipeline_async_stages", ann_val=[0])
+        if dequantize_block is None:
+            sch.annotate(k0, ann_key="software_pipeline_stage", ann_val=[0, 0, 3])
+            sch.annotate(k0, ann_key="software_pipeline_order", ann_val=[0, 1, 2])
+            sch.annotate(k0, ann_key="software_pipeline_async_stages", ann_val=[0])
+        else:
+            sch.annotate(k0, ann_key="software_pipeline_stage", ann_val=[0, 0, 0, 3, 3])
+            sch.annotate(k0, ann_key="software_pipeline_order", ann_val=[0, 1, 2, 3, 4])
+            sch.annotate(k0, ann_key="software_pipeline_async_stages", ann_val=[0])
 
         # handle dequantize block
-        if len(dequantize_blocks) != 0:
-            dequantize_block = dequantize_blocks[0]
-            auto_inline_producers(sch, dequantize_block)
-            loops = sch.get_loops(dequantize_block)
-            loop = sch.fuse(*loops)
-            v0, v1, v2, v3 = sch.split(loop, [None, 128, 2, 4])
-            sch.bind(v0, "blockIdx.x")
-            sch.bind(v1, "threadIdx.x")
-            sch.unroll(v2)
-            sch.vectorize(v3)
-            # sch.compute_at(dequantize_block, block_axis)
-            # loops = sch.get_loops(dequantize_block)[1:]
-            # loop = sch.fuse(*loops)
-            # v00, v01, v02, v1, v2, v3 = sch.split(loop, [2, 2, 32, None, 8, 4])
-            # sch.bind(v00, "threadIdx.z")
-            # sch.bind(v01, "threadIdx.y")
-            # sch.bind(v02, "threadIdx.x")
-            # sch.unroll(v2)
-            # sch.vectorize(v3)
+        # if len(dequantize_blocks) != 0:
+        #     dequantize_block = dequantize_blocks[0]
+        #     auto_inline_producers(sch, dequantize_block)
+        #     loops = sch.get_loops(dequantize_block)
+        #     loop = sch.fuse(*loops)
+        #     v0, v1, v2, v3 = sch.split(loop, [None, 128, 2, 4])
+        #     sch.bind(v0, "blockIdx.x")
+        #     sch.bind(v1, "threadIdx.x")
+        #     sch.unroll(v2)
+        #     sch.vectorize(v3)
+        # sch.compute_at(dequantize_block, block_axis)
+        # loops = sch.get_loops(dequantize_block)[1:]
+        # loop = sch.fuse(*loops)
+        # v00, v01, v02, v1, v2, v3 = sch.split(loop, [2, 2, 32, None, 8, 4])
+        # sch.bind(v00, "threadIdx.z")
+        # sch.bind(v01, "threadIdx.y")
+        # sch.bind(v02, "threadIdx.x")
+        # sch.unroll(v2)
+        # sch.vectorize(v3)
         return sch
 
 

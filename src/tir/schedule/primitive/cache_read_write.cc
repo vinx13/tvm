@@ -1659,6 +1659,7 @@ The region cover property require to hold for every of its child blocks
     for (const BufferRegion& region : child_block->reads) {
       if (region->buffer.same_as(read_buffer)) {
         if (!self->block_info.at(child_block_sref).region_cover) {
+          VLOG(0) << GetRef<Block>(child_block) << " " << region;
           const BlockNode* block = TVM_SREF_TO_BLOCK(scope_root);
           throw NotRegionCoverError(self->mod, GetRef<Block>(block));
         }
