@@ -500,7 +500,7 @@ class MatmulTensorizationMMA(ScheduleRule):
                     dequantize_reads.append(dequantize_read)
                 dequantize_write = sch.cache_write(block_read, 0, "shared.dyn")
                 sch.compute_inline(dequantize_write)
-                vector_size = 4
+                vector_size = 1
             else:
                 block_read = sch.cache_read(block_outer, read_buffer_idx, "shared.dyn")
                 auto_inline_producers(sch, block_read)
@@ -519,8 +519,6 @@ class MatmulTensorizationMMA(ScheduleRule):
             sch.vectorize(f4)
 
             sch.annotate(block_read, ann_key="permuted_layout", ann_val=f"g2s_{tensor_name}")
-
-            sch.mod.show(None, False)
 
             micro_size_spatial = micro_size_m if tensor_name == "A" else micro_size_n
 
@@ -631,14 +629,14 @@ class MatmulTensorizationMMA(ScheduleRule):
         sch.tensorize(sch.get_loops(store)[-2], MMA_store_16x16_f32_shared_dyn_INTRIN_SIMPLE)
 
         # async pipeline
-        if dequantize_block is None:
-            sch.annotate(k0, ann_key="software_pipeline_stage", ann_val=[0, 0, 3])
-            sch.annotate(k0, ann_key="software_pipeline_order", ann_val=[0, 1, 2])
-            sch.annotate(k0, ann_key="software_pipeline_async_stages", ann_val=[0])
-        else:
-            sch.annotate(k0, ann_key="software_pipeline_stage", ann_val=[0, 0, 0, 3, 3])
-            sch.annotate(k0, ann_key="software_pipeline_order", ann_val=[0, 1, 2, 3, 4])
-            sch.annotate(k0, ann_key="software_pipeline_async_stages", ann_val=[0])
+        # if dequantize_block is None:
+        #     sch.annotate(k0, ann_key="software_pipeline_stage", ann_val=[0, 0, 3])
+        #     sch.annotate(k0, ann_key="software_pipeline_order", ann_val=[0, 1, 2])
+        #     sch.annotate(k0, ann_key="software_pipeline_async_stages", ann_val=[0])
+        # else:
+        #     sch.annotate(k0, ann_key="software_pipeline_stage", ann_val=[0, 0, 0, 3, 3])
+        #     sch.annotate(k0, ann_key="software_pipeline_order", ann_val=[0, 1, 2, 3, 4])
+        #     sch.annotate(k0, ann_key="software_pipeline_async_stages", ann_val=[0])
 
         # handle dequantize block
         # if len(dequantize_blocks) != 0:
@@ -958,8 +956,6 @@ class MatmulTensorization(ScheduleRule):
         if index_maps is None:
             return None
         matmul_index_map, a_index_map, b_index_map, c_index_map = index_maps
-
-        func.show(None, False)
 
         # Start Schedule
         # Step 0. Get schedule config.

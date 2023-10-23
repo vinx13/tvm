@@ -285,6 +285,7 @@ class DynamicSharedMemoryRewriter : public StmtExprMutator {
       }
 
       allocated_ = true;
+      VLOG(0) << "Allocate " << merged_alloc_size_ << " bytes for dynamic shared memory";
       Allocate new_body(merged_buf_var_, DataType::UInt(8), {merged_alloc_size_}, const_true(),
                         StmtExprMutator::VisitStmt(op->body));
       return AttrStmt(op->node, op->attr_key, op->value, new_body, op->span);

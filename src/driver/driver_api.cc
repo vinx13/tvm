@@ -219,9 +219,9 @@ Array<tvm::transform::Pass> CreatePassList(bool disable_loop_partition) {
   pass_list.push_back(tir::transform::InjectPermutedLayout());
   // pass_list.push_back(transform::PrintIR());
   pass_list.push_back(tir::transform::Simplify());
-  pass_list.push_back(transform::PrintIR());
+  // pass_list.push_back(transform::PrintIR());
   pass_list.push_back(tir::transform::InjectSoftwarePipeline());
-  pass_list.push_back(transform::PrintIR());
+  // pass_list.push_back(transform::PrintIR());
   pass_list.push_back(tir::transform::TransformMmaBufferLayout());
   pass_list.push_back(tir::transform::LowerOpaqueBlock());
   pass_list.push_back(tir::transform::FlattenBuffer());
@@ -598,9 +598,9 @@ transform::Sequential MixedModulePassManager(IRModule mixed_mod, Target target) 
 
   mixed_pass_list.push_back(tir::transform::ThreadSync("shared"));
   mixed_pass_list.push_back(tir::transform::ThreadSync("shared.dyn"));
-  mixed_pass_list.push_back(transform::PrintIR());
+  // mixed_pass_list.push_back(transform::PrintIR());
   mixed_pass_list.push_back(tir::transform::MergeDynamicSharedMemoryAllocations());
-  mixed_pass_list.push_back(transform::PrintIR());
+  // mixed_pass_list.push_back(transform::PrintIR());
   mixed_pass_list.push_back(tir::transform::ThreadSync("warp"));
   mixed_pass_list.push_back(tir::transform::InferFragment());
   mixed_pass_list.push_back(tir::transform::LowerThreadAllreduce());
@@ -627,7 +627,7 @@ transform::Sequential MixedModulePassManager(IRModule mixed_mod, Target target) 
   if (unpacked_api) {
     mixed_pass_list.push_back(tir::transform::MakeUnpackedAPI());
   } else {
-    mixed_pass_list.push_back(transform::PrintIR());
+    // mixed_pass_list.push_back(transform::PrintIR());
     mixed_pass_list.push_back(tir::transform::MakePackedAPI());
   }
   mixed_pass_list.push_back(tir::transform::FP8StorageLegalize());
