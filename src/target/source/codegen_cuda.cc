@@ -1155,7 +1155,8 @@ void CodeGenCUDA::VisitStmt_(const EvaluateNode* op) {
 }
 
 void CodeGenCUDA::VisitExpr_(const RampNode* op, std::ostream& os) {
-  CHECK_LE(op->lanes, 4) << "ValueError: Ramp of more than 4 lanes is not allowed.";
+  CHECK_LE(op->lanes, 4) << "ValueError: Ramp of more than 4 lanes is not allowed in node "
+                         << GetRef<Ramp>(op);
   os << "(make_";
   PrintType(op->dtype, os);
   os << "(";
