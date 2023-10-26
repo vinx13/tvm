@@ -496,7 +496,7 @@ class MatmulTensorizationMMA(ScheduleRule):
             sch.bind(f3, "threadIdx.x")
             sch.vectorize(f4)
 
-            # sch.annotate(block_read, ann_key="permuted_layout", ann_val=f"g2s_{tensor_name}")
+            sch.annotate(block_read, ann_key="permuted_layout", ann_val=f"g2s_{tensor_name}")
 
             micro_size_spatial = micro_size_m if tensor_name == "A" else micro_size_n
 
@@ -519,7 +519,7 @@ class MatmulTensorizationMMA(ScheduleRule):
             )
 
             mma_read_block = sch.blockize(sch.get_loops(mma_read)[-2])
-            # sch.annotate(mma_read_block, ann_key="permuted_layout", ann_val=f"s2l_{tensor_name}")
+            sch.annotate(mma_read_block, ann_key="permuted_layout", ann_val=f"s2l_{tensor_name}")
             return block_read, mma_read
 
         block_read_a, mma_read_a = fetch_input(block_outer, 0, "A")
@@ -543,7 +543,7 @@ class MatmulTensorizationMMA(ScheduleRule):
             sch.bind(f3, "threadIdx.x")
             sch.vectorize(f4)
 
-            # sch.annotate(block_write, ann_key="permuted_layout", ann_val=f"s2g_C")
+            sch.annotate(block_write, ann_key="permuted_layout", ann_val=f"s2g_C")
 
             auto_inline_consumers(sch, block_write)
 
@@ -567,7 +567,7 @@ class MatmulTensorizationMMA(ScheduleRule):
             )
 
             mma_read_block = sch.blockize(sch.get_loops(store)[-2])
-            # sch.annotate(mma_read_block, ann_key="permuted_layout", ann_val=f"l2s_C")
+            sch.annotate(mma_read_block, ann_key="permuted_layout", ann_val=f"l2s_C")
 
             return block_write, store
 
@@ -582,9 +582,11 @@ class MatmulTensorizationMMA(ScheduleRule):
         # sch.annotate(k0, ann_key="pragma_auto_unroll_max_step", ann_val=unroll_depth)
         # sch.unroll(k0)
         # sch.annotate(k0, ann_key="pragma_unroll_explicit", ann_val=0)
-        # k00, k01 = sch.split(k0, factors=[None, 8])
+        # k00, k01 = sch.split(k0, factors=[None, 4])
         # sch.annotate(k01, ann_key="pragma_unroll_explicit", ann_val=0)
         # sch.unroll(k01)
+        # k0 = k00
+        # sch.unroll(k1)
 
         # Tensorization by hardware intrinsics
         # from tvm.tir.tensor_intrin.cuda import (  # pylint: disable=import-outside-toplevel
@@ -607,9 +609,9 @@ class MatmulTensorizationMMA(ScheduleRule):
         sch.tensorize(sch.get_loops(store)[-2], MMA_store_16x16_f32_shared_dyn_INTRIN_SIMPLE)
 
         # async pipeline
-        # sch.annotate(k0, ann_key="software_pipeline_stage", ann_val=[0, 0, 3])
-        # sch.annotate(k0, ann_key="software_pipeline_order", ann_val=[0, 1, 2])
-        # sch.annotate(k0, ann_key="software_pipeline_async_stages", ann_val=[0])
+        sch.annotate(k0, ann_key="software_pipeline_stage", ann_val=[0, 0, 3])
+        sch.annotate(k0, ann_key="software_pipeline_order", ann_val=[0, 1, 2])
+        sch.annotate(k0, ann_key="software_pipeline_async_stages", ann_val=[0])
 
         # handle dequantize block
         if dequantize_block is not None:
@@ -981,6 +983,10 @@ class MatmulTensorization(ScheduleRule):
         i0, i1, i2, i3 = sch.split(i, factors=i_factors)
         j0, j1, j2, j3 = sch.split(j, factors=j_factors)
         k0, k1 = sch.split(k, k_factors)
+        sch.annotate(k0, "software_pipeline_order", [0, 3, 1, 4, 5, 2, 6])
+        sch.annotate(k0, "software_pipeline_stage", [0, 0, 0, 0, 0, 1, 1])
+        sch.annotate(k1, "software_pipeline_order", [0, 1, 2])
+        sch.annotate(k1, "software_pipeline_stage", [0, 0, 1])
 
         sch.reorder(i0, j0, i1, j1, j2, i2, k0, k1, i3, j3)
 
@@ -1004,100 +1010,9 @@ class MatmulTensorization(ScheduleRule):
             sch.vectorize(f_3)
 
             sch.storage_align(block_read, 0, axis=-2, factor=16, offset=8)
+            sch.annotate(block_read, "tir.manifest_shared_memory_local_stage", 1)
+            sch.annotate(block_read, "double_buffer_scope", 0)
             return block_read
-
-        a_g2s = fetch_to_shared(block_outer, 0, 2)
-        b_g2s = fetch_to_shared(block_outer, 1, 2)
-
-        auto_inline_producers(sch, a_g2s)
-        auto_inline_producers(sch, b_g2s)
-
-        # create read cache to load matrix from shared memory to wmma fragments
-        A_mat = sch.cache_read(block_outer, 0, "wmma.matrix_a")
-        B_mat = sch.cache_read(block_outer, 1, "wmma.matrix_b")
-        sch.compute_at(A_mat, k1)
-        sch.compute_at(B_mat, k1)
-
-        # create write cache to store matrix from wmma fragments to shared memory and global memory
-        accumulator_shared_to_global = sch.cache_write(block_outer, 0, "shared.dyn")
-        sch.storage_align(accumulator_shared_to_global, 0, -2, 16, 4)
-
-        store = sch.cache_write(block_outer, 0, "wmma.accumulator")
-        sch.reverse_compute_at(store, thread_idy)
-        sch.reverse_compute_at(accumulator_shared_to_global, thread_idy)
-
-        # split the store loop to match hardware intrinsic pattern
-        i, j = sch.get_loops(store)[-2:]
-        i0, i1 = sch.split(i, factors=[None, 16])
-        j0, j1 = sch.split(j, factors=[None, 16])
-        sch.reorder(i0, j0, i1, j1)
-
-        block_init_c = sch.decompose_reduction(block_outer, k0)
-        block_init_c_inner = sch.get_child_blocks(block_init_c)[0]
-
-        # Tensorization by hardware intrinsics
-        intrin_group = get_wmma_intrin_group(
-            load_scope="shared.dyn",
-            store_scope="shared.dyn",
-            in_dtype="float16",
-            out_dtype="float32",
-            trans_b=True,
-        )
-
-        try:
-            i, j = sch.get_loops(A_mat)[-2:]
-            i0, i1 = sch.split(i, factors=[None, 16])
-            j0, j1 = sch.split(j, factors=[None, 16])
-            sch.reorder(i0, j0, i1, j1)
-            sch.unroll(i0)
-            sch.unroll(j0)
-            sch.tensorize(i1, intrin_group["load_a"])
-
-            i, j = sch.get_loops(B_mat)[-2:]
-            i0, i1 = sch.split(i, factors=[None, 16])
-            j0, j1 = sch.split(j, factors=[None, 16])
-            sch.reorder(i0, j0, i1, j1)
-            sch.unroll(i0)
-            sch.unroll(j0)
-            sch.tensorize(i1, intrin_group["load_b"])
-        except:  # pylint: disable=bare-except
-            return None
-
-        # Try to tensorize the init, store and compute block with f16 or f32 intrinsics
-        tensorize_success: bool = False
-
-        def tensorize_init_store_compute():
-            sch.tensorize(sch.get_loops(block_init_c_inner)[-2], intrin_group["init"])
-            sch.tensorize(sch.get_loops(store)[-2], intrin_group["store"])
-            sch.tensorize(sch.get_loops(block_inner)[-3], intrin_group["compute"])
-
-        try:
-            tensorize_init_store_compute()
-            tensorize_success = True
-        except:  # pylint: disable=bare-except
-            intrin_group = get_wmma_intrin_group(
-                load_scope="shared.dyn",
-                store_scope="shared.dyn",
-                in_dtype="float16",
-                out_dtype="float16",
-                trans_b=True,
-            )
-
-        if not tensorize_success:
-            try:
-                tensorize_init_store_compute()
-                tensorize_success = True
-            except:  # pylint: disable=bare-except
-                return None
-
-        auto_inline_consumers(sch, accumulator_shared_to_global)
-
-        fused = sch.fuse(*sch.get_loops(accumulator_shared_to_global)[-2:])
-        _, f1, f2 = sch.split(fused, factors=[None, warp_size, vector_size])
-        sch.bind(f1, "threadIdx.x")
-        sch.vectorize(f2)
-
-        return sch if tensorize_success else None
 
 
 class Matmul(ScheduleRule):
