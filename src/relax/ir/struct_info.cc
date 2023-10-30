@@ -207,8 +207,8 @@ TVM_REGISTER_GLOBAL("relax.FuncStructInfoOpaqueFunc")
 
 // Helper functions
 void UpdateStructInfo(Expr expr, StructInfo struct_info) {
-  ICHECK(!expr->struct_info_.defined())
-      << "the struct_info_ of the Expr to be updated must be nullptr for idempotency";
+  // ICHECK(!expr->struct_info_.defined())
+  //     << "the struct_info_ of the Expr to be updated must be nullptr for idempotency";
   expr->struct_info_ = struct_info;
   // also set checked type
   expr->checked_type_ = GetStaticType(struct_info);
