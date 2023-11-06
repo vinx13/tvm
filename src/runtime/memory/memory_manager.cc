@@ -177,6 +177,19 @@ void MemoryManager::Clear() {
   }
 }
 
+size_t MemoryManager::UsedMemory(Device dev) {
+  MemoryManager* m = MemoryManager::Global();
+  std::lock_guard<std::mutex> lock(m->mu_);
+  auto alloc_type = AllocatorType::kPooled;
+  if (m->allocators_.count(dev)) {
+    return m->allocators_.at(dev).at(alloc_type)->UsedMemory();
+  }
+  // For Disco, all devices will be queried with the same `dev`. When the device ID of the
+  // queried device is different from the one used by this VM instance, we cannot return
+  // a meaningful value.
+  return 0;
+}
+
 NDArray Allocator::Empty(ShapeTuple shape, DLDataType dtype, DLDevice dev,
                          Optional<String> mem_scope) {
   VerifyDataType(dtype);
@@ -216,6 +229,10 @@ void Allocator::Clear() {
 }
 
 TVM_REGISTER_GLOBAL("vm.builtin.memory_manager.clear").set_body_typed(MemoryManager::Clear);
+
+TVM_REGISTER_GLOBAL("vm.memory_manager.get_used_memory").set_body_typed([](Device dev) {
+  return static_cast<int64_t>(MemoryManager::UsedMemory(dev));
+});
 
 }  // namespace memory
 }  // namespace runtime

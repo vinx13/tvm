@@ -26,6 +26,7 @@
 #include <tvm/runtime/device_api.h>
 #include <tvm/runtime/memory/memory_manager.h>
 
+#include <algorithm>
 #include <atomic>
 #include <mutex>
 #include <string>
@@ -53,14 +54,31 @@ class PooledAllocator final : public Allocator {
       auto&& pool = it->second;
       auto ret = pool.back();
       pool.pop_back();
+      auto it2 = free_sizes_.find(size);
+      ICHECK(it2 != free_sizes_.end());
+      free_sizes_.erase(it2);
       return ret;
     }
+
+    if (recycle_eager) {
+      if (auto it = std::lower_bound(free_sizes_.begin(), free_sizes_.end(), size);
+          it != free_sizes_.end()) {
+        auto&& pool = memory_pool_[*it];
+        auto ret = pool.back();
+        ICHECK(ret.size > 0);
+        pool.pop_back();
+        free_sizes_.erase(it);
+        return ret;
+      }
+    }
+
     Buffer buf;
     buf.device = device_;
     buf.size = size;
     buf.alloc_type = kPooled;
     try {
-      buf.data = DeviceAPI::Get(device_)->AllocDataSpace(device_, size, alignment, type_hint);
+      buf.data =
+          runtime::DeviceAPI::Get(device_)->AllocDataSpace(device_, size, alignment, type_hint);
     } catch (InternalError& err) {
       LOG(WARNING) << "PooledAllocator got InternalError during allocation: " << err.message();
       LOG(WARNING) << "Trying to release all unused memory and reallocate...";
@@ -88,11 +106,16 @@ class PooledAllocator final : public Allocator {
     }
     memory_pool_.at(buffer.size).push_back(buffer);
     VLOG(1) << "reclaim buffer " << buffer.size;
+    free_sizes_.insert(buffer.size);
   }
 
   void Clear() override { ReleaseAll(); }
 
-  size_t UsedMemory() const override { return used_memory_.load(std::memory_order_relaxed); }
+  size_t UsedMemory() override {
+    // HACK to disable eager recycling during memory profiling
+    recycle_eager = true;
+    return used_memory_.load(std::memory_order_relaxed);
+  }
 
  private:
   void ReleaseAll() {
@@ -113,7 +136,9 @@ class PooledAllocator final : public Allocator {
   std::atomic<size_t> used_memory_;
   std::unordered_map<size_t, std::vector<Buffer>> memory_pool_;
   std::recursive_mutex mu_;
+  std::multiset<size_t> free_sizes_;
   Device device_;
+  bool recycle_eager = false;
 };
 
 }  // namespace memory
