@@ -35,10 +35,13 @@ from tvm.tir.tensor_intrin.cuda import (
     LDMATRIX_16x16_B_DYN_INTRIN,
     LDMATRIX_16x16_B_TRANS_DYN_INTRIN,
     MMA_f16f16f32_TRANS_INTRIN,
+    MMA_f16f16f16_TRANS_INTRIN,
     MMA_fill_16x16_f32_INTRIN,
+    MMA_fill_16x16_f16_INTRIN,
     MMA_store_16x16_f32_global_INTRIN,
     MMA_store_16x16_f32_shared_dyn_INTRIN,
     MMA_store_16x16_f32_shared_dyn_INTRIN_SIMPLE,
+    MMA_store_16x16_f16_shared_dyn_INTRIN_SIMPLE,
     shared_16x16_to_ldmatrix_32x8_layout,
 )
 
@@ -434,7 +437,7 @@ class MatmulTensorizationMMA(ScheduleRule):
         z_order_factor_n = [1, None]
         # z_order_factor_m = [4, None]
         # z_order_factor_n = [4, None]
-        print(f"z_order_factor_m={z_order_factor_m}, z_order_factor_n={z_order_factor_n}")
+        # print(f"z_order_factor_m={z_order_factor_m}, z_order_factor_n={z_order_factor_n}")
 
         # Step 2. Padding for dynamic shape kernels
         sch.pad_einsum(
@@ -601,12 +604,15 @@ class MatmulTensorizationMMA(ScheduleRule):
         #     trans_b=True,
         # )
 
-        sch.tensorize(sch.get_loops(block_init_c_inner)[-2], MMA_fill_16x16_f32_INTRIN)
+        # sch.tensorize(sch.get_loops(block_init_c_inner)[-2], MMA_fill_16x16_f32_INTRIN)
+        sch.tensorize(sch.get_loops(block_init_c_inner)[-2], MMA_fill_16x16_f16_INTRIN)
         sch.tensorize(sch.get_loops(mma_read_a)[-2], LDMATRIX_16x16_A_DYN_INTRIN)
         sch.tensorize(sch.get_loops(mma_read_b)[-2], LDMATRIX_16x16_B_TRANS_DYN_INTRIN)
-        sch.tensorize(sch.get_loops(block_inner)[-3], MMA_f16f16f32_TRANS_INTRIN)
+        # sch.tensorize(sch.get_loops(block_inner)[-3], MMA_f16f16f32_TRANS_INTRIN)
+        sch.tensorize(sch.get_loops(block_inner)[-3], MMA_f16f16f16_TRANS_INTRIN)
         # sch.tensorize(sch.get_loops(store)[-2], MMA_store_16x16_f32_shared_dyn_INTRIN)
-        sch.tensorize(sch.get_loops(store)[-2], MMA_store_16x16_f32_shared_dyn_INTRIN_SIMPLE)
+        # sch.tensorize(sch.get_loops(store)[-2], MMA_store_16x16_f32_shared_dyn_INTRIN_SIMPLE)
+        sch.tensorize(sch.get_loops(store)[-2], MMA_store_16x16_f16_shared_dyn_INTRIN_SIMPLE)
 
         # async pipeline
         sch.annotate(k0, ann_key="software_pipeline_stage", ann_val=[0, 0, 3])
@@ -718,7 +724,7 @@ class MatmulTensorizationWMMA(ScheduleRule):
         z_order_factor_m = [1, None]
         z_order_factor_n = [1, None]
 
-        print(f"z_order_factor_m={z_order_factor_m}, z_order_factor_n={z_order_factor_n}")
+        # print(f"z_order_factor_m={z_order_factor_m}, z_order_factor_n={z_order_factor_n}")
 
         # Step 2. Padding for dynamic shape kernels
         sch.pad_einsum(
@@ -1102,7 +1108,7 @@ class Matmul(ScheduleRule):
         # Tensorization config:
         # If any value of I, J, K is fixed and less than this threshold,
         # tensorization rule will not be applied.
-        minimal_tensorize_threshold = 64
+        minimal_tensorize_threshold = 16
         block_stmt = sch.get(main_block)
         if target.kind.name == "cuda" and check_sm_version(target.arch) >= 70:
             apply_tensorization: bool = True
@@ -1113,7 +1119,7 @@ class Matmul(ScheduleRule):
                     if extent.value <= minimal_tensorize_threshold:
                         apply_tensorization = False
             if apply_tensorization:
-                tensorize_sch = MatmulTensorization().apply(func, target, _)
+                tensorize_sch = MatmulTensorizationMMA().apply(func, target, _)
                 if tensorize_sch is not None:
                     return tensorize_sch
 
