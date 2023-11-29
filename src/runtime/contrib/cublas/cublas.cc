@@ -165,10 +165,10 @@ void CallCublasLt(cublasLtHandle_t hdl, cudaStream_t stream, const DLTensor* A, 
   if (TypeMatch(C->dtype, kDLFloat, 16)) {
     // Disable fp16 accum to align with PT
     c_type = CUDA_R_16F;
-    compute_type = CUBLAS_COMPUTE_16F;
-    scale_type = CUDA_R_16F;
-    alpha = &one_fp16;
-    beta = &zero_fp16;
+    // compute_type = CUBLAS_COMPUTE_16F;
+    // scale_type = CUDA_R_16F;
+    // alpha = &one_fp16;
+    // beta = &zero_fp16;
   } else if (TypeMatch(C->dtype, kDLInt, 32)) {
     c_type = CUDA_R_32I;
     compute_type = CUBLAS_COMPUTE_32I;
