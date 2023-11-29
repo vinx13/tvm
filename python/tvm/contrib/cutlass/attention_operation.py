@@ -324,7 +324,7 @@ def instantiate_flash_attention_var_len_template(attrs):
     			    o_row_stride,
     			    ${scale},
     			    ${is_causal},
-                            ${is_causal} ? _max_seqlen_k : -1,
+                            ${window_size_left},
                             ${window_size_right},
     			    stream);
     """
