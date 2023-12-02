@@ -67,7 +67,7 @@ if(USE_CUDA)
 
     if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
       message(WARNING "CMAKE_CUDA_ARCHITECTURES not set, compiling Thrust for sm80 and sm75.")
-      set(CMAKE_CUDA_ARCHITECTURES "80;75")
+      set(CMAKE_CUDA_ARCHITECTURES "90;80")
     endif()
 
     set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} --expt-extended-lambda")

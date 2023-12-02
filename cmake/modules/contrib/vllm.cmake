@@ -22,7 +22,7 @@ if(USE_VLLM)
 
   if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
     message(WARNING "CMAKE_CUDA_ARCHITECTURES not set, compiling vLLM kernels for sm80 and sm75.")
-    set(CMAKE_CUDA_ARCHITECTURES "80;75")
+    set(CMAKE_CUDA_ARCHITECTURES "90;80")
   endif()
 
   tvm_file_glob(GLOB VLLM_CONTRIB_SRC src/runtime/contrib/vllm/*.cu src/runtime/contrib/vllm/*.cc)
