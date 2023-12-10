@@ -17,6 +17,7 @@
  * under the License.
  */
 
+#include <cuda_fp16.h>
 #include <tvm/runtime/ndarray.h>
 #include <tvm/runtime/packed_func.h>
 #include <tvm/runtime/registry.h>
@@ -37,22 +38,50 @@ namespace runtime {
 // The preprocessing functions are defined in C++, so we need to copy the input weight to CPU.
 TVM_REGISTER_GLOBAL("cutlass.ft_preprocess_weight")
     .set_body_typed([](NDArray packed_weight, int sm, bool is_int4) {
-      int rows = packed_weight->shape[0];
-      int cols = packed_weight->shape[1];
-      std::vector<int8_t> input_cpu(rows * cols);
-      std::vector<int8_t> output_cpu(rows * cols);
+      bool is_2d = packed_weight->ndim == 2;
+      int num_experts = is_2d ? 1 : packed_weight->shape[0];
+      int rows = packed_weight->shape[is_2d ? 0 : 1];
+      int cols = packed_weight->shape[is_2d ? 1 : 2];
+
+      std::vector<int8_t> input_cpu(num_experts * rows * cols);
+      std::vector<int8_t> output_cpu(num_experts * rows * cols);
       packed_weight.CopyToBytes(input_cpu.data(), input_cpu.size());
       // multiply cols by 2 since the "col" params in preprocess_weights refers to the column of
       // the unpacked weight.
       if (is_int4) {
         cols *= 2;
       }
-      fastertransformer::preprocess_weights(output_cpu.data(), input_cpu.data(), rows, cols,
-                                            is_int4, sm);
+      fastertransformer::preprocess_weights(output_cpu.data(), input_cpu.data(),
+                                            is_2d ? -1 : num_experts, rows, cols, is_int4, sm);
       auto out = NDArray::Empty(packed_weight.Shape(), packed_weight->dtype, packed_weight->device);
       out.CopyFromBytes(output_cpu.data(), output_cpu.size());
       return out;
     });
+
+TVM_REGISTER_GLOBAL("cutlass.symmetric_quantize").set_body_typed([](NDArray weight, bool is_int4) {
+  CHECK(is_int4);
+  CHECK(weight->dtype.code == kDLFloat && weight->dtype.bits == 16);
+  CHECK(weight->ndim == 3);
+  CHECK(weight->device.device_type == kDLCPU);
+  int64_t num_experts = weight->shape[0];
+  int64_t rows = weight->shape[1];
+  int64_t cols = weight->shape[2];
+
+  ShapeTuple out_weight_shape{num_experts, rows, cols / 2};
+  ShapeTuple out_scale_shape{num_experts, cols};
+  auto out_weight = NDArray::Empty(
+      out_weight_shape, DLDataType{.code = kDLInt, .bits = 8, .lanes = 1}, weight->device);
+  auto out_scale = NDArray::Empty(
+      out_scale_shape, DLDataType{.code = kDLFloat, .bits = 16, .lanes = 1}, weight->device);
+
+  fastertransformer::symmetric_quantize<half, half>(
+      reinterpret_cast<int8_t*>(out_weight->data), reinterpret_cast<half*>(out_scale->data),
+      reinterpret_cast<const half*>(weight->data),
+      std::vector<size_t>{static_cast<size_t>(num_experts), static_cast<size_t>(rows),
+                          static_cast<size_t>(cols)},
+      true);
+  return Array<NDArray>{out_weight, out_scale};
+});
 
 }  // namespace runtime
 }  // namespace tvm
