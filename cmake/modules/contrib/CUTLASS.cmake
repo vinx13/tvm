@@ -22,7 +22,12 @@ if(USE_CUDA AND USE_CUTLASS)
   set(CUTLASS_DIR ${PROJECT_SOURCE_DIR}/3rdparty/cutlass)
   add_subdirectory(${PROJECT_SOURCE_DIR}/3rdparty/cutlass_fpA_intB_gemm)
   add_subdirectory(${PROJECT_SOURCE_DIR}/3rdparty/libflash_attn)
+
+  include_directories(3rdparty/cutlass_fpA_intB_gemm
+                      3rdparty/cutlass_fpA_intB_gemm/cutlass/include)  # FIXME
   list(APPEND RUNTIME_SRCS src/runtime/contrib/cutlass/weight_preprocess.cc)
+  list(APPEND RUNTIME_SRCS src/runtime/contrib/cutlass/moe_gemm.cc)
+  list(APPEND RUNTIME_SRCS src/runtime/contrib/cutlass/moe_compute_rows.cu)
 
   message(STATUS "Build with CUTLASS")
 endif()
