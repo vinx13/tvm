@@ -54,19 +54,12 @@ namespace runtime {
 TVM_REGISTER_GLOBAL("cutlass.moe_gemm_f16f16")
     .set_body_typed([](NDArray x, NDArray weight, NDArray total_rows_before_expert,
                        int64_t total_rows, int64_t n, int64_t k, int64_t num_experts, NDArray out) {
-      LOG(INFO) << "GEMM MOE F16F16";
-      LOG(INFO) << "x: " << x->data << " weight: " << weight->data
-                << " total_rows_before_expert: " << total_rows_before_expert->data
-                << " total_rows: " << total_rows << " n: " << n << " k: " << k
-                << " num_experts: " << num_experts << " out: " << out->data;
-      //   using half = cutlass::half_t;
       fastertransformer::moe_gemm_bias_act<half, half>(
           reinterpret_cast<half*>(x->data), reinterpret_cast<half*>(weight->data), nullptr, nullptr,
           reinterpret_cast<half*>(out->data),
           reinterpret_cast<int64_t*>(total_rows_before_expert->data), total_rows, n, k, num_experts,
           std::nullopt,
           /*stream=*/nullptr /*FIXME*/);
-      LOG(INFO) << "MOE OK";
     });
 
 TVM_REGISTER_GLOBAL("cutlass.moe_gemm_s4f16")

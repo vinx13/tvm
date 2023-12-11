@@ -167,7 +167,7 @@ inline PrimExpr CanonicalizeIndex(PrimExpr index, PrimExpr extent, int64_t strid
   // include/tvm/topi/detail/strided_slice.h
   PrimExpr begin_range = stride < 0 ? -1 : 0;
   PrimExpr end_range = stride < 0 ? extent - 1 : extent;
-  index = if_then_else(index < 0, index + extent, index);
+  // index = if_then_else(index < 0, index + extent, index); // FIXME
   return assume_inbound ? index : min(max(index, begin_range), end_range);  // NOLINT
 }
 
