@@ -42,11 +42,10 @@ struct NDArrayCacheMetadata {
        * \brief Load the parameter from raw data.
        * \param device The device to load the parameter onto.
        * \param raw_data The raw data stream
-       * \param staging_buffer The buffer to be used to avoid extra OpenCL copies. Pass in a nullptr
-       * in other cases
+       * \param f_load The function to load the parameter from raw data.
        */
       NDArray Load(Device device, const std::string* raw_data,
-                   Optional<NDArray>* staging_buffer = nullptr) const;
+                   std::function<void(NDArray, const void*, int64_t)> f_load) const;
 
       /*! \brief Name of the parameter */
       std::string name;
@@ -62,12 +61,6 @@ struct NDArrayCacheMetadata {
       int64_t byte_offset;
     };
 
-    /*! \brief Load a FileRecord into memory */
-    Array<NDArray> Load(Device device,                   //
-                        const std::string& path_prefix,  //
-                        std::string* raw_data_buffer,    //
-                        Optional<NDArray>* staging_buffer = nullptr) const;
-
     /*! \brief Relative path to the bin file */
     std::string data_path;
     /*! \brief Format of the file */
@@ -82,11 +75,33 @@ struct NDArrayCacheMetadata {
   /*! \brief The path to the `ndarray-cache.json` file */
   std::string path;
 
-  /*! \brief Load the metadata from a specific directory */
-  static NDArrayCacheMetadata Load(const std::string& path);
-  /*! \brief Load the metadata from a given JSON string */
+  /*! \brief Load the metadata from a specific path */
   static NDArrayCacheMetadata LoadFromStr(const std::string& json_str, const std::string& path);
 };
+
+/*!
+ * \brief Information of sharding function,
+ * including the shard function name and extra parameters.
+ */
+struct ShardInfo {
+  struct TensorInfo {
+    ShapeTuple shape;
+    DataType dtype;
+  };
+  struct ShardFunc {
+    std::string name;
+    TensorInfo output_info;
+    std::vector<int64_t> params;
+  };
+  std::vector<ShardFunc> funcs;
+};
+
+/*!
+ * \brief Load the shard information from dist
+ * \param path Path to the file to be loaded
+ * \return Mapping from parameter name to its shard dim
+ */
+std::unordered_map<std::string, ShardInfo> LoadShardInfoFromStr(const std::string& json_str);
 
 }  // namespace relax_vm
 }  // namespace runtime

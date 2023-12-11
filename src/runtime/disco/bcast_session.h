@@ -19,11 +19,12 @@
 #ifndef TVM_RUNTIME_DISCO_BCAST_SESSION_H_
 #define TVM_RUNTIME_DISCO_BCAST_SESSION_H_
 
-#include <tvm/runtime/disco/disco_worker.h>
 #include <tvm/runtime/disco/session.h>
 
 #include <string>
 #include <vector>
+
+#include "./worker.h"
 
 namespace tvm {
 namespace runtime {

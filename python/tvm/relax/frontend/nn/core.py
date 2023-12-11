@@ -176,7 +176,6 @@ class Parameter(Tensor):
     """
 
     _data: Optional[NDArray]
-    attrs: Dict[str, Any]
 
     def __init__(
         self,
@@ -197,7 +196,6 @@ class Parameter(Tensor):
             dtype = get_default_dtype()
         super().__init__(_expr=_tensor_placeholder("param", shape, dtype=dtype)._expr)
         self._data = None
-        self.attrs = OrderedDict()
 
     @property
     def data(self) -> Optional[NDArray]:

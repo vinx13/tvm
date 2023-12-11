@@ -25,36 +25,10 @@
 
 #include <string>
 
+#include "./utils.h"
+
 namespace tvm {
 namespace runtime {
-
-/*!
- * \brief Possible kinds of reduction operations.
- */
-enum class ReduceKind : int32_t {
-  kSum = 0,
-  kProd = 1,
-  kMin = 2,
-  kMax = 3,
-  kAvg = 4,
-};
-
-/*! \brief Converts `ReduceKind` to string */
-inline std::string ReduceKind2String(ReduceKind kind) {
-  switch (kind) {
-    case ReduceKind::kSum:
-      return "kSum";
-    case ReduceKind::kProd:
-      return "kProd";
-    case ReduceKind::kMin:
-      return "kMin";
-    case ReduceKind::kMax:
-      return "kMax";
-    case ReduceKind::kAvg:
-      return "kAvg";
-  }
-  LOG(FATAL) << "ValueError: Unknown ReduceKind: " << static_cast<int>(kind);
-}
 
 /*!
  * \brief Load a runtime Module, then create and initialize a RelaxVM
@@ -75,19 +49,19 @@ NDArray DiscoEmptyNDArray(ShapeTuple shape, DataType dtype, Device device);
  * \brief Perform an allreduce operation using the underlying communication library
  * \param send The array send to perform allreduce on
  * \param reduce_kind The kind of reduction operation (e.g. sum, avg, min, max)
- * \param recv The array receives the outcome of allreduce
+ * \return The outcome of allreduce
  */
 void AllReduce(NDArray send, ReduceKind reduce_kind, NDArray recv);
 /*!
  * \brief Perform an allgather operation using the underlying communication library
  * \param send The array send to perform allgather on
- * \param recv The array receives the outcome of allgather
+ * \return The outcome of allgather
  */
 void AllGather(NDArray send, NDArray recv);
 /*!
  * \brief Perform a broadcast operation from worker-0
- * \param send The buffer to be broadcasted
- * \param recv The buffer receives the broadcasted array
+ * \param buffer The buffer to be broadcasted
+ * \return The result buffer
  */
 void BroadcastFromWorker0(NDArray send, NDArray recv);
 /*!
