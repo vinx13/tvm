@@ -80,8 +80,6 @@ TVM_REGISTER_GLOBAL("cutlass.symmetric_quantize").set_body_typed([](NDArray weig
       std::vector<size_t>{static_cast<size_t>(num_experts), static_cast<size_t>(rows),
                           static_cast<size_t>(cols)},
       true);
-  // out_weight.CopyFromBytes(output_cpu.data(), output_cpu.size());
-  // out_scale.CopyFromBytes(scales_cpu.data(), scales_cpu.size() * sizeof(half));
   return Array<NDArray>{out_weight, out_scale};
 });
 
