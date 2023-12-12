@@ -39,7 +39,7 @@ namespace runtime {
 TVM_REGISTER_GLOBAL("cutlass.ft_preprocess_weight")
     .set_body_typed([](NDArray packed_weight, int sm, bool is_int4) {
       bool is_2d = packed_weight->ndim == 2;
-      int num_experts = 1;
+      int num_experts = is_2d ? 1 : packed_weight->shape[0];
       int rows = packed_weight->shape[is_2d ? 0 : 1];
       int cols = packed_weight->shape[is_2d ? 1 : 2];
 
