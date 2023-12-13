@@ -39,7 +39,6 @@
 #endif
 #else
 #include <arpa/inet.h>
-#include <errno.h>
 #include <fcntl.h>
 #include <netdb.h>
 #include <netinet/in.h>
@@ -56,8 +55,9 @@
 #include <unordered_map>
 #include <vector>
 
-#include "../support/ssize.h"
-#include "../support/utils.h"
+#include "ssize.h"
+#include "utils.h"
+#include "error_handling.h"
 
 #if defined(_WIN32)
 static inline int poll(struct pollfd* pfd, int nfds, int timeout) {
@@ -307,19 +307,10 @@ class Socket {
       Error("Socket::Close double close the socket or close without create");
     }
   }
-  /*!
-   * \return last error of socket operation
-   */
-  static int GetLastError() {
-#ifdef _WIN32
-    return WSAGetLastError();
-#else
-    return errno;
-#endif
-  }
+
   /*! \return whether last error was would block */
   static bool LastErrorWouldBlock() {
-    int errsv = GetLastError();
+    int errsv = GetLastErrorCode();
 #ifdef _WIN32
     return errsv == WSAEWOULDBLOCK;
 #else
@@ -355,48 +346,12 @@ class Socket {
    * \param msg The error message.
    */
   static void Error(const char* msg) {
-    int errsv = GetLastError();
+    int errsv = GetLastErrorCode();
 #ifdef _WIN32
     LOG(FATAL) << "Socket " << msg << " Error:WSAError-code=" << errsv;
 #else
     LOG(FATAL) << "Socket " << msg << " Error:" << strerror(errsv);
 #endif
-  }
-
-  /*!
-   * \brief Call a function and retry if an EINTR error is encountered.
-   *
-   *  Socket operations can return EINTR when the interrupt handler
-   *  is registered by the execution environment(e.g. python).
-   *  We should retry if there is no KeyboardInterrupt recorded in
-   *  the environment.
-   *
-   * \note This function is needed to avoid rare interrupt event
-   *       in long running server code.
-   *
-   * \param func The function to retry.
-   * \return The return code returned by function f or error_value on retry failure.
-   */
-  template <typename FuncType>
-  ssize_t RetryCallOnEINTR(FuncType func) {
-    ssize_t ret = func();
-    // common path
-    if (ret != -1) return ret;
-    // less common path
-    do {
-      if (GetLastError() == EINTR) {
-        // Call into env check signals to see if there are
-        // environment specific(e.g. python) signal exceptions.
-        // This function will throw an exception if there is
-        // if the process received a signal that requires TVM to return immediately (e.g. SIGINT).
-        runtime::EnvCheckSignals();
-      } else {
-        // other errors
-        return ret;
-      }
-      ret = func();
-    } while (ret == -1);
-    return ret;
   }
 
  protected:

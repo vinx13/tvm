@@ -36,6 +36,7 @@
 #include <cstdlib>
 #include <cstring>
 #endif
+#include "error_handling.h"
 
 namespace tvm {
 namespace support {
@@ -52,6 +53,7 @@ class Pipe : public dmlc::Stream {
 #endif
   /*! \brief destructor */
   ~Pipe() { Flush(); }
+
   using Stream::Read;
   using Stream::Write;
   /*!
@@ -67,8 +69,8 @@ class Pipe : public dmlc::Stream {
     ICHECK(ReadFile(handle_, static_cast<TCHAR*>(ptr), size, &nread, nullptr))
         << "Read Error: " << GetLastError();
 #else
-    ssize_t nread;
-    nread = read(handle_, ptr, size);
+    ssize_t nread = RetryCallOnEINTR(
+          [&]() { return read(handle_, ptr, size); });
     ICHECK_GE(nread, 0) << "Write Error: " << strerror(errno);
 #endif
     return static_cast<size_t>(nread);
@@ -87,8 +89,8 @@ class Pipe : public dmlc::Stream {
            static_cast<size_t>(nwrite) == size)
         << "Write Error: " << GetLastError();
 #else
-    ssize_t nwrite;
-    nwrite = write(handle_, ptr, size);
+    ssize_t nwrite = RetryCallOnEINTR(
+          [&]() { return write(handle_, ptr, size); });
     ICHECK_EQ(static_cast<size_t>(nwrite), size) << "Write Error: " << strerror(errno);
 #endif
   }
