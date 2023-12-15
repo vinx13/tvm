@@ -27,7 +27,6 @@ if(USE_CUDA AND USE_CUTLASS)
                       3rdparty/cutlass_fpA_intB_gemm/cutlass/include)  # FIXME
   list(APPEND RUNTIME_SRCS src/runtime/contrib/cutlass/weight_preprocess.cc)
   list(APPEND RUNTIME_SRCS src/runtime/contrib/cutlass/moe_gemm.cc)
-  list(APPEND RUNTIME_SRCS src/runtime/contrib/cutlass/moe_compute_rows.cu)
 
   message(STATUS "Build with CUTLASS")
 endif()

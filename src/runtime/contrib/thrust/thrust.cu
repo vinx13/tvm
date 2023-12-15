@@ -21,7 +21,6 @@
  * \file Use external Thrust library call
  */
 
-#include <cuda_fp16.h>
 #include <thrust/device_ptr.h>
 #include <thrust/device_vector.h>
 #include <thrust/sort.h>
@@ -141,18 +140,6 @@ void thrust_sort_common(DLTensor* input,
     } else {
       LOG(FATAL) << "Unsupported output dtype: " << out_dtype;
     }
-  } else if (data_dtype == "float16") {
-    if (out_dtype == "int32") {
-      thrust_sort<half, int32_t>(input, values_out, indices_out, is_ascend, sort_len);
-    } else if (out_dtype == "int64") {
-      thrust_sort<half, int64_t>(input, values_out, indices_out, is_ascend, sort_len);
-    } else if (out_dtype == "float32") {
-      thrust_sort<half, float>(input, values_out, indices_out, is_ascend, sort_len);
-    } else if (out_dtype == "float64") {
-      thrust_sort<half, double>(input, values_out, indices_out, is_ascend, sort_len);
-    } else {
-      LOG(FATAL) << "Unsupported output dtype: " << out_dtype;
-    }
   } else if (data_dtype == "int32") {
     if (out_dtype == "int32") {
       thrust_sort<int32_t, int32_t>(input, values_out, indices_out, is_ascend, sort_len);
@@ -189,22 +176,6 @@ TVM_REGISTER_GLOBAL("tvm.contrib.thrust.sort")
   DLTensor* values_out = args[1];
   DLTensor* indices_out = args[2];
   bool is_ascend = args[3];
-
-  auto data_dtype = DLDataType2String(input->dtype);
-  auto out_dtype = DLDataType2String(indices_out->dtype);
-
-  int n_values = input->shape[input->ndim - 1];
-  thrust_sort_common(input, values_out, indices_out, is_ascend, n_values,
-                     data_dtype, out_dtype);
-});
-
-TVM_REGISTER_GLOBAL("tvm.contrib.thrust.sort_dps")
-.set_body([](TVMArgs args, TVMRetValue* ret) {
-  ICHECK_GE(args.num_args, 4);
-  DLTensor* input = args[0];
-  DLTensor* values_out = args[2];
-  DLTensor* indices_out = args[3];
-  bool is_ascend = args[1];
 
   auto data_dtype = DLDataType2String(input->dtype);
   auto out_dtype = DLDataType2String(indices_out->dtype);

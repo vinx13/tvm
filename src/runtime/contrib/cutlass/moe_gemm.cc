@@ -79,23 +79,5 @@ TVM_REGISTER_GLOBAL("cutlass.moe_gemm_s4f16")
           std::nullopt, stream);
     });
 
-TVM_REGISTER_GLOBAL("moe_compute_rows_before")
-    .set_body_typed([](NDArray sorted_indices, NDArray total_rows_before_expert) {
-      CHECK(sorted_indices->dtype.code == kDLInt && sorted_indices->dtype.bits == 32);
-      CHECK(total_rows_before_expert->dtype.code == kDLInt &&
-            total_rows_before_expert->dtype.bits == 64);
-      CHECK(sorted_indices->ndim == 1);
-      CHECK(total_rows_before_expert->ndim == 1);
-
-      auto func = tvm::runtime::Registry::Get("runtime.get_cuda_stream");
-      ICHECK(func != nullptr);
-      cudaStream_t stream = static_cast<cudaStream_t>((*func)().operator void*());
-
-      int num_experts = total_rows_before_expert->shape[0];
-      compute_total_rows_before_expert(
-          reinterpret_cast<int*>(sorted_indices->data), sorted_indices->shape[0], num_experts,
-          reinterpret_cast<int64_t*>(total_rows_before_expert->data), stream);
-    });
-
 }  // namespace runtime
 }  // namespace tvm
