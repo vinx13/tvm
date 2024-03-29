@@ -32,7 +32,11 @@ def _is_supported_dtype(lhs_dtype, rhs_dtype, out_dtype):
     """Check if dtypes in the given workload are supported by cuBLAS BYOC."""
     if lhs_dtype == "e4m3_float8" and rhs_dtype == "e4m3_float8":
         # The output cannot be 'e5m2_float8' if inputs are 'e4m3_float8'
+<<<<<<< HEAD
         return out_dtype != "e5m2_float8"
+=======
+        return False if out_dtype == "e5m2_float8" else True
+>>>>>>> [CUBLAS][FP8] Support e4m3 gemm in cuBLAS BYOC (#63)
     return (
         (lhs_dtype == "float16" and rhs_dtype == "float16")
         or (lhs_dtype == "float32" and rhs_dtype == "float32")
