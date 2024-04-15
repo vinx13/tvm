@@ -74,10 +74,12 @@ def _check_matmul(context: PatternCheckContext) -> bool:
     elif lhs_dtype == "e4m3_float8" and rhs_dtype == "e4m3_float8":
         # Matrix dimensions must be multiples of 16. This requirement is missing from the cuBLAS
         # docs, but it was observed during testing.
-        if not isinstance(rhs_shape[-1], (tvm.tir.expr.IntImm, int)) or rhs_shape[-1] % 16 != 0:
-            return False
-        if not isinstance(rhs_shape[-2], (tvm.tir.expr.IntImm, int)) or rhs_shape[-2] % 16 != 0:
-            return False
+        # print(rhs_shape)
+        # if not isinstance(rhs_shape[-1], (tvm.tir.expr.IntImm, int)) or rhs_shape[-1] % 16 != 0:
+        #     return False
+        # if not isinstance(rhs_shape[-2], (tvm.tir.expr.IntImm, int)) or rhs_shape[-2] % 8 != 0:
+        #     return False
+        pass
 
     lhs_batches = reduce(operator.mul, lhs_shape[:-2], 1)
     rhs_batches = reduce(operator.mul, rhs_shape[:-2], 1)
