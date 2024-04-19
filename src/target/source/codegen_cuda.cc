@@ -152,6 +152,16 @@ std::string CodeGenCUDA::Finish() {
     decl_stream << "using fp8_e5_t = __nv_fp8_e5m2;\n";
     decl_stream << "using fp8_e5_2_t = __nv_fp8x2_e5m2;\n";
     decl_stream << "using fp8_e5_4_t = __nv_fp8x4_e5m2;\n";
+    decl_stream << R"(
+__host__ __device__ __inline__ fp8_e4_2_t make_fp8_e4_2_t(fp8_e4_t a, fp8_e4_t b) {
+  typedef unsigned char uint8_t;
+  typedef unsigned short uint16_t;
+  uint8_t hi = *reinterpret_cast<uint8_t*>(&b);
+  uint8_t lo = *reinterpret_cast<uint8_t*>(&a);
+  uint16_t res = static_cast<uint16_t>(hi) << 8 | lo;
+  return *reinterpret_cast<fp8_e4_2_t*>(&res);
+  }
+    )";
     decl_stream << "#endif\n\n";
   }
   declare_vector_type_extensions(decl_stream, enable_fp16_, enable_fp8_);
@@ -299,7 +309,11 @@ void CodeGenCUDA::PrintType(DataType t, std::ostream& os) {  // NOLINT(*)
     if (!fail) return;
   } else if (t.is_float8()) {
     enable_fp8_ = true;
-    os << GetFP8Type(t);
+    if (t.lanes() <= 4) {
+      os << GetFP8Type(t);
+    } else {
+      os << "uint" << t.lanes() / 4;
+    }
     return;
   } else if (t == DataType::Bool()) {
     os << "bool";
@@ -1263,8 +1277,15 @@ void CodeGenCUDA::VisitExpr_(const BroadcastNode* op, std::ostream& os) {  // NO
   if (op->dtype.is_float8()) {
     int lanes = op->dtype.lanes();
     ICHECK(lanes == 1 || lanes == 2 || lanes == 4);
-    std::string v = PrintExpr(op->value);
     // Implicit conversion from float back to fp8
+    std::string v;
+    v = PrintExpr(op->value);
+    // if (const auto* float_imm = op->value.as<FloatImmNode>()) {
+    //   v = PrintExpr(FloatImm(DataType::Float(32), float_imm->value));
+
+    // } else {
+    //   v = PrintExpr(op->value);
+    // }
     PrintType(op->dtype, os);
     os << "(make_float" << lanes << "(";
     for (int i = 0; i < lanes; ++i) {

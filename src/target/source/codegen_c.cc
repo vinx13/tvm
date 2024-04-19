@@ -152,6 +152,7 @@ String CodeGenC::GetFunctionName(const GlobalVar& gvar) {
 }
 
 void CodeGenC::AddFunction(const GlobalVar& gvar, const PrimFunc& f) {
+  LOG(INFO) << f;
   // If the function has already been forward-declared, this is a
   // no-op.
   DeclareFunction(gvar, f);
@@ -1136,6 +1137,9 @@ void CodeGenC::PrintVecElemLoadExpr(DataType t, int i, const std::string& value,
     os << "(";
     PrintType(t, os);
     os << "(";
+    std::ostringstream oss;
+    PrintType(t, oss);
+    LOG(INFO) << " i = 0 " << oss.str();
   }
   os << value;
   if (i != t.lanes() - 1) {

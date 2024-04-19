@@ -814,5 +814,16 @@ def test_const(dtype):
     tvm.build(mod, target="cuda")
 
 
+def test_ramp():
+    dtype = "e4m3_float8"
+    @T.prim_func
+    def func(A: T.Buffer((4,4), dtype), B: T.Buffer((4, 4), "float16")) -> None:
+        for tx in T.thread_binding(0, 4, "threadIdx.x"):
+            for i in range(2):
+                B[tx, i:i+4:2] = T.cast(A[tx, i:i+4:2], "float16x2")
+
+    mod = tvm.IRModule({"main": func})
+    tvm.build(mod, target="cuda")
+
 if __name__ == "__main__":
     tvm.testing.main()
