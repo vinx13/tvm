@@ -83,7 +83,7 @@ class KVStateObj : public Object {
    * with prefill length "10", "15", "20", then we pass `[5, 1, 8]`
    * as the seq_ids and `[10, 15, 20]` as the append_lengths.
    * This method is invoked right before entering the model forward
-   * function, and contains operations to prepare the the incoming
+   * function, and contains operations to prepare the incoming
    * forward. For instance, this method may send auxiliary KV cache
    * data structures to GPUs so that they can be operated
    * in the model forward function.
@@ -117,6 +117,8 @@ class AttentionKVCacheObj : public KVStateObj {
  public:
   /************** Raw Info Query **************/
 
+  /*! \brief Check if the KV cache is empty. */
+  virtual bool Empty() const = 0;
   /*!
    * \brief Get the number of available pages in the KV cache.
    * When the underlying KV cache implementation is not
