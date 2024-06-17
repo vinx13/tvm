@@ -211,6 +211,90 @@ def chunk(x: Tensor, chunks: int, dim: int = 0, name: str = "chunk") -> Tensor:
     return wrap_nested(_op.split(x._expr, chunks, dim), name)
 
 
+def strided_slice(
+    x: Tensor,
+    axes: List[int],
+    begin: List[int],
+    end: List[int],
+    strides: Optional[List[int]] = None,
+    assume_inbound: bool = False,
+    name: str = "strided_slice",
+) -> Tensor:
+    """Strided slice of a tensor.
+    Parameters
+    ----------
+    x : Tensor
+        The source tensor to be sliced.
+    axes : List[int]
+        Axes along which slicing is applied.
+    begin : List[PrimExprLike]
+        The indices to begin with in the slicing, inclusive.
+    end : List[PrimExprLike]
+        The indices indicating end of the slice, exclusive.
+    strides : Optional[List[PrimExprLike]]
+        Specifies the stride values, it can be negative in that case,
+        the input tensor will be reversed in that particular axis.
+        If not specified, it by default is an list of ones of the same length as `axes`.
+    assume_inbound : bool
+        Whether to assume the indices are in bound. If it is set to false,
+        out of bound indices will be clipped to the bound.
+    name : str
+        Name hint for this operation.
+    Returns
+    -------
+    ret : relax.Expr
+        The sliced result.
+    Note
+    ----
+    strided_slice require the input `begin`, `end` and `strides` to have the
+    same length as `axes`.
+    """
+
+    if isinstance(begin, Tensor):
+        begin = begin._expr
+    if isinstance(end, Tensor):
+        end = end._expr
+    return wrap_nested(_op.strided_slice(x._expr, axes, begin, end, strides, assume_inbound), name)  # type: ignore
+
+
+def sin(x: Tensor, name: str = "sin") -> Tensor:
+    """Compute element-wise sin of the input data.
+    Parameters
+    ----------
+    x : relax.Expr
+        The input data
+    name : str
+        Name hint.
+    Returns
+    -------
+    result : Tensor
+        The computed result.
+    Note
+    ----
+    The input tensor is required to have float dtype
+    """
+    return wrap_nested(_op.sin(x._expr), name)
+
+
+def cos(x: Tensor, name: str = "cos") -> Tensor:
+    """Compute element-wise cos of the input data.
+    Parameters
+    ----------
+    x : relax.Expr
+        The input data
+    name : str
+        Name hint.
+    Returns
+    -------
+    result : Tensor
+        The computed result.
+    Note
+    ----
+    The input tensor is required to have float dtype
+    """
+    return wrap_nested(_op.cos(x._expr), name)
+
+
 def sum(
     x: Tensor,
     axis: Optional[Union[int, List[int]]] = None,
@@ -759,6 +843,84 @@ def repeat(x: Tensor, repeats: int, axis: Optional[int] = None, name="repeat") -
                                              #         [3., 3., 4., 4.]]
     """
     return wrap_nested(_op.repeat(x._expr, repeats, axis), name)
+
+
+def expand_dims(x: Tensor, axis: Union[int, List[int]], name: str = "expand_dims") -> Tensor:
+    """Insert new axes at the positions given by `axis`.
+    Parameters
+    ----------
+    x : relax.Expr
+        The input data to the operator.
+    axis : Union[int, List[int]]
+        The axes at which the input array are expanded.
+        All values are required to lie in range `[-data.ndim - 1, data.ndim]`, with the convention
+        of negative indexing.
+    name : str
+        Name hint for this operation.
+    Returns
+    -------
+    result : relax.Expr
+        The transformed result.
+    """
+    if isinstance(axis, int):
+        axis = [axis]
+    return wrap_nested(_op.expand_dims(x._expr, axis), name)  # type: ignore
+
+
+def flatten(data, start_dim=0, end_dim=-1):
+    start = start_dim
+    end = end_dim
+    dshape = data.shape
+    ndim = len(dshape)
+    if start < 0:
+        start += ndim
+    if end < 0:
+        end += ndim
+    assert start <= end, "start dim cannot come after end dim"
+    new_shape = [0] * start
+
+    new_shape.append(-1)
+    squeeze_axes = []
+    for i in range(start + 1, end + 1):
+        new_shape.append(1)
+        squeeze_axes.append(i)
+    for _ in range(end + 1, ndim):
+        new_shape.append(0)
+    out = reshape(data, new_shape)
+    if squeeze_axes:
+        out = squeeze(out, axis=squeeze_axes)
+    return out
+
+
+def arange(
+    start,
+    end=None,
+    step=1,
+    dtype=None,
+    name: str = "arange",
+) -> Tensor:
+    """Construct a tensor with evenly spaced elements.
+    Parameters
+    ----------
+    start : Union[PrimExprLike,PrimValue]
+        The start of the interval.
+    end : Optional[Union[PrimExprLike,PrimValue]]
+        The end of the interval. If not given, it will be set to start,
+        and start will be set to 0.
+    step : Union[PrimExprLike,PrimValue]
+        The step size.
+    dtype : Optional[Union[str, DataType]]
+        The data type of the created tensor.
+    name : str
+        Name hint.
+    Returns
+    -------
+    result : relax.Expr
+        The result tensor.
+    """
+    # TODO (yongwww): Update type annotation
+
+    return wrap_nested(_op.arange(start, end, step, dtype), name)
 
 
 def squeeze(x: Tensor, axis: int = -1, name: str = "squeeze") -> Tensor:
@@ -1374,6 +1536,25 @@ def ones(
     return wrap_nested(_op.ones(shape, dtype), name)
 
 
+def einsum(operands, subscripts, name: str = "einsum"):
+    """Evaluates the Einstein summation convention on data
+    Parameters
+    ----------
+    operands : Union(List[relax.Expr], Tuple[relax.Expr])
+        A list of expression.
+    subscripts : str
+        The einsum expression string.
+    name : str
+        Name hint for this operation.
+    Returns
+    -------
+    result : relax.Expr
+        The output from the einsum op.
+    """
+    operands = [operand._expr if isinstance(operand, Tensor) else operand for operand in operands]
+    return wrap_nested(_op.einsum(operands, subscripts), name)  # type: ignore
+
+
 def empty(
     shape: Sequence[IntExpr],
     dtype: str = "float32",
@@ -1432,6 +1613,33 @@ def split(
         A list of sub-arrays as the outcome of splitting.
     """
     return wrap_nested(_op.split(ary._expr, indices_or_sections, axis), name)
+
+
+def flatten(
+    ary: Tensor,
+    indices_or_sections: Union[int, Sequence[int]],
+    axis: int = 0,
+    name: str = "split",
+) -> Tuple[Tensor, ...]:
+    """Split an array into multiple sub-arrays.
+
+    Parameters
+    ----------
+    ary : Tensor
+        Input tensor to be split.
+    indices_or_sections : Union[int, Sequence[int]]
+        Indices or sections to split into.
+    axis : int = 0
+        The axis along which to split, default is 0.
+    name : str
+        Name hint.
+
+    Returns
+    -------
+    result : Tuple[Tensor, ...]
+        A list of sub-arrays as the outcome of splitting.
+    """
+    return wrap_nested(_op.flatten(ary._expr, indices_or_sections, axis), name)
 
 
 def pad(
@@ -1552,6 +1760,29 @@ def get_timestep_embedding(
     return wrap_nested(emb, name)
 
 
+def dropout(x: Tensor, p: float = 0.5, name: str = "dropout") -> Tensor:
+    """Applies the dropout operation to the input tensor.
+    During training, each element of the input is set to zero with
+    probability ``p``. The whole array is scaled by ``1/(1-p)``
+    to keep the expected sum of the input unchanged.
+    Parameters
+    ----------
+    data : relax.Expr
+        The input data to the operator.
+    p : float
+        The probability for an element to be reset to 0.
+    Returns
+    -------
+    result : relax.Expr
+        The result of dropout, which is a tuple of two tensors.
+        The first one is the original tensor and the second one is a
+        mask tensor (1.0 where element not dropped, 0.0 where dropped)
+    """
+    return x
+    droped_tup = _op.nn.dropout(x._expr, p)
+    return wrap_nested(droped_tup[1], name)
+
+
 def scaled_dot_product_attention(
     query: Tensor,
     key: Tensor,
@@ -1584,11 +1815,14 @@ def scaled_dot_product_attention(
     """
     assert attn_mask is None, "attn_mask not yet supported."
     causal_mask = "TopLeft" if is_causal else None
-
+    q = _op.permute_dims(query._expr, [0, 2, 1, 3])
+    k = _op.permute_dims(key._expr, [0, 2, 1, 3])
+    v = _op.permute_dims(value._expr, [0, 2, 1, 3])
     attn = _op.nn.attention(
-        query._expr, key._expr, value._expr, causal_mask=causal_mask, scale=scale
+        q, k, v, causal_mask=causal_mask, scale=scale
     )
-    return wrap_nested(attn, name)
+    r = _op.permute_dims(attn, [0, 2, 1, 3])
+    return wrap_nested(r, name)
 
 
 def interpolate(

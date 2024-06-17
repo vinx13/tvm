@@ -92,6 +92,16 @@ class Identity(Module):
         return x
 
 
+class Dropout(Module):
+    """Module for dropout layer."""
+
+    def __init__(self, p: float = 0.5):
+        self.p = p
+
+    def forward(self, x: Tensor):
+        return op.dropout(x, p=self.p)
+
+
 class Linear(Module):
     """
     Module for linear layer.
