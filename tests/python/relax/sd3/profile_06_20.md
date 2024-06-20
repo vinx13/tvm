@@ -20,3 +20,36 @@
 | fused_reshape5_add2_expand_dims2_multiply6_add8 | 168.89 | 0.24 | cuda0 | 23 | float16[2, 1536], float16[308, 1536], float16[1536], float16[2, 154, 1536], float16[2, 154, 1536] |
 | fused_reshape5_expand_dims2_multiply6_add8 | 163.70 | 0.23 | cuda0 | 23 | float16[2, 1536], float16[308, 1536], float16[2, 154, 1536], float16[2, 154, 1536] |
 | vm.builtin.make_tuple | 151.99 | 0.21 | cuda0 | 47 | float16[2, 1536], float16[2, 1536], float16[2, 1536], float16[2, 1536], float16[2, 1536], float16[2, 1536] |
+| vm.builtin.make_tuple | 74.83 | 0.10 | cuda0 | 23 | float16[2, 4096, 1536], float16[2, 154, 1536] |
+| vm.builtin.reshape | 74.47 | 0.10 | cuda0 | 23 | float16[2, 4096, 1536] |
+| vm.builtin.reshape | 74.25 | 0.10 | cuda0 | 23 | float16[2, 154, 1536] |
+| fused_reshape10_split2_reshape6 | 65.50 | 0.09 | cuda0 | 1 | float16[2, 4250, 24, 64], float16[8192, 1536] |
+| fused_transpose3_reshape1_transpose4_reshape2_strided_slice_reshape3_add | 32.09 | 0.04 | cuda0 | 1 | float16[2, 64, 64, 1536], float16[1, 36864, 1536], float16[2, 4096, 1536] |
+| fused_split3_expand_dims2_add3_multiply3_expand_dims2_add4_reshape6 | 31.20 | 0.04 | cuda0 | 1 | float16[2, 3072], float16[2, 4096, 1536], float16[8192, 1536] |
+| fused_relax_permute_dims_relax_matmul_relax_add6_cublas | 27.13 | 0.04 | cuda0 | 2 | float16[3072, 1536], float16[2, 1536], float16[3072], float16[2, 3072] |
+| fused_relax_permute_dims_relax_matmul_relax_add1_cublas | 23.84 | 0.03 | cuda0 | 2 | float16[1536, 1536], float16[2, 1536], float16[1536], float16[2, 1536] |
+| fused_relax_nn_conv2d_relax_add_cutlass | 21.70 | 0.03 | cuda0 | 1 | float16[2, 128, 128, 16], float16[1536, 2, 2, 16], float16[1, 1, 1, 1536], float16[2, 64, 64, 1536] |
+| fused_relax_permute_dims_relax_matmul_cublas | 21.47 | 0.03 | cuda0 | 1 | float16[1536, 4096], float16[308, 4096], float16[308, 1536] |
+| fused_relax_permute_dims_relax_matmul3_cublas | 16.57 | 0.02 | cuda0 | 1 | float16[64, 1536], float16[8192, 1536], float16[8192, 64] |
+| fused_relax_permute_dims_relax_matmul_relax_add2_cublas | 13.47 | 0.02 | cuda0 | 1 | float16[1536, 2048], float16[2, 2048], float16[1536], float16[2, 1536] |
+| silu | 11.07 | 0.02 | cuda0 | 2 | float16[2, 1536], float16[2, 1536] |
+| fused_reshape11_add9_reshape12_einsum_reshape13 | 10.78 | 0.02 | cuda0 | 1 | float16[8192, 64], float16[64], float16[2, 16, 128, 128] |
+| fused_relax_permute_dims_relax_matmul_relax_add_cublas | 8.67 | 0.01 | cuda0 | 1 | float16[1536, 256], float16[2, 256], float16[1536], float16[2, 1536] |
+| transpose | 7.65 | 0.01 | cuda0 | 1 | float16[2, 16, 128, 128], float16[2, 128, 128, 16] |
+| fused_split3_expand_dims2_add3_multiply4_expand_dims2_add5_reshape8 | 6.69 | 0.01 | cuda0 | 1 | float16[2, 3072], float16[2, 154, 1536], float16[308, 1536] |
+| fused_reshape5_add2 | 6.69 | 0.01 | cuda0 | 1 | float16[308, 1536], float16[1536], float16[2, 154, 1536] |
+| transpose1 | 6.21 | 0.01 | cuda0 | 1 | float16[1536, 16, 2, 2], float16[1536, 2, 2, 16] |
+| fused_expand_dims_cast_multiply1_multiply2_tir_sin_tir_cos_concatenate_split_concatenate_cast1 | 6.02 | 0.01 | cuda0 | 1 | float16[2], float32[1, 128], float16[2, 256] |
+| fused_add1_silu | 5.76 | 0.01 | cuda0 | 1 | float16[2, 1536], float16[2, 1536], float16[2, 1536] |
+| vm.builtin.match_shape | 3.20 | 0.00 | cuda0 | 1 | float16[2, 2048] |
+| vm.builtin.make_tuple | 3.20 | 0.00 | cuda0 | 1 | float16[2, 16, 128, 128] |
+| vm.builtin.match_shape | 3.20 | 0.00 | cuda0 | 1 | float16[2, 16, 128, 128] |
+| vm.builtin.check_tensor_info | 3.20 | 0.00 | cuda0 | 1 | float16[2, 2048] |
+| vm.builtin.match_shape | 3.20 | 0.00 | cuda0 | 1 | float16[2, 154, 4096] |
+| vm.builtin.reshape | 3.20 | 0.00 | cuda0 | 1 | float16[2, 154, 4096] |
+| vm.builtin.check_tensor_info | 3.20 | 0.00 | cuda0 | 1 | float16[2, 154, 4096] |
+| vm.builtin.check_tensor_info | 3.20 | 0.00 | cuda0 | 1 | float16[2, 16, 128, 128] |
+| vm.builtin.reshape | 3.17 | 0.00 | cuda0 | 1 | float16[1536] |
+| vm.builtin.check_tensor_info | 3.17 | 0.00 | cuda0 | 1 | float16[2] |
+| vm.builtin.match_shape | 3.17 | 0.00 | cuda0 | 1 | float16[2, 1536] |
+| **Total Duration (us)** | **50258.73** | **100.00** | - | - | - |
