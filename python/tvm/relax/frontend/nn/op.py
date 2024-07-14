@@ -1818,11 +1818,61 @@ def scaled_dot_product_attention(
     q = _op.permute_dims(query._expr, [0, 2, 1, 3])
     k = _op.permute_dims(key._expr, [0, 2, 1, 3])
     v = _op.permute_dims(value._expr, [0, 2, 1, 3])
-    attn = _op.nn.attention(
-        q, k, v, causal_mask=causal_mask, scale=scale
-    )
+    attn = _op.nn.attention(q, k, v, causal_mask=causal_mask, scale=scale)
     r = _op.permute_dims(attn, [0, 2, 1, 3])
     return wrap_nested(r, name)
+
+
+def attention(
+    query: Tensor,
+    key: Tensor,
+    value: Tensor,
+    bias: Optional[Tensor] = None,
+    scale: Optional[float] = None,
+    causal_mask: Optional[str] = None,
+    window_size: Optional[int] = None,
+    name: str = "attention",
+):
+    """Computes fused multi head attention.
+
+    All input tensors are of 4-D tensors with BSNH layout.
+
+    .. math::
+        FMA(Q, K, V) = \text{Softmax}(Q @ K^T) @ V
+
+    See also :py:func:`tvm.relax.op.nn.attention`.
+
+    Parameters
+    ----------
+    query : Tensor
+        The query tensor.
+    key : Tensor
+        The key tensor.
+    value : Tensor
+        The value tensor.
+    bias : Optional[Tensor]
+        The bias tensor.
+    scale : Optional[float]
+        The scale factor.
+    causal_mask : Optional[str]
+        The causal mask.
+    window_size : Optional[int]
+        The window size.
+    name : str
+        Name hint for this function.
+    """
+    return wrap_nested(
+        _op.nn.attention(
+            query._expr,
+            key._expr,
+            value._expr,
+            bias._expr if bias is not None else None,
+            scale=scale,
+            causal_mask=causal_mask,
+            window_size=window_size,
+        ),
+        name,
+    )
 
 
 def interpolate(
