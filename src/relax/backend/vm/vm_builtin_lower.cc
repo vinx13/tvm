@@ -45,6 +45,8 @@ class VMBuiltinLowerMutator : public ExprMutator {
       return CallTIRDyn(call);
     } else if (call->op == reshape_op_) {
       return Reshape(call);
+    } else if (call->op == mem_view_op_) {
+      return View(call);
     } else if (call->op == shape_of_op_) {
       return ShapeOf(call);
     } else if (call->op == to_vdevice_op_) {
@@ -124,6 +126,11 @@ class VMBuiltinLowerMutator : public ExprMutator {
     }
   }
 
+  Expr View(const Call& call_node) {
+    ICHECK(call_node->struct_info_.defined());
+    return Call(builtin_view_, call_node->args, Attrs(), {GetStructInfo(call_node)});
+  }
+
   Expr ShapeOf(const Call& call_node) {
     ICHECK(call_node->args.size() == 1);
     ICHECK(call_node->struct_info_.defined());
@@ -196,6 +203,7 @@ class VMBuiltinLowerMutator : public ExprMutator {
   const Op& mem_alloc_tensor_op_ = Op::Get("relax.memory.alloc_tensor");
   const Op& mem_kill_storage_op_ = Op::Get("relax.memory.kill_storage");
   const Op& mem_kill_tensor_op_ = Op::Get("relax.memory.kill_tensor");
+  const Op& mem_view_op_ = Op::Get("relax.memory.view");
   // functions to lower to
   const Op& vm_alloc_storage_op_ = Op::Get("relax.vm.alloc_storage");
   const Op& vm_alloc_tensor_op_ = Op::Get("relax.vm.alloc_tensor");
@@ -208,6 +216,7 @@ class VMBuiltinLowerMutator : public ExprMutator {
   const ExternFunc builtin_to_device_{"vm.builtin.to_device"};
   const ExternFunc builtin_make_closure_{"vm.builtin.make_closure"};
   const ExternFunc builtin_invoke_closure_{"vm.builtin.invoke_closure"};
+  const ExternFunc builtin_view_{"vm.builtin.view"};
 };
 
 Expr VMBuiltinLower(const Expr& e) { return VMBuiltinLowerMutator().VisitExpr(e); }

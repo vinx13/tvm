@@ -355,5 +355,27 @@ TVM_REGISTER_OP("relax.memory.view")
     .set_attr<FLegalize>("FLegalize", LegalizeView)
     .set_attr<Bool>("FPurity", Bool(true));
 
+Expr ensure_aligned(const Expr& x) {
+  static const Op& op = Op::Get("relax.memory.ensure_aligned");
+  return Call(op, {x});
+}
+
+StructInfo InferStructInfoEnsureAligned(const Call& call, const BlockBuilder& ctx) {
+  if (call->args.size() != 1) {
+    ctx->ReportFatal(Diagnostic::Error(call)
+                     << "Operator " << call->op << " should receive 1 argument, "
+                     << "but received " << call->args);
+  }
+  return GetStructInfo(call->args[0]);
+}
+
+TVM_REGISTER_OP("relax.memory.ensure_aligned")
+    .set_num_inputs(1)
+    .add_argument("x", "Tensor", "The input tensor.")
+    .set_attr<Bool>("RequiresArgumentShapes", Bool(false))
+    .set_attr<FInferStructInfo>("FInferStructInfo", InferStructInfoEnsureAligned)
+    .set_attr<FLegalize>("FLegalize", LegalizeView)
+    .set_attr<Bool>("FPurity", Bool(true));
+
 }  // namespace relax
 }  // namespace tvm

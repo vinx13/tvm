@@ -420,6 +420,12 @@ TVM_REGISTER_GLOBAL("vm.builtin.to_device")
       return data.CopyTo(dst_device);
     });
 
+TVM_REGISTER_GLOBAL("vm.builtin.view")
+    .set_body_typed([](NDArray data, ShapeTuple new_shape, DataType dtype,
+                       int64_t relative_byte_offset) {
+      return data.CreateView(new_shape, dtype, relative_byte_offset);
+    });
+
 /*!
  * \brief Load the scalar value in cond and return the result value.
  * \param cond The condition
